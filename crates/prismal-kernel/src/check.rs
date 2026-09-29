@@ -1,0 +1,1038 @@
+//! Static checking and compilation of a model (MK sections 3, 4, 13 to 16, 18).
+//!
+//! The checker types every expression with expected-type propagation (D-030, D-032),
+//! reports the static diagnostics of MK section 18, and produces a compiled model.
+
+use crate::eval::{Arr, CExpr, Value};
+use crate::model::*;
+use prismal_ir::*;
+use std::collections::{BTreeSet, HashMap};
+use std::rc::Rc;
+
+/// A static diagnostic (MK section 18).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Diagnostic {
+    pub code: &'static str,
+    pub message: String,
+    /// The element the diagnostic is about.
+    pub element: String,
+}
+
+impl std::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} at {}: {}", self.code, self.element, self.message)
+    }
+}
+
+/// Type information about the bindings of a model, used while checking expressions.
+pub(crate) struct Scope<'a> {
+    pub spaces: &'a [Space],
+    pub model: &'a Model,
+    pub index: &'a HashMap<Id, usize>,
+}
+
+pub(crate) struct Tc<'a, 'b> {
+    pub scope: &'b Scope<'a>,
+    pub diags: &'b mut Vec<Diagnostic>,
+    pub element: String,
+    lambda: Vec<Vec<Type>>,
+}
+
+type Typed = Option<(CExpr, Type)>;
+
+fn same_type(a: &Type, b: &Type) -> bool {
+    a == b
+}
+
+fn is_dimensioned(t: &Type) -> bool {
+    match t {
+        Type::Quantity { dim } => !dim.is_none(),
+        Type::Vector { dim, .. } => !dim.is_none(),
+        Type::Point { .. } | Type::Instant { .. } => true,
+        _ => false,
+    }
+}
+
+impl<'a, 'b> Tc<'a, 'b> {
+    pub fn new(scope: &'b Scope<'a>, diags: &'b mut Vec<Diagnostic>, element: &str) -> Self {
+        Tc { scope, diags, element: element.to_string(), lambda: vec![] }
+    }
+
+    fn err(&mut self, code: &'static str, message: String) -> Typed {
+        self.diags.push(Diagnostic { code, message, element: self.element.clone() });
+        None
+    }
+
+    fn space_dim(&self, space: &str) -> Option<usize> {
+        self.scope.spaces.iter().find(|s| s.id == space).map(|s| s.dimension as usize)
+    }
+
+    fn binding(&self, id: &str) -> Option<(usize, &'a Binding)> {
+        self.scope.index.get(id).map(|&i| (i, &self.scope.model.bindings[i]))
+    }
+
+    /// True if an expression takes its type from its context (a tuple, a bare literal).
+    fn needs_ctx(e: &Expr) -> bool {
+        match e {
+            Expr::Tuple { .. } => true,
+            Expr::Num { unit: None, .. } => true,
+            Expr::Neg { neg } => Self::needs_ctx(neg),
+            Expr::If { then, r#else, .. } => Self::needs_ctx(then) && Self::needs_ctx(r#else),
+            _ => false,
+        }
+    }
+
+    /// Checks `e` against a required type and reports a mismatch.
+    pub fn expect(&mut self, e: &Expr, want: &Type) -> Option<CExpr> {
+        let (c, t) = self.expr(e, Some(want))?;
+        if same_type(&t, want) {
+            return Some(c);
+        }
+        self.mismatch(&t, want);
+        None
+    }
+
+    fn mismatch(&mut self, got: &Type, want: &Type) {
+        let (code, what) = match (got, want) {
+            (Type::Tuple { .. }, Type::Vector { .. } | Type::Point { .. }) => ("MK-E21", "a tuple with no expected vector type"),
+            (Type::Point { .. }, Type::Vector { .. }) | (Type::Vector { .. }, Type::Point { .. }) => ("MK-E04", "point and vector confused"),
+            (Type::Vector { space: a, .. }, Type::Vector { space: b, .. }) if a != b => ("MK-E05", "values from different spaces"),
+            (Type::Point { space: a }, Type::Point { space: b }) if a != b => ("MK-E05", "values from different spaces"),
+            _ => ("MK-E01", "type or dimension mismatch"),
+        };
+        self.err(code, format!("{what}: found {}, expected {}", show(got), show(want)));
+    }
+
+    pub fn expr(&mut self, e: &Expr, exp: Option<&Type>) -> Typed {
+        match e {
+            Expr::Num { num, unit } => self.num(*num, unit.as_ref(), exp),
+            Expr::Bool { bool } => Some((CExpr::Const(Value::Bool(*bool)), Type::Boolean)),
+            Expr::Case { case } => match exp {
+                Some(Type::Enum { cases }) => match cases.iter().position(|c| c == case) {
+                    Some(i) => Some((CExpr::Const(Value::Case(i as u32)), exp.unwrap().clone())),
+                    None => self.err("MK-E01", format!("`{case}` is not a case of the expected enumeration")),
+                },
+                _ => self.err("MK-E01", format!("enumeration case `{case}` without an expected enumeration")),
+            },
+            Expr::Ref { r#ref } => match self.binding(r#ref) {
+                Some((i, b)) => Some((CExpr::Load(i), b.ty.clone())),
+                None => self.err("MK-E00", format!("unknown binding `{ref}`", ref = r#ref)),
+            },
+            Expr::Param { param } => match self.lambda.last().and_then(|p| p.get(*param)) {
+                Some(t) => Some((CExpr::Arg(*param), t.clone())),
+                None => self.err("MK-E00", format!("parameter {param} outside a lambda")),
+            },
+            Expr::Builtin { builtin } => Some(match builtin {
+                Builtin::T => (CExpr::Time, Type::Instant { dim: Dim::time() }),
+                Builtin::T0 => (CExpr::Time0, Type::Instant { dim: Dim::time() }),
+                Builtin::Elapsed => (CExpr::Elapsed, Type::Quantity { dim: Dim::time() }),
+            }),
+            Expr::Origin { origin } => match self.space_dim(origin) {
+                Some(n) => Some((CExpr::Const(Value::Point(Arr::zeros(n))), Type::Point { space: origin.clone() })),
+                None => self.err("MK-E00", format!("unknown space `{origin}`")),
+            },
+            Expr::Der { der } => {
+                let (i, b) = match self.binding(der) {
+                    Some(x) => x,
+                    None => return self.err("MK-E00", format!("unknown binding `{der}`")),
+                };
+                if b.role != Role::Continuous {
+                    return self.err("MK-E06", format!("der({}) of a binding that is not continuous state", b.name));
+                }
+                let t = derivative_type(&b.ty)?;
+                Some((CExpr::Der(i), t))
+            }
+            Expr::Neg { neg } => {
+                let (c, t) = self.expr(neg, exp)?;
+                if matches!(t, Type::Point { .. } | Type::Instant { .. }) {
+                    return self.err("MK-E04", "negating a point or instant".into());
+                }
+                if !matches!(t, Type::Quantity { .. } | Type::Vector { .. }) {
+                    return self.err("MK-E01", format!("cannot negate {}", show(&t)));
+                }
+                Some((CExpr::Neg(Box::new(c)), t))
+            }
+            Expr::Not { not } => {
+                let c = self.expect(not, &Type::Boolean)?;
+                Some((CExpr::Not(Box::new(c)), Type::Boolean))
+            }
+            Expr::Norm { norm } => {
+                let (c, t) = self.expr(norm, None)?;
+                match t {
+                    Type::Quantity { dim } | Type::Vector { dim, .. } => Some((CExpr::Norm(Box::new(c)), Type::Quantity { dim })),
+                    other => self.err("MK-E01", format!("no norm of {}", show(&other))),
+                }
+            }
+            Expr::Bin { bin, l, r } => self.binary(*bin, l, r, exp),
+            Expr::Call { call, args } => self.call(*call, args),
+            Expr::Apply { apply, args } => {
+                let (fc, ft) = self.expr(apply, None)?;
+                let (params, result) = match ft {
+                    Type::Function { params, result } => (params, result),
+                    other => return self.err("MK-E01", format!("{} is not a function", show(&other))),
+                };
+                if params.len() != args.len() {
+                    return self.err("MK-E01", format!("expected {} arguments, found {}", params.len(), args.len()));
+                }
+                let mut cargs = vec![];
+                for (a, p) in args.iter().zip(params.iter()) {
+                    cargs.push(self.expect(a, p)?);
+                }
+                Some((CExpr::Apply(Box::new(fc), cargs), *result))
+            }
+            Expr::If { r#if, then, r#else } => {
+                let k = self.expect(r#if, &Type::Boolean)?;
+                let (a, b, t) = if exp.is_none() && Self::needs_ctx(then) && !Self::needs_ctx(r#else) {
+                    let (b, tb) = self.expr(r#else, None)?;
+                    let a = self.expect(then, &tb)?;
+                    (a, b, tb)
+                } else {
+                    let (a, ta) = self.expr(then, exp)?;
+                    let b = self.expect(r#else, &ta)?;
+                    (a, b, ta)
+                };
+                Some((CExpr::If(Box::new(k), Box::new(a), Box::new(b)), t))
+            }
+            Expr::Tuple { tuple } => {
+                if let Some(Type::Vector { space, dim }) = exp {
+                    if self.space_dim(space) == Some(tuple.len()) {
+                        let want = Type::Quantity { dim: *dim };
+                        let mut items = vec![];
+                        for it in tuple {
+                            items.push(self.expect(it, &want)?);
+                        }
+                        return Some((CExpr::MakeVec(items), exp.unwrap().clone()));
+                    }
+                }
+                let mut items = vec![];
+                let mut types = vec![];
+                for it in tuple {
+                    let (c, t) = self.expr(it, None)?;
+                    items.push(c);
+                    types.push(t);
+                }
+                Some((CExpr::MakeTuple(items), Type::Tuple { items: types }))
+            }
+            Expr::Comp { comp, axis } => {
+                let (c, t) = self.expr(comp, None)?;
+                let rt = match &t {
+                    Type::Vector { space, dim } if Some(*axis) < self.space_dim(space) => Type::Quantity { dim: *dim },
+                    Type::Point { space } if Some(*axis) < self.space_dim(space) => Type::Quantity { dim: Dim::length() },
+                    Type::Tuple { items } if *axis < items.len() => items[*axis].clone(),
+                    other => return self.err("MK-E01", format!("no component {axis} of {}", show(other))),
+                };
+                Some((CExpr::Comp(Box::new(c), *axis), rt))
+            }
+            Expr::Lambda { lambda } => {
+                self.lambda.push(lambda.params.clone());
+                let want = match exp {
+                    Some(Type::Function { result, .. }) => Some((**result).clone()),
+                    _ => None,
+                };
+                let body = match &want {
+                    Some(w) => self.expect(&lambda.body, w).map(|c| (c, w.clone())),
+                    None => self.expr(&lambda.body, None),
+                };
+                self.lambda.pop();
+                let (bc, bt) = body?;
+                Some((CExpr::Lambda(Rc::new(bc)), Type::Function { params: lambda.params.clone(), result: Box::new(bt) }))
+            }
+            Expr::Otherwise { otherwise, default } => {
+                let (a, t) = self.expr(otherwise, exp)?;
+                let b = self.expect(default, &t)?;
+                Some((CExpr::Otherwise(Box::new(a), Box::new(b)), t))
+            }
+        }
+    }
+
+    fn num(&mut self, v: f64, unit: Option<&Unit>, exp: Option<&Type>) -> Typed {
+        if let Some(u) = unit {
+            let si = v * u.scale + u.offset;
+            return Some((CExpr::Const(Value::Num(si)), Type::Quantity { dim: u.dim }));
+        }
+        if v == 0.0 {
+            // MK-3.8 and D-030: `0` adopts the required dimension, or the zero vector.
+            return match exp {
+                Some(Type::Quantity { dim }) => Some((CExpr::Const(Value::Num(0.0)), Type::Quantity { dim: *dim })),
+                Some(t @ Type::Vector { space, .. }) => {
+                    let n = self.space_dim(space).unwrap_or(2);
+                    Some((CExpr::Const(Value::Vec(Arr::zeros(n))), t.clone()))
+                }
+                _ => Some((CExpr::Const(Value::Num(0.0)), Type::real())),
+            };
+        }
+        if let Some(t) = exp {
+            if is_dimensioned(t) {
+                return self.err("MK-E03", format!("bare literal {v} where {} is required", show(t)));
+            }
+        }
+        Some((CExpr::Const(Value::Num(v)), Type::real()))
+    }
+
+    /// Checks two operands, the context-free one first, passing its type to the other.
+    fn pair(
+        &mut self,
+        l: &Expr,
+        r: &Expr,
+        exp_l: Option<&Type>,
+        other: impl Fn(&Type) -> Option<Type>,
+    ) -> Option<((CExpr, Type), (CExpr, Type))> {
+        if Self::needs_ctx(l) && !Self::needs_ctx(r) {
+            let rt = self.expr(r, None)?;
+            let want = other(&rt.1).or_else(|| exp_l.cloned());
+            let lt = self.expr(l, want.as_ref())?;
+            Some((lt, rt))
+        } else {
+            let lt = self.expr(l, if Self::needs_ctx(l) { exp_l } else { exp_l.filter(|t| !matches!(t, Type::Point { .. })) })?;
+            let want = other(&lt.1);
+            let rt = self.expr(r, want.as_ref())?;
+            Some((lt, rt))
+        }
+    }
+
+    fn binary(&mut self, op: BinOp, l: &Expr, r: &Expr, exp: Option<&Type>) -> Typed {
+        use Type::*;
+        let b = |op: BinOp, a: CExpr, c: CExpr| CExpr::Bin(op, Box::new(a), Box::new(c));
+        match op {
+            BinOp::Add | BinOp::Sub => {
+                let ((lc, lt), (rc, rt)) = self.pair(l, r, exp, |t| match t {
+                    Point { space } => Some(Vector { space: space.clone(), dim: Dim::length() }),
+                    Instant { dim } => Some(Quantity { dim: *dim }),
+                    t => Some(t.clone()),
+                })?;
+                let rt_ = match (op, &lt, &rt) {
+                    (_, Quantity { dim: a }, Quantity { dim: c }) if a == c => Quantity { dim: *a },
+                    (_, Vector { space: s1, dim: a }, Vector { space: s2, dim: c }) if s1 == s2 && a == c => lt.clone(),
+                    (_, Vector { space: s1, .. }, Vector { space: s2, .. }) if s1 != s2 => {
+                        return self.err("MK-E05", format!("{} and {} are in different spaces", show(&lt), show(&rt)))
+                    }
+                    (_, Point { space: s1 }, Vector { space: s2, dim }) if s1 == s2 && *dim == Dim::length() => lt.clone(),
+                    (BinOp::Add, Vector { space: s2, dim }, Point { space: s1 }) if s1 == s2 && *dim == Dim::length() => rt.clone(),
+                    (BinOp::Sub, Point { space: s1 }, Point { space: s2 }) if s1 == s2 => Vector { space: s1.clone(), dim: Dim::length() },
+                    (_, Point { space: s1 }, Point { space: s2 } | Vector { space: s2, .. }) if s1 != s2 => {
+                        return self.err("MK-E05", format!("{} and {} are in different spaces", show(&lt), show(&rt)))
+                    }
+                    (BinOp::Add, Point { .. }, Point { .. }) => return self.err("MK-E04", "adding two points".into()),
+                    (_, Point { .. }, Vector { .. }) | (_, Vector { .. }, Point { .. }) => {
+                        return self.err("MK-E04", format!("point combined with {}, which is not a displacement", show(&rt)))
+                    }
+                    (_, Instant { dim: a }, Quantity { dim: c }) if a == c => lt.clone(),
+                    (BinOp::Sub, Instant { dim: a }, Instant { dim: c }) if a == c => Quantity { dim: *a },
+                    (BinOp::Add, Instant { .. }, Instant { .. }) => return self.err("MK-E04", "adding two instants".into()),
+                    (_, Tuple { .. }, Vector { .. } | Point { .. }) | (_, Vector { .. } | Point { .. }, Tuple { .. }) => {
+                        return self.err("MK-E21", "a tuple combined with a vector without an expected vector type".into())
+                    }
+                    _ => return self.err("MK-E01", format!("cannot {} {} and {}", if op == BinOp::Add { "add" } else { "subtract" }, show(&lt), show(&rt))),
+                };
+                Some((b(op, lc, rc), rt_))
+            }
+            BinOp::Mul | BinOp::Div => {
+                // Only a vector-valued side takes an expected type (a tuple scaled by a quantity).
+                let vec_exp = |scalar: &Type| -> Option<Type> {
+                    match (exp, scalar) {
+                        (Some(Vector { space, dim }), Quantity { dim: q }) => Some(Vector {
+                            space: space.clone(),
+                            dim: if op == BinOp::Mul { dim.div(q) } else { dim.mul(q) },
+                        }),
+                        _ => None,
+                    }
+                };
+                let (lt_, rt_) = if matches!(l, Expr::Tuple { .. }) || (Self::needs_ctx(l) && !Self::needs_ctx(r) && !matches!(l, Expr::Num { .. })) {
+                    let rt = self.expr(r, None)?;
+                    let lt = self.expr(l, vec_exp(&rt.1).as_ref())?;
+                    (lt, rt)
+                } else {
+                    let lt = self.expr(l, None)?;
+                    let want = if matches!(r, Expr::Tuple { .. } | Expr::If { .. }) && op == BinOp::Mul { vec_exp(&lt.1) } else { None };
+                    let rt = self.expr(r, want.as_ref())?;
+                    (lt, rt)
+                };
+                let ((lc, lt), (rc, rt)) = (lt_, rt_);
+                let t = match (op, &lt, &rt) {
+                    (BinOp::Mul, Quantity { dim: a }, Quantity { dim: c }) => Quantity { dim: a.mul(c) },
+                    (BinOp::Div, Quantity { dim: a }, Quantity { dim: c }) => Quantity { dim: a.div(c) },
+                    (BinOp::Mul, Quantity { dim: a }, Vector { space, dim }) | (BinOp::Mul, Vector { space, dim }, Quantity { dim: a }) => {
+                        Vector { space: space.clone(), dim: a.mul(dim) }
+                    }
+                    (BinOp::Div, Vector { space, dim }, Quantity { dim: a }) => Vector { space: space.clone(), dim: dim.div(a) },
+                    (_, Point { .. }, _) | (_, _, Point { .. }) => return self.err("MK-E04", "scaling a point".into()),
+                    (_, Instant { .. }, _) | (_, _, Instant { .. }) => return self.err("MK-E04", "scaling an instant".into()),
+                    _ => return self.err("MK-E01", format!("cannot multiply or divide {} and {}", show(&lt), show(&rt))),
+                };
+                Some((b(op, lc, rc), t))
+            }
+            BinOp::Pow => {
+                let (lc, lt) = self.expr(l, None)?;
+                let dim = match &lt {
+                    Quantity { dim } => *dim,
+                    other => return self.err("MK-E01", format!("cannot raise {} to a power", show(other))),
+                };
+                if dim.is_none() {
+                    let rc = self.expect(r, &Type::real())?;
+                    return Some((b(op, lc, rc), Type::real()));
+                }
+                let p = match const_number(r) {
+                    Some(p) => p,
+                    None => return self.err("MK-E01", "the exponent of a dimensioned quantity must be a constant".into()),
+                };
+                let ratio = to_ratio(p);
+                let ratio = match ratio {
+                    Some(q) => q,
+                    None => return self.err("MK-E01", format!("exponent {p} is not a simple fraction")),
+                };
+                Some((CExpr::Powi(Box::new(lc), p), Quantity { dim: dim.pow(ratio) }))
+            }
+            BinOp::And | BinOp::Or => {
+                let lc = self.expect(l, &Type::Boolean)?;
+                let rc = self.expect(r, &Type::Boolean)?;
+                Some((b(op, lc, rc), Type::Boolean))
+            }
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                let ((lc, lt), (rc, rt)) = self.pair(l, r, None, |t| Some(t.clone()))?;
+                let ordered = !matches!(op, BinOp::Eq | BinOp::Ne);
+                let ok = match (&lt, &rt) {
+                    (Quantity { dim: a }, Quantity { dim: c }) => a == c,
+                    (Instant { dim: a }, Instant { dim: c }) => a == c,
+                    (Instant { .. }, Quantity { .. }) | (Quantity { .. }, Instant { .. }) => {
+                        return self.err("MK-E04", "comparing an instant with a quantity".into())
+                    }
+                    (a, c) if !ordered => same_type(a, c),
+                    _ => false,
+                };
+                if !ok {
+                    return self.err("MK-E01", format!("cannot compare {} and {}", show(&lt), show(&rt)));
+                }
+                Some((b(op, lc, rc), Type::Boolean))
+            }
+        }
+    }
+
+    fn call(&mut self, f: Func, args: &[Expr]) -> Typed {
+        let n = if matches!(f, Func::Min | Func::Max | Func::Atan2) { 2 } else { 1 };
+        if args.len() != n {
+            return self.err("MK-E01", format!("{f:?} takes {n} arguments"));
+        }
+        let (a, at) = self.expr(&args[0], None)?;
+        let dim = match at {
+            Type::Quantity { dim } => dim,
+            other => return self.err("MK-E01", format!("{f:?} of {}", show(&other))),
+        };
+        match f {
+            Func::Sin | Func::Cos | Func::Tan | Func::Exp | Func::Log => {
+                if !dim.is_none() {
+                    return self.err("MK-E02", format!("{f:?} of a quantity with dimension {dim}"));
+                }
+                Some((CExpr::Call(f, vec![a]), Type::real()))
+            }
+            Func::Sqrt => Some((CExpr::Call(f, vec![a]), Type::Quantity { dim: dim.pow(Ratio::new(1, 2)) })),
+            Func::Abs => Some((CExpr::Call(f, vec![a]), Type::Quantity { dim })),
+            Func::Min | Func::Max | Func::Atan2 => {
+                let bc = self.expect(&args[1], &Type::Quantity { dim })?;
+                let rt = if f == Func::Atan2 { Type::real() } else { Type::Quantity { dim } };
+                Some((CExpr::Call(f, vec![a, bc]), rt))
+            }
+        }
+    }
+}
+
+/// The type of `der(x)` for a continuous state of type `t` (MK-14.5).
+fn derivative_type(t: &Type) -> Option<Type> {
+    let inv_t = Dim::time().inv();
+    Some(match t {
+        Type::Quantity { dim } => Type::Quantity { dim: dim.mul(&inv_t) },
+        Type::Vector { space, dim } => Type::Vector { space: space.clone(), dim: dim.mul(&inv_t) },
+        Type::Point { space } => Type::Vector { space: space.clone(), dim: Dim::length().mul(&inv_t) },
+        _ => return None,
+    })
+}
+
+fn const_number(e: &Expr) -> Option<f64> {
+    match e {
+        Expr::Num { num, unit: None } => Some(*num),
+        Expr::Neg { neg } => const_number(neg).map(|x| -x),
+        Expr::Bin { bin: BinOp::Div, l, r } => Some(const_number(l)? / const_number(r)?),
+        _ => None,
+    }
+}
+
+fn to_ratio(p: f64) -> Option<Ratio> {
+    for d in 1..=12 {
+        let n = p * d as f64;
+        if (n - n.round()).abs() < 1e-12 {
+            return Some(Ratio::new(n.round() as i32, d));
+        }
+    }
+    None
+}
+
+pub fn show(t: &Type) -> String {
+    match t {
+        Type::Boolean => "Boolean".into(),
+        Type::Integer => "Integer".into(),
+        Type::Quantity { dim } if dim.is_none() => "Real".into(),
+        Type::Quantity { dim } => format!("Quantity<{dim}>"),
+        Type::Instant { dim } => format!("Instant<{dim}>"),
+        Type::Point { space } => format!("Point<{space}>"),
+        Type::Vector { space, dim } => format!("Vector<{space}, {dim}>"),
+        Type::Tuple { items } => format!("Tuple<{}>", items.iter().map(show).collect::<Vec<_>>().join(", ")),
+        Type::Enum { cases } => format!("enum {{{}}}", cases.join(", ")),
+        Type::Function { params, result } => format!("({}) -> {}", params.iter().map(show).collect::<Vec<_>>().join(", "), show(result)),
+    }
+}
+
+// ------------------------------------------------------------------ model checking
+
+/// Checks a model and compiles it (MK section 18). Returns every diagnostic found.
+pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagnostic>> {
+    let mut diags = vec![];
+    let mut index = HashMap::new();
+    for (i, b) in model.bindings.iter().enumerate() {
+        if index.insert(b.id.clone(), i).is_some() {
+            diags.push(Diagnostic { code: "MK-E22", message: format!("binding `{}` defined twice", b.name), element: b.id.clone() });
+        }
+    }
+    let scope = Scope { spaces, model, index: &index };
+
+    // Bindings: initial definitions and definitions.
+    let mut cbindings = vec![];
+    for b in &model.bindings {
+        let mut tc = Tc::new(&scope, &mut diags, &b.id);
+        let init = match (&b.init, b.role) {
+            (Some(e), r) if r.is_stored() => tc.expect(e, &b.ty),
+            (None, Role::Input) => None,
+            (None, r) if r.is_stored() => {
+                tc.err("MK-E00", format!("stored binding `{}` has no initial definition (MK-6.7)", b.name));
+                None
+            }
+            _ => None,
+        };
+        let def = match (&b.def, b.role) {
+            (Some(e), Role::Derived) => tc.expect(e, &b.ty),
+            (None, Role::Derived) => {
+                tc.err("MK-E00", format!("derived binding `{}` has no definition", b.name));
+                None
+            }
+            _ => None,
+        };
+        // MK-10.7 (D-029): a stored function value must be closed.
+        if b.role.is_stored() && matches!(b.ty, Type::Function { .. }) {
+            if let Some(e) = &b.init {
+                if !e.refs().is_empty() {
+                    tc.err("MK-E20", format!("stored function `{}` reads bindings", b.name));
+                }
+            }
+        }
+        cbindings.push(CBinding {
+            id: b.id.clone(),
+            name: b.name.clone(),
+            role: b.role,
+            ty: b.ty.clone(),
+            init,
+            def,
+            intervenable: b.is_intervenable(),
+        });
+    }
+
+    // Continuous state layout.
+    let mut cont = vec![];
+    let mut offset = 0;
+    for (i, b) in model.bindings.iter().enumerate() {
+        if b.role != Role::Continuous {
+            continue;
+        }
+        let len = match &b.ty {
+            Type::Quantity { .. } => 1,
+            Type::Vector { space, .. } | Type::Point { space } => spaces.iter().find(|s| &s.id == space).map(|s| s.dimension as usize).unwrap_or(0),
+            _ => {
+                diags.push(Diagnostic { code: "MK-E01", message: format!("continuous state `{}` must be a quantity, vector or point", b.name), element: b.id.clone() });
+                0
+            }
+        };
+        cont.push(ContState { binding: i, offset, len, point: matches!(b.ty, Type::Point { .. }), flows: FlowSet::None });
+        offset += len;
+    }
+
+    // Flows (MK section 14).
+    for f in &model.flows {
+        let mut tc = Tc::new(&scope, &mut diags, &f.id);
+        let bi = match index.get(&f.target) {
+            Some(&i) => i,
+            None => {
+                tc.err("MK-E00", format!("flow target `{}` is unknown", f.target));
+                continue;
+            }
+        };
+        let b = &model.bindings[bi];
+        if b.role != Role::Continuous {
+            tc.err("MK-E06", format!("flow targets `{}`, which is not continuous state", b.name));
+            continue;
+        }
+        let want = match derivative_type(&b.ty) {
+            Some(t) => t,
+            None => continue,
+        };
+        let compiled = tc.expect(&f.expr, &want);
+        flow_conditions(&scope, &mut diags, f);
+        let Some(c) = compiled else { continue };
+        let cs = cont.iter_mut().find(|c| c.binding == bi).unwrap();
+        cs.flows = match (std::mem::replace(&mut cs.flows, FlowSet::None), f.kind) {
+            (FlowSet::None, FlowKind::Define) => FlowSet::Define(c),
+            (FlowSet::None, FlowKind::Contribute) => FlowSet::Sum(vec![c]),
+            (FlowSet::Sum(mut v), FlowKind::Contribute) => {
+                v.push(c);
+                FlowSet::Sum(v)
+            }
+            (old, kind) => {
+                let (code, msg) = match (&old, kind) {
+                    (FlowSet::Define(_), FlowKind::Define) => ("MK-E22", format!("der({}) defined by two flows", b.name)),
+                    _ => ("MK-E10", format!("der({}) is both defined and contributed to", b.name)),
+                };
+                diags.push(Diagnostic { code, message: msg, element: f.id.clone() });
+                old
+            }
+        };
+    }
+
+    // Events (MK sections 15, 16).
+    let mut cevents = vec![];
+    for e in &model.events {
+        let mut tc = Tc::new(&scope, &mut diags, &e.id);
+        let trigger = match &e.trigger {
+            Trigger::Rising { guard } | Trigger::Falling { guard } | Trigger::Crossing { guard } => {
+                let dir = match &e.trigger {
+                    Trigger::Rising { .. } => Dir::Rising,
+                    Trigger::Falling { .. } => Dir::Falling,
+                    _ => Dir::Either,
+                };
+                match tc.expr(guard, None) {
+                    Some((c, Type::Quantity { .. })) => Some(CTrigger::Crossing { dir, guard: c }),
+                    Some((_, t)) => {
+                        tc.err("MK-E01", format!("a crossing guard must be a real quantity, found {}", show(&t)));
+                        None
+                    }
+                    None => None,
+                }
+            }
+            Trigger::Level { .. } => {
+                tc.err("MK-E13", "a level condition used as a continuous trigger; use a crossing (MK-15.4)".into());
+                None
+            }
+            Trigger::At { time } => tc.expect(time, &Type::Instant { dim: Dim::time() }).map(CTrigger::At),
+            Trigger::Every { period, from } => {
+                let p = tc.expect(period, &Type::Quantity { dim: Dim::time() });
+                let f = tc.expect(from, &Type::Instant { dim: Dim::time() });
+                match (p, f) {
+                    (Some(p), Some(f)) => Some(CTrigger::Every { period: p, from: f }),
+                    _ => None,
+                }
+            }
+            Trigger::On { event } => match model.events.iter().position(|x| &x.id == event) {
+                Some(i) => Some(CTrigger::On(i)),
+                None => {
+                    tc.err("MK-E00", format!("unknown event `{event}`"));
+                    None
+                }
+            },
+            Trigger::Start => Some(CTrigger::Start),
+            Trigger::Request => Some(CTrigger::Request),
+            Trigger::Input { binding } => index.get(binding).map(|&i| CTrigger::Input(i)),
+        };
+        let enable = e.enable.as_ref().and_then(|x| tc.expect(x, &Type::Boolean));
+        let handler = check_ops(&mut tc, model, &index, &e.handler, false);
+        let zeno = match &e.zeno {
+            None => None,
+            Some(z) => Some(CZeno {
+                settle: match &z.policy {
+                    ZenoPolicy::Stop => None,
+                    ZenoPolicy::Settle { ops } => Some(check_ops(&mut tc, model, &index, ops, false)),
+                },
+                eps: z.eps,
+                n: z.n,
+                window: z.window,
+            }),
+        };
+        cevents.push(CEvent { id: e.id.clone(), name: e.name.clone(), trigger, enable, handler, zeno });
+    }
+    // MK-15.11, MK-15.12 with D-038: self-retriggering crossing events need a Zeno policy.
+    for e in &model.events {
+        let guard = match &e.trigger {
+            Trigger::Rising { guard } | Trigger::Falling { guard } | Trigger::Crossing { guard } => guard,
+            _ => continue,
+        };
+        if e.zeno.is_some() || e.handler.is_empty() {
+            continue;
+        }
+        if self_retriggering(model, &index, guard, &e.handler) {
+            diags.push(Diagnostic {
+                code: "MK-E16",
+                message: format!("event `{}` writes state its guard depends on and declares no Zeno policy", e.name),
+                element: e.id.clone(),
+            });
+        }
+    }
+
+    // Equations (MK section 11).
+    let mut cequations = vec![];
+    for q in &model.equations {
+        let mut tc = Tc::new(&scope, &mut diags, &q.id);
+        let Some((l, lt)) = tc.expr(&q.lhs, None) else { continue };
+        let Some(r) = tc.expect(&q.rhs, &lt) else { continue };
+        let tol = match (&q.role, &q.tol) {
+            (EquationRole::Check, Some(t)) => {
+                let want = match &lt {
+                    Type::Vector { dim, .. } => Type::Quantity { dim: *dim },
+                    other => other.clone(),
+                };
+                tc.expect(t, &want).and_then(|c| const_value(&c))
+            }
+            _ => None,
+        };
+        cequations.push(CEquation { id: q.id.clone(), name: q.name.clone(), lhs: l, rhs: r, check_tol: tol, check: q.role == EquationRole::Check });
+    }
+
+    // Constraints (MK section 12).
+    let mut cconstraints = vec![];
+    for k in &model.constraints {
+        let mut tc = Tc::new(&scope, &mut diags, &k.id);
+        let (cond, parts) = match (&k.tol, &k.cond) {
+            (Some(tol), Expr::Bin { bin: BinOp::Eq, l, r }) => {
+                let Some((lc, lt)) = tc.expr(l, None) else { continue };
+                let Some(rc) = tc.expect(r, &lt) else { continue };
+                let want = match &lt {
+                    Type::Vector { dim, .. } => Type::Quantity { dim: *dim },
+                    other => other.clone(),
+                };
+                let Some(t) = tc.expect(tol, &want).and_then(|c| const_value(&c)) else { continue };
+                (None, Some((lc, rc, t)))
+            }
+            (Some(_), _) => {
+                tc.err("MK-E01", "a tolerance applies only to an equality constraint".into());
+                continue;
+            }
+            (None, c) => (tc.expect(c, &Type::Boolean), None),
+        };
+        if cond.is_none() && parts.is_none() {
+            continue;
+        }
+        cconstraints.push(CConstraint { id: k.id.clone(), name: k.name.clone(), cond, within: parts, policy: k.policy });
+    }
+
+    // Dependency analysis (MK section 13).
+    let derived_order = order_derived(model, &index, &mut diags);
+    let init_order = order_init(model, &index, &mut diags);
+
+    if !diags.is_empty() {
+        return Err(diags);
+    }
+    let is_static = model.flows.is_empty() && model.events.iter().all(|e| matches!(e.trigger, Trigger::Request));
+    Ok(CModel {
+        ir: model.clone(),
+        spaces: spaces.to_vec(),
+        index,
+        bindings: cbindings,
+        derived_order,
+        init_order,
+        cont,
+        events: cevents,
+        equations: cequations,
+        constraints: cconstraints,
+        is_static,
+    })
+}
+
+fn const_value(c: &CExpr) -> Option<f64> {
+    match c {
+        CExpr::Const(Value::Num(x)) => Some(*x),
+        _ => None,
+    }
+}
+
+fn check_ops(tc: &mut Tc, model: &Model, index: &HashMap<Id, usize>, ops: &[Op], intervention: bool) -> Vec<COp> {
+    let mut out = vec![];
+    let mut targets: Vec<(usize, Option<usize>)> = vec![];
+    for op in ops {
+        match op {
+            Op::Set { target, value } | Op::Contribute { target, value } => {
+                let Some(&bi) = index.get(&target.binding) else {
+                    tc.err("MK-E00", format!("unknown target `{}`", target.binding));
+                    continue;
+                };
+                let b = &model.bindings[bi];
+                match b.role {
+                    Role::Derived | Role::Constant | Role::Input => {
+                        tc.err("MK-E06", format!("operation targets `{}`, a {:?} binding", b.name, b.role));
+                        continue;
+                    }
+                    Role::Parameter if !intervention => {
+                        tc.err("MK-E08", format!("handler sets the parameter `{}`", b.name));
+                        continue;
+                    }
+                    _ => {}
+                }
+                if matches!(op, Op::Contribute { .. }) {
+                    tc.err("MK-E11", format!("contribution to `{}`, which has no combination", b.name));
+                    continue;
+                }
+                let want = match (target.component, &b.ty) {
+                    (None, t) => t.clone(),
+                    (Some(_), Type::Vector { dim, .. }) => Type::Quantity { dim: *dim },
+                    (Some(_), Type::Point { .. }) => Type::Quantity { dim: Dim::length() },
+                    (Some(_), t) => {
+                        tc.err("MK-E01", format!("no component of {}", show(t)));
+                        continue;
+                    }
+                };
+                let overlap = targets.iter().any(|(ob, oc)| *ob == bi && (oc.is_none() || target.component.is_none() || *oc == target.component));
+                if overlap {
+                    tc.err("MK-E19", format!("two operations on `{}` in one handler", b.name));
+                    continue;
+                }
+                targets.push((bi, target.component));
+                if let Some(v) = tc.expect(value, &want) {
+                    out.push(COp::Set { binding: bi, component: target.component, value: v });
+                }
+            }
+            Op::Emit { event, .. } => match model.events.iter().position(|e| &e.id == event) {
+                Some(i) => out.push(COp::Emit { event: i }),
+                None => {
+                    tc.err("MK-E00", format!("unknown event `{event}`"));
+                }
+            },
+        }
+    }
+    out
+}
+
+/// Checks operations submitted as an intervention against a compiled model.
+pub fn check_intervention(cm: &CModel, ops: &[Op]) -> Result<Vec<COp>, Vec<Diagnostic>> {
+    let mut diags = vec![];
+    for op in ops {
+        if let Op::Set { target, .. } = op {
+            match cm.index.get(&target.binding) {
+                Some(&i) if !cm.bindings[i].intervenable => diags.push(Diagnostic {
+                    code: "RC-11.4",
+                    message: format!("`{}` is not intervenable (D-023)", cm.bindings[i].name),
+                    element: target.binding.clone(),
+                }),
+                _ => {}
+            }
+        }
+    }
+    if !diags.is_empty() {
+        return Err(diags);
+    }
+    let scope = Scope { spaces: &cm.spaces, model: &cm.ir, index: &cm.index };
+    let mut tc = Tc::new(&scope, &mut diags, "intervention");
+    let out = check_ops(&mut tc, &cm.ir, &cm.index, ops, true);
+    if diags.is_empty() {
+        Ok(out)
+    } else {
+        Err(diags)
+    }
+}
+
+/// Compiles an expression over a checked model (used by observations and expectations).
+pub fn compile_expr(cm: &CModel, e: &Expr, expected: Option<&Type>) -> Result<(CExpr, Type), Vec<Diagnostic>> {
+    let mut diags = vec![];
+    let scope = Scope { spaces: &cm.spaces, model: &cm.ir, index: &cm.index };
+    let mut tc = Tc::new(&scope, &mut diags, "expression");
+    let r = match expected {
+        Some(t) => tc.expect(e, t).map(|c| (c, t.clone())),
+        None => tc.expr(e, None),
+    };
+    match r {
+        Some(x) if diags.is_empty() => Ok(x),
+        _ => Err(diags),
+    }
+}
+
+/// MK-14.12: conditions in flows depend only on discrete state, parameters and constants.
+fn flow_conditions(scope: &Scope, diags: &mut Vec<Diagnostic>, f: &Flow) {
+    let mut bad = None;
+    f.expr.walk(&mut |e| {
+        if let Expr::If { r#if, .. } = e {
+            let mut uses_time = false;
+            r#if.walk(&mut |x| {
+                if matches!(x, Expr::Builtin { builtin: Builtin::T | Builtin::Elapsed }) {
+                    uses_time = true;
+                }
+            });
+            let reads = closure_derived(scope.model, scope.index, &r#if.refs());
+            let cont = reads.iter().find(|i| scope.model.bindings[**i].role == Role::Continuous);
+            if uses_time {
+                bad = Some("t".to_string());
+            } else if let Some(i) = cont {
+                bad = Some(scope.model.bindings[*i].name.clone());
+            }
+        }
+    });
+    if let Some(name) = bad {
+        diags.push(Diagnostic {
+            code: "MK-E12",
+            message: format!("a flow condition depends on `{name}` (continuous state or time); use an event that sets discrete state"),
+            element: f.id.clone(),
+        });
+    }
+}
+
+/// Bindings read by `refs`, following derived definitions (not flows).
+fn closure_derived(model: &Model, index: &HashMap<Id, usize>, refs: &[Id]) -> BTreeSet<usize> {
+    let mut seen = BTreeSet::new();
+    let mut stack: Vec<usize> = refs.iter().filter_map(|r| index.get(r).copied()).collect();
+    while let Some(i) = stack.pop() {
+        if !seen.insert(i) {
+            continue;
+        }
+        let b = &model.bindings[i];
+        if b.role == Role::Derived {
+            if let Some(d) = &b.def {
+                stack.extend(d.refs().iter().filter_map(|r| index.get(r).copied()));
+            }
+        }
+    }
+    seen
+}
+
+/// D-038: an event is self-retriggering if its handler writes a binding that its guard
+/// depends on, through derived bindings and through the flows of continuous state, where
+/// the flows are specialized on the discrete values the handler sets to constants.
+fn self_retriggering(model: &Model, index: &HashMap<Id, usize>, guard: &Expr, handler: &[Op]) -> bool {
+    let mut written = BTreeSet::new();
+    let mut consts: HashMap<Id, Expr> = HashMap::new();
+    for op in handler {
+        if let Op::Set { target, value } = op {
+            if let Some(&i) = index.get(&target.binding) {
+                written.insert(i);
+                if model.bindings[i].role == Role::Discrete && matches!(value, Expr::Bool { .. } | Expr::Num { .. } | Expr::Case { .. }) {
+                    consts.insert(target.binding.clone(), value.clone());
+                }
+            }
+        }
+    }
+    let mut seen = BTreeSet::new();
+    let mut stack: Vec<usize> = guard.refs().iter().filter_map(|r| index.get(r).copied()).collect();
+    while let Some(i) = stack.pop() {
+        if !seen.insert(i) {
+            continue;
+        }
+        let b = &model.bindings[i];
+        match b.role {
+            Role::Derived => {
+                if let Some(d) = &b.def {
+                    stack.extend(d.refs().iter().filter_map(|r| index.get(r).copied()));
+                }
+            }
+            Role::Continuous => {
+                for f in model.flows.iter().filter(|f| f.target == b.id) {
+                    let s = specialize(&f.expr, &consts);
+                    stack.extend(s.refs().iter().filter_map(|r| index.get(r).copied()));
+                }
+            }
+            _ => {}
+        }
+    }
+    seen.intersection(&written).next().is_some()
+}
+
+/// Replaces conditionals whose condition is decided by `consts` with the chosen branch.
+fn specialize(e: &Expr, consts: &HashMap<Id, Expr>) -> Expr {
+    fn decide(c: &Expr, consts: &HashMap<Id, Expr>) -> Option<bool> {
+        match c {
+            Expr::Ref { r#ref } => match consts.get(r#ref) {
+                Some(Expr::Bool { bool }) => Some(*bool),
+                _ => None,
+            },
+            Expr::Not { not } => decide(not, consts).map(|b| !b),
+            Expr::Bin { bin: BinOp::Eq, l, r } => match (&**l, &**r) {
+                (Expr::Ref { r#ref }, v) | (v, Expr::Ref { r#ref }) => consts.get(r#ref).map(|c| c == v),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    match e {
+        Expr::If { r#if, then, r#else } => match decide(r#if, consts) {
+            Some(true) => specialize(then, consts),
+            Some(false) => specialize(r#else, consts),
+            None => Expr::If {
+                r#if: r#if.clone(),
+                then: Box::new(specialize(then, consts)),
+                r#else: Box::new(specialize(r#else, consts)),
+            },
+        },
+        Expr::Bin { bin, l, r } => Expr::bin(*bin, specialize(l, consts), specialize(r, consts)),
+        Expr::Neg { neg } => Expr::Neg { neg: Box::new(specialize(neg, consts)) },
+        other => other.clone(),
+    }
+}
+
+fn topo(n: usize, deps: &[Vec<usize>], nodes: &[usize]) -> Result<Vec<usize>, Vec<usize>> {
+    // Kahn's algorithm with ties broken by identity order (MK-13.6).
+    let in_set: BTreeSet<usize> = nodes.iter().copied().collect();
+    let mut indeg = vec![0usize; n];
+    for &i in nodes {
+        indeg[i] = deps[i].iter().filter(|d| in_set.contains(d)).count();
+    }
+    let mut ready: BTreeSet<usize> = nodes.iter().copied().filter(|&i| indeg[i] == 0).collect();
+    let mut out = vec![];
+    while let Some(&i) = ready.iter().next() {
+        ready.remove(&i);
+        out.push(i);
+        for &j in nodes {
+            if deps[j].contains(&i) {
+                indeg[j] -= 1;
+                if indeg[j] == 0 {
+                    ready.insert(j);
+                }
+            }
+        }
+    }
+    if out.len() == nodes.len() {
+        Ok(out)
+    } else {
+        Err(nodes.iter().copied().filter(|i| !out.contains(i)).collect())
+    }
+}
+
+fn order_derived(model: &Model, index: &HashMap<Id, usize>, diags: &mut Vec<Diagnostic>) -> Vec<usize> {
+    let n = model.bindings.len();
+    let mut deps = vec![vec![]; n];
+    let mut nodes = vec![];
+    for (i, b) in model.bindings.iter().enumerate() {
+        if b.role == Role::Derived {
+            nodes.push(i);
+            if let Some(d) = &b.def {
+                deps[i] = d.refs().iter().filter_map(|r| index.get(r).copied()).filter(|&j| model.bindings[j].role == Role::Derived).collect();
+            }
+        }
+    }
+    match topo(n, &deps, &nodes) {
+        Ok(o) => o,
+        Err(cycle) => {
+            let names: Vec<_> = cycle.iter().map(|&i| model.bindings[i].name.clone()).collect();
+            diags.push(Diagnostic { code: "MK-E14", message: format!("algebraic loop among {}", names.join(", ")), element: model.id.clone() });
+            vec![]
+        }
+    }
+}
+
+fn order_init(model: &Model, index: &HashMap<Id, usize>, diags: &mut Vec<Diagnostic>) -> Vec<usize> {
+    let n = model.bindings.len();
+    let mut deps = vec![vec![]; n];
+    let mut nodes = vec![];
+    for (i, b) in model.bindings.iter().enumerate() {
+        let e = if b.role == Role::Derived { b.def.as_ref() } else { b.init.as_ref() };
+        nodes.push(i);
+        if let Some(e) = e {
+            deps[i] = e.refs().iter().filter_map(|r| index.get(r).copied()).collect();
+        }
+    }
+    match topo(n, &deps, &nodes) {
+        Ok(o) => o,
+        Err(cycle) => {
+            let names: Vec<_> = cycle.iter().map(|&i| model.bindings[i].name.clone()).collect();
+            diags.push(Diagnostic { code: "MK-E15", message: format!("cycle among initial definitions: {}", names.join(", ")), element: model.id.clone() });
+            vec![]
+        }
+    }
+}

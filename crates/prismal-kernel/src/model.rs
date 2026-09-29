@@ -1,0 +1,226 @@
+//! A checked, compiled model and the evaluation services the runtime uses.
+
+use crate::eval::{Arr, CExpr, Ctx, Status, Value};
+use prismal_ir::{Id, Model, Policy, Role, Space, Type};
+use std::collections::HashMap;
+
+#[derive(Clone, Debug)]
+pub struct CBinding {
+    pub id: Id,
+    pub name: String,
+    pub role: Role,
+    pub ty: Type,
+    pub init: Option<CExpr>,
+    pub def: Option<CExpr>,
+    pub intervenable: bool,
+}
+
+/// How a continuous state's rate is formed (MK-14.7 to MK-14.11).
+#[derive(Clone, Debug)]
+pub enum FlowSet {
+    /// No flow: the default sum of zero contributions (MK-14.11).
+    None,
+    Define(CExpr),
+    /// Contributions, combined by sum in identity order (MK-14.10).
+    Sum(Vec<CExpr>),
+}
+
+#[derive(Clone, Debug)]
+pub struct ContState {
+    pub binding: usize,
+    pub offset: usize,
+    pub len: usize,
+    pub point: bool,
+    pub flows: FlowSet,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dir {
+    Rising,
+    Falling,
+    Either,
+}
+
+#[derive(Clone, Debug)]
+pub enum CTrigger {
+    Crossing { dir: Dir, guard: CExpr },
+    At(CExpr),
+    Every { period: CExpr, from: CExpr },
+    On(usize),
+    Start,
+    Request,
+    Input(usize),
+}
+
+#[derive(Clone, Debug)]
+pub enum COp {
+    Set { binding: usize, component: Option<usize>, value: CExpr },
+    Emit { event: usize },
+}
+
+#[derive(Clone, Debug)]
+pub struct CZeno {
+    /// `None` is `stop`; `Some(ops)` is `settle { ops }`.
+    pub settle: Option<Vec<COp>>,
+    pub eps: Option<f64>,
+    pub n: Option<u32>,
+    pub window: Option<f64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CEvent {
+    pub id: Id,
+    pub name: String,
+    /// `None` only for invalid triggers, which never reach a compiled model.
+    pub trigger: Option<CTrigger>,
+    pub enable: Option<CExpr>,
+    pub handler: Vec<COp>,
+    pub zeno: Option<CZeno>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CEquation {
+    pub id: Id,
+    pub name: String,
+    pub lhs: CExpr,
+    pub rhs: CExpr,
+    pub check: bool,
+    pub check_tol: Option<f64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CConstraint {
+    pub id: Id,
+    pub name: String,
+    pub cond: Option<CExpr>,
+    /// An equality with tolerance: `|lhs - rhs| <= tol`.
+    pub within: Option<(CExpr, CExpr, f64)>,
+    pub policy: Policy,
+}
+
+/// A checked model, ready to run.
+#[derive(Clone, Debug)]
+pub struct CModel {
+    pub ir: Model,
+    pub spaces: Vec<Space>,
+    pub index: HashMap<Id, usize>,
+    pub bindings: Vec<CBinding>,
+    pub derived_order: Vec<usize>,
+    pub init_order: Vec<usize>,
+    pub cont: Vec<ContState>,
+    pub events: Vec<CEvent>,
+    pub equations: Vec<CEquation>,
+    pub constraints: Vec<CConstraint>,
+    /// MK-14.15: no flows and no events other than requests.
+    pub is_static: bool,
+}
+
+impl CModel {
+    pub fn n_y(&self) -> usize {
+        self.cont.iter().map(|c| c.len).sum()
+    }
+
+    pub fn idx(&self, id: &str) -> usize {
+        *self.index.get(id).unwrap_or_else(|| panic!("unknown binding {id}"))
+    }
+
+    pub fn event_idx(&self, id: &str) -> usize {
+        self.events.iter().position(|e| e.id == id).unwrap_or_else(|| panic!("unknown event {id}"))
+    }
+
+    /// Initial values (RC-5.1): parameters with overrides, then initial definitions and
+    /// derived bindings in dependency order.
+    pub fn initial(&self, overrides: &[(usize, Value)], t0: f64) -> Result<Vec<Value>, Status> {
+        let mut vals = vec![Value::Num(f64::NAN); self.bindings.len()];
+        for &i in &self.init_order {
+            let b = &self.bindings[i];
+            if let Some((_, v)) = overrides.iter().find(|(j, _)| *j == i) {
+                vals[i] = v.clone();
+                continue;
+            }
+            let e = match b.role {
+                Role::Derived => b.def.as_ref(),
+                Role::Input => return Err(Status::invalid(format!("input `{}` is not supported by this prototype", b.name))),
+                _ => b.init.as_ref(),
+            };
+            let v = {
+                let c = Ctx { vals: &vals, der: None, t: t0, t0, args: &[] };
+                e.expect("checked").eval(&c).map_err(|s| Status { kind: s.kind, cause: format!("initializing `{}`: {}", b.name, s.cause) })?
+            };
+            vals[i] = v;
+        }
+        Ok(vals)
+    }
+
+    /// Recomputes every derived binding from the stored values (MK-6.4).
+    pub fn update_derived(&self, vals: &mut [Value], t: f64, t0: f64) -> Result<(), Status> {
+        for &i in &self.derived_order {
+            let v = {
+                let c = Ctx { vals, der: None, t, t0, args: &[] };
+                self.bindings[i].def.as_ref().expect("checked").eval(&c)?
+            };
+            vals[i] = v;
+        }
+        Ok(())
+    }
+
+    /// Writes the continuous state vector `y` into the binding values.
+    pub fn load_y(&self, vals: &mut [Value], y: &[f64]) {
+        for c in &self.cont {
+            let s = &y[c.offset..c.offset + c.len];
+            vals[c.binding] = match &self.bindings[c.binding].ty {
+                Type::Quantity { .. } => Value::Num(s[0]),
+                Type::Point { .. } => Value::Point(Arr::from_slice(s)),
+                _ => Value::Vec(Arr::from_slice(s)),
+            };
+        }
+    }
+
+    /// Reads the continuous state vector `y` from the binding values.
+    pub fn store_y(&self, vals: &[Value], y: &mut [f64]) {
+        for c in &self.cont {
+            vals[c.binding].write_to(&mut y[c.offset..c.offset + c.len]);
+        }
+    }
+
+    /// The combined flow of every continuous state (MK-14.5), written into `dy`.
+    /// `vals` must hold current stored values and derived bindings.
+    pub fn rhs(&self, vals: &[Value], t: f64, t0: f64, dy: &mut [f64]) -> Result<(), Status> {
+        let c = Ctx { vals, der: None, t, t0, args: &[] };
+        for s in &self.cont {
+            let out = &mut dy[s.offset..s.offset + s.len];
+            match &s.flows {
+                crate::model::FlowSet::None => out.iter_mut().for_each(|x| *x = 0.0),
+                FlowSet::Define(e) => e.eval(&c)?.write_to(out),
+                FlowSet::Sum(es) => {
+                    out.iter_mut().for_each(|x| *x = 0.0);
+                    let mut tmp = [0.0; 3];
+                    for e in es {
+                        let v = e.eval(&c)?;
+                        v.write_to(&mut tmp[..s.len]);
+                        for k in 0..s.len {
+                            out[k] += tmp[k];
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Combined flows by binding index, for expressions that read `der(x)` (MK-11.5).
+    pub fn der_values(&self, vals: &[Value], t: f64, t0: f64) -> Result<Vec<Value>, Status> {
+        let mut dy = vec![0.0; self.n_y()];
+        self.rhs(vals, t, t0, &mut dy)?;
+        let mut out = vec![Value::Num(0.0); self.bindings.len()];
+        for c in &self.cont {
+            let s = &dy[c.offset..c.offset + c.len];
+            out[c.binding] = if c.len == 1 && matches!(self.bindings[c.binding].ty, Type::Quantity { .. }) {
+                Value::Num(s[0])
+            } else {
+                Value::Vec(Arr::from_slice(s))
+            };
+        }
+        Ok(out)
+    }
+}
