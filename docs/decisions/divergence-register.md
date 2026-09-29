@@ -39,6 +39,11 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-016 | Exploration record frozen, normative docs separate | Accepted |
 | D-018 | Output targets: web player first; output form follows content and author intent | Accepted |
 | D-019 | Relationship to Mava Studio | Accepted |
+| D-020 | Constraints checked, not enforced, in v1 | Accepted |
+| D-021 | Plane angle is dimensionless | Accepted |
+| D-022 | Spaces have frames; conversions are explicit | Accepted |
+| D-023 | Intervenable bindings are declared by the model | Accepted |
+| D-024 | No event priorities; ordering by cascades | Accepted |
 
 ---
 
@@ -351,3 +356,85 @@ The exploration documents are frozen. They are not edited to reflect later decis
   - Kernel APIs should expose what an editor needs: introspection of bindings, types, units, dependencies, diagnostics, and the representations available for a value.
   - The web player (D-018) should be embeddable in Mava Studio (Tauri renders web content).
 - **History:** 2026-09-29 accepted by the owner: "Mava is going to face a redesign soon, and chances are that that's where most non programmers will be reconciled from. This initiative is one of the prerequisites of the redevelopment of Mava Studio."
+
+## D-020: Constraints checked, not enforced, in v1
+
+- **Status:** Accepted
+- **Original position:** Constraints restrict valid states; "their enforcement strategy belongs to computation/runtime semantics" (05c section 37). Constrained direct manipulation is listed as supported (09.11.7.4, `PASS*`). No enforcement mechanism was specified.
+- **Raised by:** core semantics spec v0, model kernel section 12.
+- **Builds on:** R-25 (no partial commits), R-41 (proposed state, validated commit), R-50 (value restrictions are constraints), D-007 (causal v1).
+- **Question:** When a constraint is violated, does the runtime move state to satisfy it (enforce), or only detect the violation (check)?
+- **Options considered:**
+  1. Check only: every constraint has a policy (`reject` the change, `report` a diagnostic, or `stop` the run). The runtime never changes state to satisfy it.
+  2. Enforce in v1: the runtime projects state back onto the constraint (as physics-engine joints and GeoGebra's point-on-object do).
+- **Accepted position:** option 1 for v1. Constrained systems are written in coordinates that satisfy the constraint by construction (a pendulum in its angle, not as a free bob held by a rod), and the constraint can be stated as a check. Enforcement is a later extension, together with acausal solving (D-007), because it needs the same solver machinery.
+- **Consequences:** Constrained dragging (a point dragged along a curve) is not a model-kernel feature in v1; the presentation kernel may still map a drag onto a curve parameter. The first-slice programs do not need enforcement.
+- **History:**
+  - 2026-09-29 proposed in the model kernel spec v0.
+  - 2026-09-29 accepted by the owner: check only.
+
+## D-021: Plane angle is dimensionless
+
+- **Status:** Accepted
+- **Original position:** Not addressed. Units and dimensions are distinct and checked (05c sections 5-6, 09.5), with no statement on angles.
+- **Raised by:** core semantics spec v0, model kernel section 3.5 (the pendulum reference program).
+- **Builds on:** R-08 (units and dimensions), D-014.
+- **Question:** Is plane angle its own dimension, or dimensionless as in the SI?
+- **Options considered:**
+  1. Dimensionless (SI 2019): `rad` is 1, `deg` is π/180, `rev` is 2π. Trigonometric functions take dimensionless arguments. A binding may carry `deg` as its display unit.
+  2. Separate base dimension (as Boost.Units does): catches passing a non-angle to `sin`, but formulas such as `v = ω r` and `E = ½ I ω²` then need explicit `/rad` corrections everywhere.
+- **Accepted position:** option 1. It matches the SI and the physics textbooks learners use, and keeps standard formulas unchanged. The degree/radian confusion that option 2 guards against is handled by units: `30 deg` is converted correctly wherever it is written.
+- **Consequence:** angular velocity and frequency share the dimension 1/T; telling them apart is part of the deferred question of quantity kinds of equal dimension (model kernel section 21).
+- **History:**
+  - 2026-09-29 proposed in the model kernel spec v0.
+  - 2026-09-29 accepted by the owner.
+
+## D-022: Spaces have frames; conversions are explicit
+
+- **Status:** Accepted
+- **Original position:** Vectors are `Vector2`, `Vector3` or `Vector<Domain>` (05c section 7); Point and Vector are distinct (09.5 section 12). Coordinate transformations are listed as an open question (09.11.9, question 25).
+- **Raised by:** core semantics spec v0, model kernel section 4.
+- **Builds on:** R-09 (point vs vector), R-11 (no assumed 2D), D-014 (dimension as a type parameter).
+- **Question:** How do points and vectors relate to coordinate systems?
+- **Accepted position:**
+  - A space is declared by the model with a dimension `n` and has a standard frame (origin and orthonormal axes).
+  - Points and vectors belong to one space: `Point<S>`, `Vector<S, D>`. Values of different spaces never combine.
+  - A space may declare further frames (for example axes along an inclined plane), each defined by a transform from another frame. Components are read in the standard frame by default (`v.x`) or in a named frame (`v.in(F).x`).
+  - Moving a value between spaces needs an explicit function.
+- **Reason:** a vector's meaning does not depend on the frame it is read in, but its components do. Keeping the frame explicit prevents mixing components from different axes, a common error in mechanics teaching (inclined planes, rotating frames), and follows the frame-tagged discipline of robotics libraries such as ROS tf2.
+- **Consequence:** the first slice needs only one space with its standard frame; extra frames are needed from the inclined-plane and rotating-frame cases onward.
+- **History:**
+  - 2026-09-29 proposed in the model kernel spec v0.
+  - 2026-09-29 accepted by the owner.
+
+## D-023: Intervenable bindings are declared by the model
+
+- **Status:** Accepted
+- **Original position:** Interactions identify their target domain (R-33) and model-changing interactions name their semantic target (R-40). Which model values may be changed from outside was not specified.
+- **Raised by:** core semantics spec v0, model kernel sections 6.3 and 17.
+- **Builds on:** R-33, R-40, R-41, D-009 (the timeline directs the simulation), D-017 (use modes).
+- **Question:** Can any model value be changed from outside the model (by a learner, a timeline or an experiment), or only values the model author allows?
+- **Options considered:**
+  1. Everything stored is intervenable.
+  2. Parameters are intervenable by default; state bindings only when the model declares them intervenable; constants, inputs and derived values never. Allowed ranges are constraints with policy `reject`.
+- **Accepted position:** option 2. The model author knows which changes keep the model meaningful (changing a ball's position mid-flight is meaningful; changing an internal counter is not). This follows FMI, which marks parameters as tunable or fixed and allows changes only at event instants.
+- **Consequence:** the presentation kernel can list, for any model, exactly what a learner may manipulate; Mava Studio can show it in the editor (D-019).
+- **History:**
+  - 2026-09-29 proposed in the model kernel spec v0.
+  - 2026-09-29 accepted by the owner.
+
+## D-024: No event priorities; ordering by cascades
+
+- **Status:** Accepted
+- **Original position:** Same-time events are collected, ordered "by explicit semantics", evaluated and resolved (06 section 17). "Events may carry priority", which "must be semantic only when the model explicitly requires it" (06 section 18).
+- **Raised by:** core semantics spec v0, runtime contract section 8.
+- **Builds on:** R-25, R-26, R-29, D-004 (superdense time), D-005 (conflicts reported, never resolved by a winner).
+- **Question:** When several events are due at the same instant, may the author give them priorities that decide which is handled first?
+- **Options considered:**
+  1. No priorities. All events due at one microstep form one transition; every handler reads the same state; overlapping writes are a conflict. An author who needs "A then B" writes A's handler to emit an event that performs B at the next microstep.
+  2. Numeric priorities (as in many discrete-event simulators): higher-priority events are handled first, each seeing the previous one's result.
+- **Accepted position:** option 1. Priorities make results depend on a number chosen far from the events it affects, and silently turn a conflict into a winner, which D-005 and R-26 rule out. Cascades express the same intent where the order is visible in the model, and superdense time (D-004) already provides the microsteps they need.
+- **Consequence:** 06 section 18 (priority) is not carried forward in v0. Priorities can be added later if a reference program shows that cascades are too awkward.
+- **History:**
+  - 2026-09-29 proposed in the runtime contract spec v0.
+  - 2026-09-29 accepted by the owner.

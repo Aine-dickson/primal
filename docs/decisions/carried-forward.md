@@ -133,6 +133,51 @@ IDs (`R-##`) are permanent. New resolutions found in a later reading are appende
 | R-69 | Example syntax used in 09.3 to 09.11 (`:=`, `set`, `d(x)/dt`, `x'`, `when ...`). | 09.3 to 09.11 | Direction only. None of it is adopted syntax; see D-006. The early sketch syntax allowed by D-006 may borrow from it, without standing. |
 | R-70 | "Validation verdict: the current DSL design survives the complete validation suite." | 09.11.10 | Superseded by the design audit (F-01) and D-012 (accepted). |
 
+## Where restated in the specification
+
+Pointers from resolutions to the specification sections that restate them. `MK` is `docs/spec/01-model-kernel.md`.
+
+| Resolutions | Restated in |
+|---|---|
+| R-04, R-05, R-06, R-07, R-45, R-47, R-63, R-66 | MK 1 |
+| R-48, R-49, R-50, R-51 | MK 2 |
+| R-08 | MK 3 |
+| R-09, R-11 | MK 4 |
+| R-16, R-51, R-54 | MK 5 |
+| R-13, R-46, R-52, R-58, R-63 | MK 6 |
+| R-12, R-21, R-53 | MK 7 |
+| R-14, R-59 | MK 8 |
+| R-11, R-15 | MK 9 |
+| R-17, R-46 | MK 10 |
+| R-18, R-64 | MK 11 |
+| R-25, R-41, R-50 | MK 12 |
+| R-35, R-53 | MK 13 |
+| R-17, R-56, R-57 | MK 14 |
+| R-28, R-29, R-60 | MK 15 |
+| R-25, R-26, R-41 | MK 16 |
+| R-19, R-24, R-33, R-40 | MK 17 |
+| R-62 (SEM-01, SEM-02, SEM-03, SEM-04, SEM-07, SEM-08, RUN-02, RUN-05, RUN-06) | MK 6, 8, 14, 15, 16, 17 |
+
+`RC` is `docs/spec/02-runtime-contract.md`.
+
+| Resolutions | Restated in |
+|---|---|
+| R-06, R-20, R-24, R-36 | RC 1 |
+| R-23, R-31 | RC 2 |
+| R-21, R-27 | RC 3 |
+| R-29 | RC 4, RC 8 |
+| R-18, R-27, R-31 | RC 6 |
+| R-28, R-60 | RC 7, RC 9 |
+| R-25, R-26 | RC 8, RC 10 |
+| R-16, R-54 | RC 10 |
+| R-33, R-40, R-41 | RC 11 |
+| R-21, R-32, R-33 | RC 12 |
+| R-10, R-30, R-34 | RC 13, RC 14 |
+| R-19 | RC 15 |
+| R-35 | MK 13 (runtime contract relies on it) |
+
+Presentation resolutions (R-37 to R-42) are restated in `03` when it is written.
+
 ## Maintenance
 
 - When the core semantics spec restates a resolution, it cites the `R-##` ID, and this record gains a pointer to the spec section.

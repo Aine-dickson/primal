@@ -1,0 +1,721 @@
+# 01 Model Kernel
+
+- **Version:** v0 (draft), 2026-09-29
+- **Part:** model kernel (D-011). The runtime contract (`02`) and presentation kernel (`03`) are separate documents.
+- **Scope:** the meaning of a model: what exists in it, what values it holds, what is true of it, and how it may change. How changes are computed and scheduled is the runtime contract. How the model is shown and manipulated is the presentation kernel.
+
+Every section follows accepted decisions (including D-020 to D-023, raised by this document) or carried-forward resolutions.
+
+## Contents
+
+1. Overview
+2. Values and types
+3. Quantities, units and dimensions
+4. Spaces, points and vectors
+5. Status and validity
+6. Bindings and roles
+7. Objects, identity and composition
+8. Collections and relations
+9. Domains and fields
+10. Expressions and functions
+11. Equations
+12. Constraints
+13. Dependency analysis
+14. Evolution: targets, flows and contributions
+15. Events
+16. Operations
+17. Interface to the other kernels
+18. Static diagnostics
+19. Check against the first-slice reference programs
+20. New positions taken in this document
+21. Deferred
+
+---
+
+## 1. Overview
+
+- **Restates:** R-04, R-05, R-06, R-07, R-45, R-47, R-63, R-66.
+- **Decisions:** D-011, D-019.
+- **Prior art:** Modelica and FMI separate a model's declaration from its simulation; this kernel follows that split. It departs from Modelica in being causal in v1 (D-007).
+
+A **model** is a definition. It is not a simulation, a scene or a run (R-07). A model definition, together with a run configuration (parameter values, solver settings, seeds), is what the runtime executes.
+
+The model kernel has these concepts. Every other construct in the language (property, parameter, variable, constant, derived value, predicate, rule, equation as written by an author) is a role of these concepts or a convenience that lowers into them (R-45, R-63).
+
+| Concept | Section |
+|---|---|
+| Value, type | 2, 3, 4 |
+| Status (validity) | 5 |
+| Binding | 6 |
+| Object, identity, system | 7 |
+| Collection, relation | 8 |
+| Domain, field | 9 |
+| Expression, function | 10 |
+| Equation | 11 |
+| Constraint | 12 |
+| State, process, flow | 14 |
+| Event | 15 |
+| Operation | 16 |
+
+- **MK-1.1** The model kernel MUST NOT reference any concept of the presentation kernel. A model is complete and executable without any presentation (D-011).
+- **MK-1.2** Author-facing constructs MUST NOT express implementation detail: solver, buffer, cache, storage layout or hit testing (R-04). Execution configuration is separate from the model and is visible to the author where it changes results (D-010).
+- **MK-1.3** Every construct in this document MUST have a representation in the semantic IR, carrying at least the information this document assigns to it, with a stable identity independent of its source name (R-47, D-019).
+
+### Sketch notation
+
+Examples use this notation. **sketch (non-binding, D-006)**:
+
+```text
+object Ball {
+  param  mass : Mass     = 0.5 kg        // binding with role parameter
+  state  pos  : Point<Plane>             // continuous state
+  state  vel  : Velocity<Plane>
+  derived ke  : Energy   = 0.5 * mass * |vel|^2
+  flow   der(pos) = vel                  // definition
+  flow   der(vel) += gravity             // contribution
+  event  bounce on falling(pos.y) { set vel.y = -e * vel.y }
+}
+```
+
+---
+
+## 2. Values and types
+
+- **Restates:** R-48, R-49, R-50, R-51.
+- **Decisions:** D-014, D-015.
+- **Prior art:** follows ML-family type systems (nominal records and variants, structural functions) and Rust traits for explicit capabilities (R-49). Follows IEEE 754 binary64 for real arithmetic, as Modelica tools, Simulink and most scientific runtimes do.
+
+### 2.1 Type forms
+
+| Type form | Meaning | Identity |
+|---|---|---|
+| `Boolean` | true, false | built in |
+| `Integer` | mathematical integers | built in |
+| `Real` | real numbers; identical to the dimensionless quantity (section 3) | built in |
+| `Quantity<D>` | magnitude with dimension `D` (section 3) | structural in `D` |
+| `Instant<D>` | affine point on a quantity line, such as a time instant or a temperature on a scale (section 3.4) | structural in `D` |
+| `Point<S>`, `Vector<S, D>` | points and vectors of a space `S` (section 4) | structural in `S`, `D` |
+| `Tuple<A, B, ...>` | ordered fixed-size product | structural |
+| record | named fields | nominal |
+| enumeration | tagged alternatives, each with an optional payload | nominal |
+| `Option<T>` | a `T` or absent | structural |
+| `Sequence<T>`, `Set<T>` | ordered and unordered finite collections of values | structural |
+| `A -> B` | function | structural |
+| `Distribution<T>` | probability distribution over `T` (R-10) | structural |
+| `Equation` | symbolic equation (section 11) | built in |
+| object type | objects with identity (section 7) | nominal |
+| relation type | relation instances with identity (section 8) | nominal |
+| `Ref<T>` | reference to an object or relation of type `T` by identity | structural in `T` |
+
+- **MK-2.1** Types describe values. A type is not a value, identity, role, state or machine representation (R-48).
+- **MK-2.2** Declared records, enumerations, object types and relation types are nominal: two declarations with the same structure are distinct types. A type alias is not a new nominal type (R-48, R-49).
+- **MK-2.3** A capability (interface) is a named set of operations and bindings. A nominal type satisfies a capability only by explicit declaration (R-49). A generic parameter may be constrained by capabilities. In v0 the only generic parameters the kernel itself requires are spaces and dimensions (sections 3 and 4); general user generics follow the same rule.
+- **MK-2.4** Value restrictions such as `mass > 0 kg` are constraints (section 12), not refined types (R-50).
+- **MK-2.5** `Option<T>` expresses a value that may legitimately be absent. Absence is a value. It is distinct from every status of section 5 (R-51). There is no `null`.
+- **MK-2.6** Values are immutable. State change is expressed only by operations on bindings (section 16), never by mutating a value.
+
+### 2.2 Numbers
+
+- **MK-2.7** `Real` denotes the real numbers. Its computational form is IEEE 754 binary64. Deviations between the two are numerical error, governed by the determinism levels of the runtime contract (D-015).
+- **MK-2.8** A non-finite result (NaN, infinity) is never a value. An operation that would produce one yields the status `invalid` (section 5) with the cause recorded.
+- **MK-2.9** `Integer` denotes the integers. Its computational form is a 64-bit two's-complement integer. Overflow yields `invalid`; it never wraps.
+- **MK-2.10** `Integer` converts to `Real` implicitly where a `Real` is required. `Real` converts to `Integer` only through explicit functions (`round`, `floor`, `ceil`, `trunc`).
+
+---
+
+## 3. Quantities, units and dimensions
+
+- **Restates:** R-08.
+- **Decisions:** D-014, D-021.
+- **Prior art:** follows the SI (9th edition, 2019) for base dimensions and coherent units. Follows F# units of measure in checking dimensions statically. Follows Pint and Boost.Units in treating offset scales (degree Celsius) as affine, where Pint separates `degC` from `delta_degC` and Boost.Units separates `absolute<>` temperatures from differences.
+
+### 3.1 Dimensions
+
+- **MK-3.1** A dimension is a product of powers of the seven SI base dimensions (length L, mass M, time T, electric current I, thermodynamic temperature Θ, amount of substance N, luminous intensity J) with rational exponents. The dimension with all exponents zero is **dimensionless**.
+- **MK-3.2** `Quantity<1>` (dimensionless) and `Real` are the same type.
+- **MK-3.3** Named dimensions are aliases (R-48): `Velocity = L/T`, `Acceleration = L/T^2`, `Force = M L/T^2`, `Energy = M L^2/T^2`. Libraries MAY define more. Quantities of the same dimension are interchangeable in the kernel; distinguishing quantity kinds of equal dimension (torque and energy) is deferred (section 21).
+
+### 3.2 Arithmetic
+
+- **MK-3.4** Addition, subtraction and comparison require operands of the same dimension. Multiplication and division combine dimensions. Integer and rational powers scale exponents. Functions such as `sin`, `exp`, `log` require dimensionless arguments. `sqrt` halves exponents. Violations are static errors.
+- **MK-3.5** Dimension checking is static. Every expression has a dimension known before execution. No run-time dimension check is required.
+
+### 3.3 Units
+
+- **MK-3.6** A unit is a named scale factor (and, for affine units, an offset) relative to the coherent SI unit of its dimension. The meaning of a quantity is independent of the unit it was written in: `100 cm` and `1 m` are the same value.
+- **MK-3.7** Units appear in literals, in inputs, and as display preferences in binding metadata (section 6). They do not affect computation. The computational form of a quantity is its magnitude in coherent SI units.
+- **MK-3.8** **Literals** (D-014): a numeric literal written with a unit has that unit's dimension. A bare literal is dimensionless, with one exception: the literal `0` adopts whatever dimension its context requires. Any other bare literal combined with a dimensioned quantity is a static error.
+
+### 3.4 Affine quantities
+
+- **MK-3.9** `Instant<D>` is the affine counterpart of `Quantity<D>` (D-014). The rules match points and vectors (section 4):
+  - `Instant<D> - Instant<D>` gives `Quantity<D>`.
+  - `Instant<D> + Quantity<D>` and `Instant<D> - Quantity<D>` give `Instant<D>`.
+  - `Instant<D> + Instant<D>`, scaling an instant, and comparing an instant with a `Quantity<D>` are static errors.
+- **MK-3.10** Affine units carry an offset: `°C` and `K` both measure `Instant<Θ>`; a temperature difference is `Quantity<Θ>` and is written in `K` (or a difference unit a library defines). Simulation time `t` is `Instant<T>` (section 14.6).
+
+### 3.5 Angles
+
+- **MK-3.11** Plane angle is dimensionless, as in the SI: `rad` is the coherent unit with scale 1, `deg` has scale π/180, `rev` has scale 2π. Trigonometric functions take dimensionless arguments, so `sin(30 deg)` is valid and equals `sin(π/6)`.
+- **MK-3.12** A binding MAY carry a display unit of `deg` or `rad` in its metadata so that presentation shows angles in the author's chosen unit.
+
+---
+
+## 4. Spaces, points and vectors
+
+- **Restates:** R-09, R-11.
+- **Decisions:** D-014, D-022.
+- **Prior art:** follows the mathematical definition of an affine space (points, a vector space of displacements, no addition of points). Follows the frame-tagged data discipline of robotics libraries such as ROS tf2, where every geometric value names its frame and conversion between frames is explicit.
+
+- **MK-4.1** A **space** is a domain (section 9) declared by the model with a dimension `n` (a type parameter, D-014) and, in v0, a Euclidean metric. The kernel does not assume any particular `n`; the first slice uses `n = 2` (D-001).
+- **MK-4.2** A space has a **standard frame**: an origin and an ordered orthonormal basis with axis names (by default `x`, `y`, `z`). Coordinates of points and components of vectors are read in a frame. A space MAY declare further frames, each defined by a transform from another frame of the same space (D-022).
+- **MK-4.3** `Point<S>` is a position in space `S`. Its coordinates have dimension L. `Vector<S, D>` is a vector in `S` whose components have dimension `D`: displacement is `Vector<S, L>`, velocity `Vector<S, L/T>`, force `Vector<S, M L/T^2>`.
+- **MK-4.4** Point and vector rules (R-09):
+  - `Point<S> - Point<S>` gives `Vector<S, L>`.
+  - `Point<S> + Vector<S, L>` gives `Point<S>`.
+  - `Point<S> + Point<S>`, scaling a point, and adding a point to a vector of dimension other than L are static errors.
+  - Vectors of the same space and dimension add; scaling by `Quantity<E>` gives `Vector<S, D·E>`; dot product of `Vector<S, D>` and `Vector<S, E>` gives `Quantity<D·E>`; the norm `|v|` gives `Quantity<D>`.
+- **MK-4.5** Values from different spaces never combine. Moving a value between frames of one space, or between spaces, requires an explicit function (D-022).
+- **MK-4.6** Component access `v.x`, `p.y` reads in the standard frame. `v.in(F).x` reads in frame `F` (D-022).
+- **MK-4.7** A space is model space. It is not render space (R-07); the mapping to a screen belongs to projection.
+
+---
+
+## 5. Status and validity
+
+- **Restates:** R-16, R-51, R-54.
+- **Prior art:** follows IEEE 754 in making invalid results propagate instead of trapping, but departs from it by making the propagated thing a status with a recorded cause rather than a NaN value. Follows spreadsheet error propagation (an error in a cell propagates to its dependents with its kind preserved).
+
+- **MK-5.1** Evaluating an expression yields either a value of its type or a **status**. The statuses are:
+
+| Status | Meaning | Example |
+|---|---|---|
+| `unknown` | not yet determined | a binding read before its initialization |
+| `unavailable` | the source cannot supply a value | a sensor input that is disconnected |
+| `pending` | a value is expected but not yet produced | an asynchronous external computation |
+| `invalid` | evaluation failed | division by zero, `sqrt` of a negative, overflow, non-finite result |
+
+- **MK-5.2** A status is not a value. It cannot be stored in a binding as if it were one, compared, or passed through arithmetic as a number (R-16). An expression that reads a status yields a status.
+- **MK-5.3** When several operands carry statuses, the result status is the highest in the order `invalid` > `unavailable` > `pending` > `unknown`, and it records every cause.
+- **MK-5.4** Every status records its **provenance**: the binding or operation where it originated and the cause (R-54). Propagation preserves provenance.
+- **MK-5.5** An expression MAY handle a status explicitly with the built-in forms `is_valid(e)`, `status(e)` and `e otherwise d` (use `d` when `e` is not a value). Handling is the only way a status stops propagating.
+- **MK-5.6** What the runtime does when a status reaches state (stop, pause, report) is policy of the runtime contract. The kernel only describes what happened (R-54).
+
+---
+
+## 6. Bindings and roles
+
+- **Restates:** R-13, R-46, R-52, R-58, R-63.
+- **Decisions:** D-004, D-019, D-023.
+- **Prior art:** follows Modelica variability (constant, parameter, discrete, continuous) and FMI causality (parameter, input, output, local), which separate how often a value may change from who may change it. Follows GeoGebra's free and dependent objects for derived bindings: a dependent object is recomputed from its definition and cannot be set directly.
+
+### 6.1 Binding
+
+- **MK-6.1** A **binding** has: identity, name, owner (an object, section 7), type, role, definition (initial value or defining expression), visibility (public or private to its owner), and metadata (label, description, display symbol, display unit).
+- **MK-6.2** A source name identifies a binding; the binding has a semantic identity that does not depend on the name (R-52). Renaming a binding does not change its identity.
+- **MK-6.3** Lexical scope decides which names are visible where. Ownership decides what a binding belongs to in the model (R-52). Name resolution is a syntax concern; the IR stores resolved identities.
+
+### 6.2 Roles
+
+Every binding has exactly one role. The role fixes when the value may change and what may change it.
+
+| Role | Changes | Changed by | Stored |
+|---|---|---|---|
+| `constant` | never | nothing | yes |
+| `parameter` | only at event instants | interventions and run configuration | yes |
+| `input` | at any time | the environment (external source, SEM-07) | yes |
+| `discrete state` | only at event instants | operations in event handlers; interventions | yes |
+| `continuous state` | continuously, by flows | flows; replaced only by resets and interventions | yes |
+| `derived` | whenever its sources change | nothing: it is defined by an expression | no |
+
+- **MK-6.4** A derived binding is a definition, not stored state (R-13). At every instant its value equals its defining expression evaluated on current values. It cannot be the target of any operation.
+- **MK-6.5** Continuous state changes only by flows (section 14). Its value is replaced only by a reset in an event handler or by an intervention (D-004).
+- **MK-6.6** Parameters do not change during continuous evolution. A parameter change is an intervention and happens at an event instant (section 17). Event handlers MUST NOT set parameters; a value that the model itself switches belongs in discrete state.
+- **MK-6.7** Every stored binding except `input` has an **initial definition**: an expression over constants, parameters and other initial definitions. Initial definitions are evaluated once, at run start, in dependency order (section 13). An `input` has no initial definition; until the environment supplies it, it is `unavailable`.
+- **MK-6.8** A parameter's initial definition is its default. A run configuration or the instantiating object MAY override it.
+- **MK-6.9** Property, variable, parameter, constant and derived value are roles of the one binding concept. An object's properties are its bindings. Bindings owned directly by the root object are the model's standalone bindings (R-58).
+
+### 6.3 Intervenability
+
+- **MK-6.10** A binding is **intervenable** if the model permits it to be changed from outside the model (by the learner, a timeline or an experiment) through an intervention. Parameters are intervenable by default. State bindings are intervenable only if the model declares them so. Constants, inputs and derived bindings are never intervenable.
+- **MK-6.11** A binding MAY declare an intervention range as a constraint (section 12). Interventions outside it are rejected (R-41).
+
+---
+
+## 7. Objects, identity and composition
+
+- **Restates:** R-12, R-21, R-53.
+- **Decisions:** D-015, D-019.
+- **Prior art:** follows Modelica's single structured class concept (`model`), where a system is a model that contains components. Follows NetLogo in giving every agent a stable identity that is never reused during a run. Departs from Modelica's acausal connectors in v1: connections are causal (D-007).
+
+### 7.1 Objects
+
+- **MK-7.1** An **object type** is a nominal declaration of bindings, contained objects, collections, relations, flows, events, equations and constraints. An **object** is an instance of an object type. It has an identity, and its content is its bindings and contained elements.
+- **MK-7.2** A **system** is an object that contains other objects. The kernel has no separate system concept; a subsystem is a contained object. The **model** is one root object type. Surface syntax MAY use `system`, `entity` or other words (R-45).
+- **MK-7.3** An object type definition is distinct from its instances (R-53). Instantiation supplies parameter overrides and input connections.
+- **MK-7.4** An object type MAY declare that it satisfies capabilities (MK-2.3). There is no implicit inheritance. Specialization is by composition (R-49, R-53).
+
+### 7.2 Identity
+
+- **MK-7.5** Every object, relation instance and binding has an identity. Identity is semantic: it does not depend on names, collection position, order of evaluation or appearance (R-12).
+- **MK-7.6** A **declared** element (written in the model definition) has an identity fixed in the IR, stable across edits that do not remove it (D-019). Its identity within a run is the path of declaration identities from the root.
+- **MK-7.7** A **created** element (made by a `create` or `connect` operation during a run) has an identity formed from the identity of the creating operation instance and a per-run counter. Identities are deterministic for a given model, run configuration and input history, so replay reproduces them (D-015). An identity is never reused within a run.
+
+### 7.3 Composition
+
+- **MK-7.8** Each object owns its bindings. No two objects share a mutable binding (R-53).
+- **MK-7.9** A binding may be **read** by its owner, and by any object if it is public.
+- **MK-7.10** A stored binding may be **written** (by operations, flow contributions or resets) only by behaviors declared in its owner or in an object that contains its owner. Sibling and contained objects MUST NOT write it. A contained object communicates upward by public bindings and emitted events (section 15).
+- **MK-7.11** An object type MAY declare **inputs** (role `input`, section 6.2) and **outputs** (public derived bindings). A **connection** binds a contained object's input to an expression in the containing object. Connections are explicit; there is no implicit namespace or state merging (R-53).
+- **MK-7.12** Composition fixes neither execution order nor representation (R-53). Execution order comes from dependency analysis (section 13).
+
+---
+
+## 8. Collections and relations
+
+- **Restates:** R-14, R-59, SEM-01 (R-62).
+- **Prior art:** follows NetLogo in treating links as first-class agents with identity and properties, distinct from any drawn line. Follows entity-component systems in keeping membership changes as explicit structural operations.
+
+### 8.1 Collections
+
+- **MK-8.1** A **collection** is a binding-like element owned by an object whose content is a finite set of objects of one object type. Its membership is either declared (fixed) or dynamic.
+- **MK-8.2** Dynamic membership changes only through `create` and `destroy` operations (section 16), at event instants.
+- **MK-8.3** A collection's iteration order is the order of member identities (declared order, then creation order). Expressions over collections (`count`, `map`, `filter`, `any`, `all`, `sum`, `reduce`) use this order, so results are deterministic (D-015).
+- **MK-8.4** Every member of a collection is an object with its own bindings, flows and events. A flow or event declared on the member type applies to each member.
+
+### 8.2 Relations
+
+- **MK-8.5** A **relation type** is a nominal declaration of endpoint roles (each typed by an object type), whether it is directed, and its bindings (relation properties). A **relation instance** has identity, its endpoints and its bindings (R-14).
+- **MK-8.6** Relation instances are held in a **relation set** owned by an object. Membership changes only through `connect` and `disconnect` operations. Destroying an object disconnects every relation instance with that object as an endpoint, in the same transition.
+- **MK-8.7** A relation is semantic. A line or shape drawn between two objects is a representation and does not imply a relation (R-59). Geometry derived from endpoint positions is a derived binding, not the relation.
+
+The first slice (D-001) exercises neither dynamic collections nor relations. They are defined here so that later slices do not change the kernel.
+
+---
+
+## 9. Domains and fields
+
+- **Restates:** R-11, R-15.
+- **Decisions:** D-010, D-014.
+- **Prior art:** follows mathematical practice (a function has a domain and codomain). For field state, follows finite-difference and finite-element practice, where the grid and boundary treatment are part of the problem statement because they change the answer.
+
+- **MK-9.1** A **domain** is a set over which a function or field is defined. Domain forms: interval of a quantity (`[0 m, 5 m]`), integer range, finite set, enumeration, space (section 4), product of domains, and the members of a collection. A domain is distinct from a value (R-11).
+- **MK-9.2** Time is a domain: the line of `Instant<T>`. A run covers an interval of it.
+- **MK-9.3** A **formula field** is a function value whose domain is a space or other domain, for example `gravity : Point<Plane> -> Vector<Plane, L/T^2>`. It is an ordinary function (section 10) and has no storage (D-010).
+- **MK-9.4** A **field state** is a state binding whose value is a function over a domain and which evolves. Its discretization (grid or mesh, resolution, boundary treatment) MUST be declared in the model's execution configuration and is visible to the author (D-010). Field state is outside the first slice; its evolution rules are specified with the slice that needs it.
+
+---
+
+## 10. Expressions and functions
+
+- **Restates:** R-17, R-46.
+- **Decisions:** D-007, D-013.
+- **Prior art:** follows pure functional expression languages (and Modelica functions, which are side-effect free apart from declared external calls). Follows FRP (Elliott and Hudak) in treating a derived binding as a time-varying value defined for every instant, not as a cached result.
+
+- **MK-10.1** An **expression** is a pure, deterministic term: literals, binding reads, operators, function applications, conditionals, collection expressions, and status handling (MK-5.5). Evaluating an expression never changes state (R-17).
+- **MK-10.2** Conditionals are total: every `if` has an `else` branch, and `match` on an enumeration covers every alternative.
+- **MK-10.3** A **function** has typed parameters, a result type and a body expression. Functions are values (`A -> B`). They are pure and cannot read bindings other than their parameters and constants; a function that needs model state takes it as an argument.
+- **MK-10.4** Expressions do not draw random numbers. Sampling a distribution happens only in stochastic processes and operations with a declared random stream (R-10, R-30, D-013; deferred, section 21).
+- **MK-10.5** Evaluation that does not terminate within the runtime's evaluation limit yields `invalid` (runtime contract).
+- **MK-10.6** Every expression keeps its symbolic structure in the IR. Its evaluated value is separate from it (R-48: expression is not evaluated value). This lets equations and definitions be displayed, differentiated symbolically by libraries, and consumed by a later acausal solver (D-007).
+
+---
+
+## 11. Equations
+
+- **Restates:** R-18, R-64.
+- **Decisions:** D-007.
+- **Prior art:** departs from Modelica, where equations drive simulation. Follows computer algebra systems (and Desmos and GeoGebra) in keeping equations as displayable, symbolic objects that can be bound to live values.
+
+- **MK-11.1** An **equation** is a first-class element with a left side, a right side (expressions), a relation (`=` in v0), and a role (R-18).
+- **MK-11.2** v0 roles (D-007):
+  - `display`: shown with its symbols linked to bindings; no runtime effect.
+  - `check`: in addition, the runtime evaluates the residual `lhs - rhs` and reports when `|residual|` exceeds the declared tolerance. A violated check produces a diagnostic, never a state change.
+- **MK-11.3** Both sides of an equation MUST have the same dimension; a mismatch is a static error, whatever the role.
+- **MK-11.4** An equation does not define, assign or evolve any binding in v0. Evolution is written causally with flows and derived bindings (sections 6, 14). An `evolution` or `constraint` role that a solver consumes is reserved for the acausal extension (D-007).
+- **MK-11.5** An equation MAY reference `der(x)` for a continuous state `x`; in a check, `der(x)` evaluates to the combined flow of `x` (section 14). This lets `m a = F` be checked against the running model.
+
+---
+
+## 12. Constraints
+
+- **Restates:** R-25, R-41, R-50.
+- **Decisions:** D-007, D-020.
+- **Prior art:** departs from constraint-enforcing systems (Modelica constraint equations, physics-engine joints as in Box2D, GeoGebra points constrained to objects), which move state to satisfy a constraint. Follows design-by-contract (Eiffel) and database integrity constraints, which check and reject.
+
+- **MK-12.1** A **constraint** is a Boolean expression over bindings, with an optional tolerance, and a **policy**:
+  - `reject`: an intervention or operation whose result violates the constraint is rejected; the state before it stands (R-25, R-41).
+  - `report`: a violation produces a diagnostic; execution continues.
+  - `stop`: a violation stops the run with an `invalid` status carrying the constraint as cause.
+- **MK-12.2** In v0 constraints are **checked, never enforced**. The runtime never changes state to satisfy a constraint. A system whose motion is constrained (a pendulum bob on a rod) is written in coordinates that satisfy the constraint by construction (the angle), and the constraint MAY be stated as a check.
+- **MK-12.3** Constraints are checked at initialization, after every committed transition at an event instant, after every intervention, and on accepted continuous steps. A violation that begins and ends between two accepted steps is not guaranteed to be detected; an author who needs exact detection writes the boundary as an event guard (section 15).
+- **MK-12.4** Value restrictions on parameters (`mass > 0 kg`, R-50) are constraints with default policy `reject`. Other constraints have default policy `report`.
+- **MK-12.5** Constraint enforcement (projection onto a constraint set, constrained dragging) is reserved for a later extension together with acausal solving (D-007).
+
+---
+
+## 13. Dependency analysis
+
+- **Restates:** R-35, R-53 (composition invariant 7).
+- **Decisions:** D-008.
+- **Prior art:** follows Simulink algebraic-loop detection and Lustre and Esterel causality analysis, which reject instantaneous cycles and accept cycles broken by a delay (`pre` in Lustre, an integrator in Simulink).
+
+- **MK-13.1** Before execution, the kernel builds a **dependency graph** whose nodes are bindings and flow targets, and whose edges point from each binding to the bindings its definitions read.
+- **MK-13.2** Edges are classified:
+  - **instantaneous**: a derived binding reads its sources; an initial definition reads its sources; a flow right-hand side reads its sources.
+  - **through state**: a continuous state depends on its flow only by integration; a discrete state depends on event handlers only across an event instant.
+- **MK-13.3** A cycle that passes through at least one state edge is valid (R-35).
+- **MK-13.4** A cycle consisting only of instantaneous edges is an **algebraic loop** and a static error, unless a solver is declared for it (D-008). v0 defines no such solver.
+- **MK-13.5** The graph of initial definitions MUST be acyclic.
+- **MK-13.6** Evaluation order within an instant is a topological order of instantaneous edges, with ties broken by identity order. This order is semantically invisible (results do not depend on it) but it is fixed, so floating-point results are reproducible (D-015).
+
+---
+
+## 14. Evolution: targets, flows and contributions
+
+- **Restates:** R-17, R-56, R-57, SEM-03 and SEM-04 (R-62).
+- **Decisions:** D-004, D-005.
+- **Prior art:** follows hybrid automata (Alur, Henzinger and others): continuous state evolves by flows within a discrete mode and changes discontinuously only at transitions. Follows Modelica's `der()` for first-order state derivatives. Follows physics engines and Modelica force balances in summing force contributions (D-005).
+
+### 14.1 Processes
+
+- **MK-14.1** A **process** is a named group of behaviors (flows, events, operations) with an execution **mode** (R-56): `continuous`, `discrete`, `algorithmic` or `stochastic`. The IR carries the mode.
+- **MK-14.2** v0 specifies `continuous` processes (flows) and events. `discrete` processes are events on a time schedule (section 15). `algorithmic` and `stochastic` modes are reserved (section 21).
+
+### 14.2 Evolution targets
+
+- **MK-14.3** An **evolution target** is anything whose value a behavior changes: a stored binding, a component of one (a vector component, a record field), a collection's membership, or a relation set. A flow's target is `der(x)` for a continuous state `x`.
+- **MK-14.4** Two targets **overlap** if one contains the other (a vector and its component) or they are the same.
+
+### 14.3 Flows
+
+- **MK-14.5** A flow targets `der(x)` for a continuous state `x` of type `Quantity<D>`, `Vector<S, D>` or `Point<S>`. The flow's value has the derivative type: `Quantity<D/T>` or `Vector<S, D/T>` (for a point, `Vector<S, L/T>`).
+- **MK-14.6** Derivatives are first order. A second-order law is written as two states (position and velocity), as in Modelica.
+- **MK-14.7** Each `der(x)` is either **defined** by exactly one flow (`der(x) = e`) or receives **contributions** (`der(x) += e`) from any number of flows. Defining and contributing to the same target is a static error (R-57).
+- **MK-14.8** Contributions combine through the target's **combination** (D-005): an associative, commutative operation with an identity element. The combination of zero contributions is the identity element.
+- **MK-14.9** For every `der(x)`, the default combination is sum (identity `0`): rates of change add (D-005). A binding MAY override its combination. For non-derivative targets (section 16, `contribute`), the combination comes from the target's type if the type declares one, from the binding if it declares one, and otherwise contributing to it is a static error. The core assumes no combination.
+- **MK-14.10** Contributions are combined in identity order of their flows, so floating-point results are reproducible (D-015).
+- **MK-14.11** A continuous state MUST have a defining flow or a derivative combination; the default sum makes `der(x) = 0` when no flow contributes, which is the correct law for a free particle's velocity.
+
+### 14.4 Modes
+
+- **MK-14.12** A flow MAY be conditional. Its condition and every conditional expression inside a flow's right-hand side MUST depend only on discrete state, parameters and constants, not on continuous state or `t`. The discrete state that selects which flows are active plays the role of the hybrid automaton's mode.
+- **MK-14.13** A change of behavior that depends on continuous state (the ball reaches the floor, the spring reaches its rest length) is written as an event (section 15) that sets discrete state. This keeps every discontinuity at an event instant where the runtime can locate it (R-28).
+
+Continuous functions that are not smooth (`abs`, `min`, `max`, `|v|`) are permitted in flows. The runtime contract states the solver accuracy expected at their kinks.
+
+### 14.5 Mathematical meaning
+
+Between two consecutive event instants `t_a` and `t_b`, with discrete state fixed, every continuous state `x` satisfies
+
+```text
+x(t) = x(t_a⁺) + ∫[t_a, t] F_x(s) ds
+```
+
+where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow of `x`. Derived bindings hold their defining expressions at every `t`. The runtime computes an approximation of this solution; its accuracy is execution configuration (runtime contract).
+
+### 14.6 Time
+
+- **MK-14.14** Every model has the built-in binding `t : Instant<T>` (simulation time, R-23) and `t0 : Instant<T>` (the run's start instant). `elapsed = t - t0` is a built-in derived `Quantity<T>`.
+- **MK-14.15** A model that declares no flows, events or time-dependent derived bindings is **static**. It has meaning without a simulation clock (R-32).
+
+---
+
+## 15. Events
+
+- **Restates:** R-28, R-29, R-60, RUN-02 and RUN-05 (R-62).
+- **Decisions:** D-004, D-005, D-009.
+- **Prior art:** follows hybrid automata (guards and resets), Modelica `when` clauses with `reinit` and `pre`, and FMI event indicators (zero-crossing functions). Follows superdense time (Maler, Manna and Pnueli; Lee and Zheng, Ptolemy II) for event cascades at one instant.
+
+### 15.1 Structure
+
+- **MK-15.1** An **event** has identity, an owner, a **trigger**, an optional **enabling condition**, a **handler**, and an optional typed **payload**.
+- **MK-15.2** An event **occurs** at an event instant `(t, n)` (superdense time: `n` counts successive transitions at the same `t`). Locating `t` and ordering occurrences is the runtime contract; the kernel defines when an occurrence is due.
+
+### 15.2 Triggers
+
+- **MK-15.3** Trigger kinds:
+
+| Trigger | Due when | Notes |
+|---|---|---|
+| `rising(g)` | `g` crosses zero from negative to positive | `g` is a real-valued or quantity-valued expression over state |
+| `falling(g)` | `g` crosses zero from positive to negative | |
+| `crossing(g)` | either direction | |
+| `at(τ)` | `t` reaches instant `τ` | `τ` may depend on parameters and discrete state |
+| `every(Δ, from τ0)` | `t = τ0 + kΔ`, `k = 0, 1, ...` | the discrete process mode |
+| `on(E)` | event `E` occurred at the previous microstep | cascades; payload of `E` is readable |
+| `on start` | run start, after initialization | |
+| `on input(i)` | the environment changes input `i` | |
+
+- **MK-15.4** Continuous guards are crossings, never level conditions (D-004). A crossing is due at the instant the guard function changes sign in the declared direction; a guard that touches zero without changing sign is not a crossing.
+- **MK-15.5** A level condition (a Boolean over state) is permitted only as an enabling condition or in a discrete-time trigger. The enabling condition is evaluated at the instant the trigger is due; the event occurs only if it is true.
+- **MK-15.6** Level-style guards written by authors (`y <= 0`) lower to crossings (`falling(y)`) when used as continuous triggers; the lowering is part of the surface language, and the IR stores the crossing and its direction (R-45).
+
+### 15.3 Handlers
+
+- **MK-15.7** A handler is a set of operations (section 16). All reads in a handler see the state **before** the handler's operations (the committed state at the preceding microstep), whatever the order in which the operations are written (RUN-06). Modelica's `pre()` is therefore implicit.
+- **MK-15.8** A handler's operations commit together or not at all (R-25). An operation set with a conflict (section 16.3) does not commit, and the conflict is reported.
+- **MK-15.9** A **reset** is a `set` operation on continuous state in a handler. It is the only way a model itself replaces continuous state (D-004).
+- **MK-15.10** An `emit(E, payload)` operation makes `on(E)` triggers due at the next microstep `(t, n+1)`. A cascade longer than the declared maximum iteration count stops the run with a diagnostic (D-004; the default count is set in the runtime contract).
+
+### 15.4 Zeno policy
+
+- **MK-15.11** An event is **self-retriggering** if its handler writes a binding that its trigger depends on (directly or through derived bindings). This is decided statically from the dependency graph.
+- **MK-15.12** Every self-retriggering event with a crossing trigger MUST declare a **Zeno policy** (D-004):
+  - `stop`: when accumulation is detected, stop the run with a diagnostic.
+  - `settle { operations }`: when accumulation is detected, apply the given operations instead of the handler, typically setting discrete state that switches to a resting mode (section 14.4).
+- **MK-15.13** Accumulation is detected when the event occurs more than `N` times within a window of simulation time `w`, or when successive occurrences are closer than `ε`. The event MAY declare `N`, `w` and `ε`; defaults are set in the runtime contract.
+
+### 15.5 Ordering
+
+- **MK-15.14** Events due at the same superdense instant are handled in one transition when their operation sets do not conflict. Order of writing and machine order never decide the result (R-29). Conflicting operation sets follow section 16.3.
+
+---
+
+## 16. Operations
+
+- **Restates:** R-25, R-26, R-41, SEM-08 (R-62).
+- **Decisions:** D-004, D-005.
+- **Prior art:** follows database transactions (atomic commit, conflict detection) and Modelica's rule that a variable may be reinitialized by only one `when` clause at a time.
+
+### 16.1 Operation kinds
+
+| Operation | Effect | Allowed in |
+|---|---|---|
+| `set(target, value)` | replace the value of a stored binding or component | handlers; interventions |
+| `contribute(target, value)` | combine `value` into a discrete-state target through its combination (MK-14.9) | handlers |
+| `create(collection, overrides)` | add a new object; returns its reference | handlers |
+| `destroy(object)` | remove an object and disconnect its relations | handlers |
+| `connect(relation set, endpoints, overrides)` | add a relation instance; returns its reference | handlers |
+| `disconnect(relation)` | remove a relation instance | handlers |
+| `emit(event, payload)` | make `on(event)` due at the next microstep | handlers |
+
+- **MK-16.1** Operations are the only way state changes other than by flows. Operations never target derived bindings, constants or inputs. `set` targets parameters only in interventions (MK-6.6).
+- **MK-16.2** Operation targets must be writable by the behavior's owner (MK-7.10).
+
+### 16.2 Transitions
+
+- **MK-16.3** The operations of all events handled at one microstep, together with any interventions delivered at it, form one **transition**. The transition reads the state before it, computes the proposed state, validates it against constraints (section 12), and commits it or rejects it as a whole (R-25, R-41). Proposed state is not committed state (SEM-08).
+
+### 16.3 Conflicts
+
+- **MK-16.4** Two `set` operations in one transition whose targets overlap are a **conflict**, even when they write equal values (R-26, D-005). A `set` and a `contribute` on overlapping targets are a conflict. Any number of `contribute` operations on one target combine and do not conflict.
+- **MK-16.5** Two `destroy` operations on one object are not a conflict (the result is the same); an operation targeting an object destroyed in the same transition is a conflict.
+- **MK-16.6** The runtime never resolves a conflict by picking a winner (R-26). A conflicted transition is rejected and reported; what follows is runtime policy (D-005).
+
+---
+
+## 17. Interface to the other kernels
+
+- **Restates:** R-19, R-24, R-33, R-40, SEM-07 (R-62).
+- **Decisions:** D-009, D-011, D-019, D-023.
+- **Prior art:** follows FMI, whose model interface exposes variables with declared causality and variability and allows tunable parameters to change only at event instants.
+
+The model kernel exposes a narrow interface (D-011). The runtime contract and the presentation kernel use only what is listed here.
+
+- **MK-17.1** **Read** (observation, R-19): any public binding, the value of any equation residual, event occurrences with payloads, and structure (object, collection and relation identities). Reading never changes the model.
+- **MK-17.2** **Intervene**: a set of `set` operations on intervenable bindings (MK-6.10), and `create` or `destroy` on collections the model declares intervenable. An intervention is delivered at an event instant and validated like any transition (section 16.2). Interventions name semantic targets, never visual ones (R-40).
+- **MK-17.3** **Supply input**: the environment sets `input` bindings, or marks them `unavailable` or `pending`. External input is distinct from intervention (SEM-07).
+- **MK-17.4** **Execution control** (play, pause, seek, reset, branch, used by the explanation timeline, D-009) belongs to the runtime contract. It acts on runs, not on the model, and is not an intervention.
+- **MK-17.5** The model never depends on any reader, intervener or controller: removing every presentation leaves its meaning unchanged (D-009, D-011).
+
+---
+
+## 18. Static diagnostics
+
+The kernel defines these static errors. They are detected before execution, on the IR, so a visual editor reports them the same way a compiler does (D-019).
+
+| Code | Error | Rule |
+|---|---|---|
+| MK-E01 | Dimension mismatch in addition, subtraction, comparison or equation | MK-3.4, MK-11.3 |
+| MK-E02 | Dimensioned argument to a dimensionless-only function | MK-3.4 |
+| MK-E03 | Bare non-zero literal combined with a dimensioned quantity | MK-3.8 |
+| MK-E04 | Invalid affine or point operation (instant + instant, point + point) | MK-3.9, MK-4.4 |
+| MK-E05 | Values from different spaces combined | MK-4.5 |
+| MK-E06 | Operation targets a derived binding, constant or input | MK-16.1 |
+| MK-E07 | Continuous state set outside a handler or intervention | MK-6.5 |
+| MK-E08 | Handler sets a parameter | MK-6.6 |
+| MK-E09 | Write from an object that does not own or contain the target | MK-7.10 |
+| MK-E10 | Target both defined and contributed to | MK-14.7 |
+| MK-E11 | Contribution to a target with no combination | MK-14.9 |
+| MK-E12 | Flow condition depends on continuous state or `t` | MK-14.12 |
+| MK-E13 | Level condition used as a continuous trigger | MK-15.4 |
+| MK-E14 | Algebraic loop | MK-13.4 |
+| MK-E15 | Cycle among initial definitions | MK-13.5 |
+| MK-E16 | Self-retriggering crossing event without a Zeno policy | MK-15.12 |
+| MK-E17 | Non-exhaustive conditional or match | MK-10.2 |
+| MK-E18 | Function reads a binding other than its parameters and constants | MK-10.3 |
+| MK-E19 | Two `set` operations on overlapping targets in one handler | MK-16.4 |
+
+Conflicts between different events can only be detected at run time.
+
+---
+
+## 19. Check against the first-slice reference programs
+
+Each first-slice program (D-012) is checked for expressibility in the model kernel. Correct results are checked later, by execution. Programs are given in sketch notation. **sketch (non-binding, D-006)**
+
+### 19.1 Projectile, with and without drag
+
+```text
+space Plane : Euclidean 2
+object Projectile {
+  param g    : Acceleration = 9.81 m/s^2
+  param k    : Quantity<1/L> = 0             // drag coefficient; 0 means no drag
+  param v0   : Velocity<Plane> = (20 m/s, 20 m/s)
+  state pos  : Point<Plane> = origin
+  state vel  : Velocity<Plane> = v0
+  state flying : Boolean = true              // discrete state: the mode
+  flow der(pos) = vel if flying else (0 m/s, 0 m/s)
+  flow der(vel) += (0 m/s^2, -g) if flying else (0 m/s^2, 0 m/s^2)   // gravity
+  flow der(vel) += -k * |vel| * vel          // quadratic drag; zero once vel is zero
+  event landed on falling(pos.y) { set flying = false; set vel = (0 m/s, 0 m/s) }
+}
+```
+
+- Two contributions to `der(vel)` combine by the default sum (MK-14.9, D-005). Expressible.
+- `-k * |vel| * vel`: `k` has dimension 1/L, `|vel|` has L/T, `vel` has L/T; the product is L/T², matching `der(vel)`. The dimension check covers the drag term.
+- The landing condition is a falling crossing (MK-15.4). At launch `pos.y = 0` while rising, which is not a falling crossing, so no enabling condition is needed.
+- Landing switches the mode (MK-14.12) and resets velocity (a reset, MK-15.9); the projectile then stays at the landing point.
+- Gap found: the expected result (range `2 v0.x v0.y / g` when `k = 0`) is a check evaluated at one event instant, not continuously. v0 has no rule for "evaluate this check when event E occurs". Recorded in section 21 for the presentation kernel (a measurement at an event is an observation, R-19).
+
+### 19.2 Bouncing ball
+
+```text
+object BouncingBall {
+  param g : Acceleration = 9.81 m/s^2
+  param e : Real = 0.8                      // restitution
+  constraint 0 <= e and e < 1 : reject
+  state y : Length = 1 m
+  state v : Velocity1 = 0 m/s               // Quantity<L/T>
+  state resting : Boolean = false           // discrete state: the mode
+  flow der(y) = v
+  flow der(v) = -g if not resting else 0 m/s^2
+  event bounce on falling(y) {
+    set v = -e * v
+  } zeno settle { set y = 0 m; set v = 0 m/s; set resting = true }
+}
+```
+
+- The guard is a falling crossing, so the defect found in the exploration record (level guard `y <= 0` retriggering after `y = 0`, audit F-02) cannot occur: after the reset `v > 0`, so `y` rises.
+- `bounce` writes `v`, which its trigger `y` depends on through the flow; it is self-retriggering (MK-15.11) and MUST declare a Zeno policy. Without one, MK-E16.
+- The flow condition reads only discrete state `resting` (MK-14.12).
+- Expected result: bounce times form a geometric series with ratio `e`; accumulation is detected before the limit `t_∞`. Expressible.
+
+### 19.3 Pendulum
+
+```text
+object Pendulum {
+  param g : Acceleration = 9.81 m/s^2
+  param L : Length = 1 m
+  param m : Mass = 1 kg
+  param pivot : Point<Plane> = origin
+  state θ : Real = 10 deg                  // angle, dimensionless (MK-3.11)
+  state ω : Quantity<1/T> = 0
+  flow der(θ) = ω
+  flow der(ω) = -(g / L) * sin(θ)
+  derived bob    : Point<Plane> = pivot + L * (sin(θ), -cos(θ))
+  derived energy : Energy = 0.5 * m * (L * ω)^2 + m * g * L * (1 - cos(θ))
+  constraint |bob - pivot| = L within 1e-9 m : report
+}
+```
+
+- The rod constraint holds by construction (MK-12.2); the constraint is a check.
+- `L * (sin θ, -cos θ)`: the pair is a dimensionless vector; scaling by `L` gives `Vector<Plane, L>`, so `pivot + ...` is a point (MK-4.4).
+- Energy drift is observed through `energy` (a derived binding). Expressible.
+
+### 19.4 Spring-mass
+
+Two continuous states `x`, `v`; `der(x) = v`; `der(v) = -(k/m) * (x - rest)`; derived energy; a `display` equation `T = 2π sqrt(m/k)`. Expressible with the constructs of 19.3. The display equation's two sides have dimension T (MK-11.3).
+
+### 19.5 Function plot with a draggable parameter
+
+```text
+object QuadraticDemo {
+  param a : Real = 1
+  constraint -5 <= a and a <= 5 : reject
+  derived f : Real -> Real = fn(x) => a * x^2
+}
+```
+
+- The model is static (MK-14.15). `a` is intervenable as a parameter (MK-6.10). Dragging is a presentation-kernel interaction that submits `set(a, value)` as an intervention (MK-17.2); the constraint rejects out-of-range values.
+- `f` is derived: a function value that changes when `a` changes. The plot is a projection of `f`; synchronization of views is a presentation-kernel property. Expressible in the model kernel.
+
+### 19.6 Vector addition
+
+```text
+object VectorDemo {
+  param A : Point<Plane> = origin + (1 m, 2 m)
+  param u : Vector<Plane, Length> = (3 m, 0 m)
+  param w : Vector<Plane, Length> = (0 m, 2 m)
+  derived sum : Vector<Plane, Length> = u + w
+  derived B   : Point<Plane> = A + sum
+  // derived bad : Point<Plane> = A + B     -> MK-E04
+  // derived bad2 = u + (3, 0)               -> MK-E03
+}
+```
+
+- Point and vector rules are enforced statically (MK-4.4). Expressible, with diagnostics MK-E03 and MK-E04.
+
+### 19.7 Narrated projectile lesson
+
+The model is 19.1 unchanged. It exposes the event `landed` (MK-17.1). Waiting on it, pausing and seeking are timeline and runtime-contract behavior (MK-17.4). The model kernel needs nothing further. Expressible, pending `02` and `03`.
+
+### 19.8 Findings
+
+| Program | Model kernel | Depends on |
+|---|---|---|
+| Projectile, no drag | Expressible | Runtime contract (event location) |
+| Projectile, drag | Expressible | Runtime contract (solver accuracy) |
+| Bouncing ball | Expressible | Runtime contract (Zeno detection defaults) |
+| Pendulum | Expressible | Runtime contract |
+| Spring-mass | Expressible | Runtime contract |
+| Function plot | Expressible | Presentation kernel |
+| Vector addition | Expressible | - |
+| Narrated lesson | Expressible | Runtime contract, presentation kernel |
+
+One gap: evaluating a check or measurement at an event instant (19.1). It belongs to observation (presentation kernel, R-19), which gets it as a requirement.
+
+---
+
+## 20. New positions taken in this document
+
+Positions that elaborate accepted decisions without changing them are specified here directly. Positions with design weight of their own are register entries.
+
+**Register entries:**
+
+| Entry | Position | Sections |
+|---|---|---|
+| D-020 | Constraints are checked, never enforced, in v1 (Accepted) | 12 |
+| D-021 | Plane angle is dimensionless, with `rad`, `deg`, `rev` units (Accepted) | 3.5 |
+| D-022 | Spaces have frames; cross-frame and cross-space values need explicit conversion (Accepted) | 4 |
+| D-023 | Only declared bindings are intervenable; parameters by default (Accepted) | 6.3, 17 |
+
+**Elaborations (in this specification only):**
+
+- `Real` is binary64; non-finite results are `invalid`; integer overflow is `invalid` (2.2).
+- Quantities compute in coherent SI units; units affect input and display only (3.3).
+- Status precedence and explicit handling forms (5).
+- Parameters change only by intervention, never by handlers (MK-6.6).
+- Writes only from the owner or a containing object (MK-7.10).
+- Deterministic identities for created elements (MK-7.7).
+- Combination is a commutative monoid; zero contributions give the identity (MK-14.8).
+- Flow conditions depend only on discrete state, parameters and constants (MK-14.12).
+- Handlers read pre-transition state (MK-15.7).
+- Self-retriggering is decided statically and requires a Zeno policy (MK-15.11, MK-15.12).
+
+---
+
+## 21. Deferred
+
+| Item | Where it will be specified |
+|---|---|
+| Event location, microstep ordering, cascade and Zeno defaults, solver accuracy | `02-runtime-contract.md` |
+| Random streams and stochastic processes (D-013) | Runtime contract, stochastic slice |
+| Algorithmic process mode (RUN-04) | Slice that needs it |
+| Field state evolution (D-010) | Slice that needs it |
+| Acausal equations, constraint enforcement (D-007, D-020) | Later extension |
+| Quantity kinds of equal dimension (torque and energy) | Open; to be raised when a reference program needs it |
+| Checks and measurements evaluated at event instants (19.1) | `03-presentation-kernel.md` (observation) |
+| Modules, imports, packaging, versioning of libraries (R-55) | Extension specification |
+| IR format | IR specification |
