@@ -12,13 +12,15 @@ The RP-01 model, unchanged. Drag is enabled by the parameter `k`.
 
 ```text
 presentation DragChecks for Projectile {
-  observe t_apex  = elapsed on(apex)
-  observe h_apex  = pos.y   on(apex)
-  observe t_land  = elapsed on(landed)
-  observe range   = pos.x   on(landed)
-  observe v_land  = vel     on(landed, microstep 0)   // before the reset
-  observe energy  = 0.5 * |vel|^2 + g * (pos - origin).y   every(0.01 s)   // per unit mass
-  observe balance = der(vel) - ((0 m/s^2, -g) - k * |vel| * vel)  every(0.01 s)
+  observe {
+    t_apex  = elapsed on apex
+    h_apex  = pos.y   on apex
+    t_land  = elapsed on landed
+    range   = pos.x   on landed
+    v_land  = vel     on landed microstep 0                          // before the reset
+    energy  = 0.5 * |vel|^2 + g * (pos - origin).y    every 0.01 s   // per unit mass
+    balance = der(vel) - ((0, -g) - k * |vel| * vel)  every 0.01 s
+  }
 }
 ```
 
@@ -80,3 +82,4 @@ E3 and E9 together check RC-4.3: microstep 0 of the landing instant holds the pr
 ## History
 
 - 2026-09-29 written.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied.

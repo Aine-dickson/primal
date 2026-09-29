@@ -1,10 +1,10 @@
 # 01 Model Kernel
 
-- **Version:** v0 (draft), 2026-09-29
+- **Version:** v0 (draft), 2026-09-29, revised 2026-09-30
 - **Part:** model kernel (D-011). The runtime contract (`02`) and presentation kernel (`03`) are separate documents.
 - **Scope:** the meaning of a model: what exists in it, what values it holds, what is true of it, and how it may change. How changes are computed and scheduled is the runtime contract. How the model is shown and manipulated is the presentation kernel.
 
-Every section follows accepted decisions (including D-020 to D-023, raised by this document) or carried-forward resolutions, including D-027 (raised by reference program RP-08).
+Every section follows accepted decisions (including D-020 to D-023, raised by this document) or carried-forward resolutions, including D-027 (raised by reference program RP-08) and D-029, D-030, D-032 (raised by the syntax study).
 
 ## Contents
 
@@ -61,19 +61,20 @@ The model kernel has these concepts. Every other construct in the language (prop
 - **MK-1.2** Author-facing constructs MUST NOT express implementation detail: solver, buffer, cache, storage layout or hit testing (R-04). Execution configuration is separate from the model and is visible to the author where it changes results (D-010).
 - **MK-1.3** Every construct in this document MUST have a representation in the semantic IR, carrying at least the information this document assigns to it, with a stable identity independent of its source name (R-47, D-019).
 
-### Sketch notation
+### Example notation
 
-Examples use this notation. **sketch (non-binding, D-006)**:
+Examples use the working syntax (D-028, `docs/syntax-study/working-syntax.md`). It is non-binding until the syntax is frozen; the normative content is the semantics, not the notation.
 
 ```text
-object Ball {
-  param  mass : Mass     = 0.5 kg        // binding with role parameter
-  state  pos  : Point<Plane>             // continuous state
-  state  vel  : Velocity<Plane>
-  derived ke  : Energy   = 0.5 * mass * |vel|^2
-  flow   der(pos) = vel                  // definition
-  flow   der(vel) += gravity             // contribution
-  event  bounce on falling(pos.y) { set vel.y = -e * vel.y }
+model Ball in Plane {
+  param   { mass: Mass = 0.5 kg; e: Real = 0.8 in [0, 1) }   // parameters
+  state   { pos: Point = origin; vel: Vector<Velocity> = 0 }  // continuous state
+  derived { ke: Energy = 0.5 * mass * |vel|^2 }                // derived binding
+  flow {
+    der(pos)  = vel                                            // definition
+    der(vel) += (0, -9.81 m/s^2)                               // contribution
+  }
+  event bounce on falling(pos.y) { set vel.y = -e * vel.y } zeno stop
 }
 ```
 
@@ -126,7 +127,7 @@ object Ball {
 ## 3. Quantities, units and dimensions
 
 - **Restates:** R-08.
-- **Decisions:** D-014, D-021.
+- **Decisions:** D-014, D-021, D-030.
 - **Prior art:** follows the SI (9th edition, 2019) for base dimensions and coherent units. Follows F# units of measure in checking dimensions statically. Follows Pint and Boost.Units in treating offset scales (degree Celsius) as affine, where Pint separates `degC` from `delta_degC` and Boost.Units separates `absolute<>` temperatures from differences.
 
 ### 3.1 Dimensions
@@ -144,7 +145,7 @@ object Ball {
 
 - **MK-3.6** A unit is a named scale factor (and, for affine units, an offset) relative to the coherent SI unit of its dimension. The meaning of a quantity is independent of the unit it was written in: `100 cm` and `1 m` are the same value.
 - **MK-3.7** Units appear in literals, in inputs, and as display preferences in binding metadata (section 6). They do not affect computation. The computational form of a quantity is its magnitude in coherent SI units.
-- **MK-3.8** **Literals** (D-014): a numeric literal written with a unit has that unit's dimension. A bare literal is dimensionless, with one exception: the literal `0` adopts whatever dimension its context requires. Any other bare literal combined with a dimensioned quantity is a static error.
+- **MK-3.8** **Literals** (D-014): a numeric literal written with a unit has that unit's dimension. A bare literal is dimensionless, with one exception: the literal `0` adopts whatever dimension its context requires, and also stands for the zero vector of any required `Vector<S, D>` (D-030). It never stands for a `Point` or an `Instant`, which have no zero. Any other bare literal combined with a dimensioned quantity is a static error.
 
 ### 3.4 Affine quantities
 
@@ -164,7 +165,7 @@ object Ball {
 ## 4. Spaces, points and vectors
 
 - **Restates:** R-09, R-11.
-- **Decisions:** D-014, D-022.
+- **Decisions:** D-014, D-022, D-032.
 - **Prior art:** follows the mathematical definition of an affine space (points, a vector space of displacements, no addition of points). Follows the frame-tagged data discipline of robotics libraries such as ROS tf2, where every geometric value names its frame and conversion between frames is explicit.
 
 - **MK-4.1** A **space** is a domain (section 9) declared by the model with a dimension `n` (a type parameter, D-014) and, in v0, a Euclidean metric. The kernel does not assume any particular `n`; the first slice uses `n = 2` (D-001).
@@ -178,6 +179,7 @@ object Ball {
 - **MK-4.5** Values from different spaces never combine. Moving a value between frames of one space, or between spaces, requires an explicit function (D-022).
 - **MK-4.6** Component access `v.x`, `p.y` reads in the standard frame. `v.in(F).x` reads in frame `F` (D-022).
 - **MK-4.7** A space is model space. It is not render space (R-07); the mapping to a screen belongs to projection.
+- **MK-4.8** **Vector literals** (D-032). A tuple literal `(a, b)` is a `Tuple` unless its context expects a vector, in which case it is that vector, with that space and dimension. The expected type comes from a declaration, a parameter of a called function, a flow target, or the other operand of `+`, `-` or a comparison, and propagates through scaling: in `pivot + L * (sin(θ), -cos(θ))` the tuple is expected to be `Vector<Plane, 1>`. Using a tuple as a vector where no expected type made it one is a static error. A space's origin is `S.origin`, or `origin` inside a model that declares `S` as its default space. A vector MAY also be written with an explicit constructor of its space where no context supplies the type.
 
 ---
 
@@ -309,15 +311,16 @@ The first slice (D-001) exercises neither dynamic collections nor relations. The
 ## 10. Expressions and functions
 
 - **Restates:** R-17, R-46.
-- **Decisions:** D-007, D-013.
+- **Decisions:** D-007, D-013, D-029.
 - **Prior art:** follows pure functional expression languages (and Modelica functions, which are side-effect free apart from declared external calls). Follows FRP (Elliott and Hudak) in treating a derived binding as a time-varying value defined for every instant, not as a cached result.
 
 - **MK-10.1** An **expression** is a pure, deterministic term: literals, binding reads, operators, function applications, conditionals, collection expressions, and status handling (MK-5.5). Evaluating an expression never changes state (R-17).
 - **MK-10.2** Conditionals are total: every `if` has an `else` branch, and `match` on an enumeration covers every alternative.
-- **MK-10.3** A **function** has typed parameters, a result type and a body expression. Functions are values (`A -> B`). They are pure and cannot read bindings other than their parameters and constants; a function that needs model state takes it as an argument.
+- **MK-10.3** A **declared function** has typed parameters, a result type and a body expression. Functions are values (`A -> B`). A declared function is pure and cannot read bindings other than its parameters and constants; a declared function that needs model state takes it as an argument (D-029).
 - **MK-10.4** Expressions do not draw random numbers. Sampling a distribution happens only in stochastic processes and operations with a declared random stream (R-10, R-30, D-013; deferred, section 21).
 - **MK-10.5** Evaluation that does not terminate within the runtime's evaluation limit yields `invalid` (runtime contract).
 - **MK-10.6** Every expression keeps its symbolic structure in the IR. Its evaluated value is separate from it (R-48: expression is not evaluated value). This lets equations and definitions be displayed, differentiated symbolically by libraries, and consumed by a later acausal solver (D-007).
+- **MK-10.7** A **derived function value** is a derived binding (MK-6.4) of function type whose body MAY read model bindings, for example `f(x) = a * x^2` with `a` a parameter. Like every derived binding it is evaluated at every instant on current values, so an application `f(2)` always uses the current `a`; nothing is captured or stored. Its dependencies (section 13) are the bindings its body reads. A stored binding (constant, parameter, input, state) of function type MUST hold a closed function: one that reads no bindings other than its parameters and constants (D-029).
 
 ---
 
@@ -379,8 +382,8 @@ The first slice (D-001) exercises neither dynamic collections nor relations. The
 
 ### 14.1 Processes
 
-- **MK-14.1** A **process** is a named group of behaviors (flows, events, operations) with an execution **mode** (R-56): `continuous`, `discrete`, `algorithmic` or `stochastic`. The IR carries the mode.
-- **MK-14.2** v0 specifies `continuous` processes (flows) and events. `discrete` processes are events on a time schedule (section 15). `algorithmic` and `stochastic` modes are reserved (section 21).
+- **MK-14.1** A **process** is a named group of behaviors (flows, events, operations) with a **process kind** (R-56, called execution mode there): `continuous`, `discrete`, `algorithmic` or `stochastic`. The IR carries the kind. The word "mode" is reserved for the discrete state that selects flows (section 14.4).
+- **MK-14.2** v0 specifies `continuous` processes (flows) and events. `discrete` processes are events on a time schedule (section 15). `algorithmic` and `stochastic` kinds are reserved (section 21).
 
 ### 14.2 Evolution targets
 
@@ -546,8 +549,11 @@ The kernel defines these static errors. They are detected before execution, on t
 | MK-E15 | Cycle among initial definitions | MK-13.5 |
 | MK-E16 | Self-retriggering crossing event without a Zeno policy | MK-15.12 |
 | MK-E17 | Non-exhaustive conditional or match | MK-10.2 |
-| MK-E18 | Function reads a binding other than its parameters and constants | MK-10.3 |
+| MK-E18 | Declared function reads a binding other than its parameters and constants | MK-10.3 |
 | MK-E19 | Two `set` operations on overlapping targets in one handler | MK-16.4 |
+| MK-E20 | Stored binding of function type holds a function that reads bindings | MK-10.7 |
+| MK-E21 | Tuple used as a vector with no expected vector type | MK-4.8 |
+| MK-E22 | Target defined twice: two defining flows for one `der(x)`, or two definitions of one binding | MK-14.7, MK-6.1 |
 
 Conflicts between different events can only be detected at run time.
 
@@ -555,23 +561,28 @@ Conflicts between different events can only be detected at run time.
 
 ## 19. Check against the first-slice reference programs
 
-Each first-slice program (D-012) is checked for expressibility in the model kernel. Correct results are checked later, by execution. Programs are given in sketch notation. **sketch (non-binding, D-006)**
+Each first-slice program (D-012) is checked for expressibility in the model kernel. Correct results are checked later, by execution. Models are given in the working syntax (D-028), non-binding. The complete programs, with presentations and cases, are in `reference-programs/`.
 
 ### 19.1 Projectile, with and without drag
 
 ```text
-space Plane : Euclidean 2
-object Projectile {
-  param g    : Acceleration = 9.81 m/s^2
-  param k    : Quantity<1/L> = 0             // drag coefficient; 0 means no drag
-  param v0   : Velocity<Plane> = (20 m/s, 20 m/s)
-  state pos  : Point<Plane> = origin
-  state vel  : Velocity<Plane> = v0
-  state flying : Boolean = true              // discrete state: the mode
-  flow der(pos) = vel if flying else (0 m/s, 0 m/s)
-  flow der(vel) += (0 m/s^2, -g) if flying else (0 m/s^2, 0 m/s^2)   // gravity
-  flow der(vel) += -k * |vel| * vel          // quadratic drag; zero once vel is zero
-  event landed on falling(pos.y) { set flying = false; set vel = (0 m/s, 0 m/s) }
+space Plane = euclidean(2)
+
+model Projectile in Plane {
+  param {
+    g:     Acceleration  = 9.81 m/s^2
+    k:     Quantity<1/L> = 0        where k >= 0          // drag coefficient; 0 means no drag
+    speed: Velocity      = 20 m/s   where speed > 0 m/s
+    angle: Angle         = 45 deg   in (0 deg, 90 deg)
+  }
+  state    { pos: Point = origin; vel: Vector<Velocity> = speed * (cos(angle), sin(angle)) }
+  discrete { flying: Boolean = true }                     // the mode
+  flow {
+    der(pos)  = if flying then vel else 0
+    der(vel) += if flying then (0, -g) else 0             // gravity
+    der(vel) += -k * |vel| * vel                          // quadratic drag; zero once vel is zero
+  }
+  event landed on falling(pos.y) { set flying = false; set vel = 0 }
 }
 ```
 
@@ -579,20 +590,19 @@ object Projectile {
 - `-k * |vel| * vel`: `k` has dimension 1/L, `|vel|` has L/T, `vel` has L/T; the product is L/T², matching `der(vel)`. The dimension check covers the drag term.
 - The landing condition is a falling crossing (MK-15.4). At launch `pos.y = 0` while rising, which is not a falling crossing, so no enabling condition is needed.
 - Landing switches the mode (MK-14.12) and resets velocity (a reset, MK-15.9); the projectile then stays at the landing point.
-- Gap found: the expected result (range `2 v0.x v0.y / g` when `k = 0`) is a check evaluated at one event instant, not continuously. v0 has no rule for "evaluate this check when event E occurs". Recorded in section 21 for the presentation kernel (a measurement at an event is an observation, R-19).
+- Gap found: the expected result (range `speed^2 sin(2 angle) / g` when `k = 0`) is a check evaluated at one event instant, not continuously. The model kernel has no rule for "evaluate this check when event E occurs". Resolved in the presentation kernel by `on(E)` observations (PK-3.4, R-19).
 
 ### 19.2 Bouncing ball
 
 ```text
-object BouncingBall {
-  param g : Acceleration = 9.81 m/s^2
-  param e : Real = 0.8                      // restitution
-  constraint 0 <= e and e < 1 : reject
-  state y : Length = 1 m
-  state v : Velocity1 = 0 m/s               // Quantity<L/T>
-  state resting : Boolean = false           // discrete state: the mode
-  flow der(y) = v
-  flow der(v) = -g if not resting else 0 m/s^2
+model BouncingBall {
+  param    { g: Acceleration = 9.81 m/s^2; e: Real = 0.8 in [0, 1) }    // restitution
+  state    { y: Length = 1 m; v: Velocity = 0 }
+  discrete { resting: Boolean = false }                                 // the mode
+  flow {
+    der(y) = v
+    der(v) = if resting then 0 else -g
+  }
   event bounce on falling(y) {
     set v = -e * v
   } zeno settle { set y = 0 m; set v = 0 m/s; set resting = true }
@@ -607,23 +617,23 @@ object BouncingBall {
 ### 19.3 Pendulum
 
 ```text
-object Pendulum {
-  param g : Acceleration = 9.81 m/s^2
-  param L : Length = 1 m
-  param m : Mass = 1 kg
-  param pivot : Point<Plane> = origin
-  state θ : Real = 10 deg                  // angle, dimensionless (MK-3.11)
-  state ω : Quantity<1/T> = 0
-  flow der(θ) = ω
-  flow der(ω) = -(g / L) * sin(θ)
-  derived bob    : Point<Plane> = pivot + L * (sin(θ), -cos(θ))
-  derived energy : Energy = 0.5 * m * (L * ω)^2 + m * g * L * (1 - cos(θ))
-  constraint |bob - pivot| = L within 1e-9 m : report
+model Pendulum in Plane {
+  param {
+    g: Acceleration = 9.81 m/s^2; L: Length = 1 m; m: Mass = 1 kg
+    pivot: Point = origin
+  }
+  state   { θ: Angle = 10 deg; ω: Quantity<1/T> = 0 }    // θ dimensionless (MK-3.11)
+  derived {
+    bob:    Point  = pivot + L * (sin(θ), -cos(θ))
+    energy: Energy = 0.5 * m * (L * ω)^2 + m * g * L * (1 - cos(θ))
+  }
+  flow { der(θ) = ω; der(ω) = -(g / L) * sin(θ) }
+  constraint |bob - pivot| == L within 1e-9 m policy report
 }
 ```
 
 - The rod constraint holds by construction (MK-12.2); the constraint is a check.
-- `L * (sin θ, -cos θ)`: the pair is a dimensionless vector; scaling by `L` gives `Vector<Plane, L>`, so `pivot + ...` is a point (MK-4.4).
+- `L * (sin(θ), -cos(θ))`: the sum is added to the point `pivot`, so the tuple is expected to be a vector of `Plane` and is `Vector<Plane, 1>` (MK-4.8, D-032); scaling by `L` gives `Vector<Plane, L>`, so `pivot + ...` is a point (MK-4.4).
 - Energy drift is observed through `energy` (a derived binding). Expressible.
 
 ### 19.4 Spring-mass
@@ -633,27 +643,30 @@ Two continuous states `x`, `v`; `der(x) = v`; `der(v) = -(k/m) * (x - rest)`; de
 ### 19.5 Function plot with a draggable parameter
 
 ```text
-object QuadraticDemo {
-  param a : Real = 1
-  constraint -5 <= a and a <= 5 : reject
-  derived f : Real -> Real = fn(x) => a * x^2
+model QuadraticDemo {
+  param   { a: Real = 1 in [-5, 5] }
+  derived { f(x: Real): Real = a * x^2 }
 }
 ```
 
-- The model is static (MK-14.15). `a` is intervenable as a parameter (MK-6.10). Dragging is a presentation-kernel interaction that submits `set(a, value)` as an intervention (MK-17.2); the constraint rejects out-of-range values.
-- `f` is derived: a function value that changes when `a` changes. The plot is a projection of `f`; synchronization of views is a presentation-kernel property. Expressible in the model kernel.
+- The model is static (MK-14.15). `a` is intervenable as a parameter (MK-6.10); its range lowers to a `reject` constraint. Dragging is a presentation-kernel interaction that submits `set(a, value)` as an intervention (MK-17.2); the constraint rejects out-of-range values.
+- `f` is a derived function value (MK-10.7, D-029): it reads `a` and changes when `a` changes; MK-10.3 does not apply to it. The plot is a projection of `f`; synchronization of views is a presentation-kernel property. Expressible in the model kernel.
 
 ### 19.6 Vector addition
 
 ```text
-object VectorDemo {
-  param A : Point<Plane> = origin + (1 m, 2 m)
-  param u : Vector<Plane, Length> = (3 m, 0 m)
-  param w : Vector<Plane, Length> = (0 m, 2 m)
-  derived sum : Vector<Plane, Length> = u + w
-  derived B   : Point<Plane> = A + sum
-  // derived bad : Point<Plane> = A + B     -> MK-E04
-  // derived bad2 = u + (3, 0)               -> MK-E03
+model VectorDemo in Plane {
+  param {
+    A: Point          = origin + (1 m, 2 m)
+    u: Vector<Length> = (3 m, 0 m)
+    w: Vector<Length> = (0 m, 2 m)
+  }
+  derived {
+    sum: Vector<Length> = u + w
+    B:   Point          = A + sum
+    // bad:  Point = A + B            -> MK-E04
+    // bad2: Vector<Length> = u + (3, 0)  -> MK-E03
+  }
 }
 ```
 
@@ -693,6 +706,9 @@ Positions that elaborate accepted decisions without changing them are specified 
 | D-022 | Spaces have frames; cross-frame and cross-space values need explicit conversion (Accepted) | 4 |
 | D-023 | Only declared bindings are intervenable; parameters by default (Accepted) | 6.3, 17 |
 | D-027 | Requestable events: the outside may request events the model declares `on request` (Accepted; raised by RP-08) | 15, 17 |
+| D-030 | Literal `0` adopts zero vectors (Accepted; raised by syntax study S-3) | 3.3 |
+| D-032 | Tuple literals are typed as vectors by their expected type (Accepted; raised by syntax study S-5) | 4, 18 |
+| D-029 | Derived function values may read bindings; declared and stored functions stay closed (Accepted; raised by syntax study S-1) | 10, 18 |
 
 **Elaborations (in this specification only):**
 

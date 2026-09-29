@@ -1,10 +1,10 @@
 # 03 Presentation Kernel
 
-- **Version:** v0 (draft), 2026-09-29
+- **Version:** v0 (draft), 2026-09-29, revised 2026-09-30
 - **Part:** presentation kernel (D-011). It reads the model through the model kernel's interface (MK section 17) and the runtime's observer output (RC section 15), and directs runs through execution control (RC section 12).
 - **Scope:** how a model is observed, projected into representations, arranged in views, narrated over time, and manipulated by a learner or author. How pixels, audio or video frames are produced is a renderer concern outside this specification.
 
-Every section follows accepted decisions (including D-025 and D-026, raised by this document) or carried-forward resolutions.
+Every section follows accepted decisions (including D-025 and D-026, raised by this document, and D-033 and D-034, raised by the syntax study) or carried-forward resolutions.
 
 ## Contents
 
@@ -125,10 +125,10 @@ The presentation kernel has these concepts:
 ## 6. Representation
 
 - **Restates:** R-37, R-59.
-- **Decisions:** D-018.
+- **Decisions:** D-018, D-034.
 - **Prior art:** follows SVG and the Manim object model for geometric primitives and grouping. Follows MathML and TeX for equation layout from a symbolic tree.
 
-- **PK-6.1** A **representation** is a presentation element with identity, a kind, properties, and the sources its properties are bound to. It is not pixels (R-37 invariant 2); a renderer turns it into output.
+- **PK-6.1** A **representation** is a presentation element with identity, a kind, properties, and the sources its properties are bound to. It is not pixels (R-37 invariant 2); a renderer turns it into output. A representation MAY carry an author name, unique within its presentation, by which timeline actions and interactions refer to it; the name is not its identity (MK-6.2).
 - **PK-6.2** Each representation property is either **bound** (computed by a projection from sources), **set** (a constant in the presentation configuration), or **animated** (driven by presentation time, section 8). A property has exactly one of these at a time.
 - **PK-6.3** The **first-slice representation set**:
 
@@ -142,13 +142,14 @@ The presentation kernel has these concepts:
 | `series_plot` | data against an axis (for example `x(t)`) | data |
 | `axes`, `grid` | coordinate reference | view coordinate mapping |
 | `label` | text, optionally with a value readout | text, any binding |
-| `equation` | a typeset equation or expression, with symbols linked to bindings | equation, expression |
+| `equation` | a typeset model equation, with symbols linked to bindings | equation (MK section 11) |
+| `formula` | a typeset expression, a definition, or a labeled expression (`R = ...`), with symbols linked to bindings | expression, derived binding, derived function value (D-034) |
 | `table` | rows of values | data |
 | `slider`, `number_input`, `toggle`, `button` | a control | intervenable binding; for `button`, a requestable event (D-027) or a runtime control |
 | `group` | a set of representations with a shared transform | representations |
 
 - **PK-6.4** Controls are representations of bindings with a declared inverse (PK-5.6): a slider shows a parameter's value and, when moved, proposes a new one. A control can only target an intervenable binding (D-023).
-- **PK-6.5** An `equation` representation is typeset from the equation's symbolic form in the IR (MK-10.6). Each symbol that refers to a binding carries that binding's identity, so views can highlight a symbol with the value it stands for, and a label can show live values substituted into the equation.
+- **PK-6.5** `equation` and `formula` representations are typeset from symbolic forms in the IR (MK-10.6), never from strings. A `formula` of a derived binding or derived function value shows its definition (`f(x) = a x²`); a `formula` with a label shows `label = expression`, where the label is presentation text and not a binding (D-034). Each symbol that refers to a binding carries that binding's identity, so views can highlight a symbol with the value it stands for, and a label can show live values substituted into the equation.
 - **PK-6.6** A representation may exist without a model source (a title, an annotation) (R-37 invariant 19). A line between two objects is not a relation unless the model declares one (R-59).
 - **PK-6.7** Libraries MAY add representation kinds. A new kind declares its properties, the source types it accepts, and a description of how a renderer draws it in each supported medium (section 12).
 
@@ -187,7 +188,7 @@ The presentation kernel has these concepts:
 ## 9. Explanation timeline
 
 - **Restates:** R-22, R-23, R-32.
-- **Decisions:** D-009, D-017, D-018, D-025.
+- **Decisions:** D-009, D-017, D-018, D-025, D-027, D-033.
 - **Prior art:** follows Manim scenes and Motion Canvas generator timelines (author-sequenced animation with waits). Follows interactive-video and slide tools for learner-paced continue points. Departs from both by synchronizing with a live simulation through events rather than fixed times.
 
 The explanation timeline is a peer of the model (D-009): it observes the model and directs its runs; the model never depends on it.
@@ -215,6 +216,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 | `explore` | open a learner exploration period (section 9.3) |
 | `bind`, `release` | hand a representation property between a projection and an animation (PK-8.5) |
 
+- **PK-9.2a** **Order at a beat's start** (D-033). A beat's run-directing actions (`seek`, `reset`, `branch`, `intervene`, `request`, `run`, `hold`) take effect in the order written, at the beat's start and before any presentation time passes. The beat's other actions then start together and see the resulting state. `sequence` orders actions that take time; it is not needed for run-directing actions.
 - **PK-9.3** `wait_until(E)` with the simulation running makes presentation duration depend on the model: the beat lasts exactly as long as the simulation takes to reach `E` at the current rate. Because runs are deterministic (RC-14.5), this duration is known before playback and is identical in export.
 - **PK-9.4** If a `wait_until` can never be satisfied (the run ends or stops first), the timeline reports it at the moment the run ends, continues with the next beat, and records a diagnostic. It never hangs.
 
@@ -306,25 +308,31 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 
 ## 13. Check against the first-slice reference programs
 
-Each program (D-012) is checked for expressibility in the presentation kernel. **sketch (non-binding, D-006)**
+Each program (D-012) is checked for expressibility in the presentation kernel. Examples are in the working syntax (D-028), non-binding; the complete programs are in `reference-programs/`.
 
 ### 13.1 Projectile, with and without drag
 
 ```text
 presentation ProjectileLab for Projectile {
-  view scene : spatial(Plane) { scale 1 m -> 10 px; y up }
-  view graph : plot(x = t, y = pos.y)
-  show marker(pos) in scene
-  show arrow(vel, at pos, scale 1 m/s -> 4 px) in scene
-  show trace(pos every 0.02 s) in scene
-  show series_plot(pos.y every 0.02 s) in graph
-  observe range = pos.x on(landed)
-  expect range == 2 * v0.x * v0.y / g within rel 1e-6 when k = 0 m^-1
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    marker(pos)
+    arrow(vel, from: pos, scale: 1 m/s -> 4 px)
+    trace(pos every 0.02 s)
+  }
+  view graph: plot(x: elapsed, y: pos.y) {
+    series_plot(pos.y every 0.02 s)
+  }
+  observe { range = pos.x on landed }
+}
+
+run no_drag of Projectile with ProjectileLab {
+  param  { k = 0 }
+  expect { range == speed^2 * sin(2 * angle) / g within rel 1e-6 }
 }
 ```
 
 - The range at landing is an `on(landed)` observation (PK-3.4). The model kernel's gap (MK 19.1) is closed.
-- The reference result is an expectation (PK-4.2). A conditional expectation (`when k = 0`) is needed for the no-drag variant; v0 expresses it as two presentations or two run configurations. Recorded as a minor item in section 15.
+- The reference result is an expectation (PK-4.2). The no-drag result holds only when `k = 0`, so it belongs to a named case with that override, not to a conditional expectation (section 15).
 
 ### 13.2 Bouncing ball, pendulum, spring-mass
 
@@ -334,16 +342,22 @@ Marker, trace and series plot as in 13.1; energy as a `series_plot` of the deriv
 
 ```text
 presentation QuadraticPlot for QuadraticDemo {
-  view plot : plot(x in [-3, 3], y in [-5, 20])
-  show function_graph(f) in plot
-  show slider(a) ; show equation("y = a x^2", live values)
-  show marker(point (1, f(1))) in plot draggable inverse (x, y) -> a = y / x^2 at x = 1
+  view plot: plot(x: [-3, 3], y: [-5, 20]) {
+    function_graph(f)
+    marker(at: (1, f(1))) {
+      on drag as p { propose a = p.y / 1^2 }      // x fixed at 1
+    }
+  }
+  panel controls {
+    slider(a, range: [-5, 5], step: 0.1)
+    formula(f, live: true)                        // f(x) = a x², D-034
+  }
 }
 ```
 
 - The slider and the draggable point both target `a`, the only intervenable binding (D-023). The point's inverse maps a pointer position to a proposed `a` (PK-5.6).
 - The constraint `-5 <= a <= 5` (policy `reject`) stops the drag at the boundary (PK-10.6).
-- All views show the same committed state (PK-7.5); the equation shows the live value of `a` (PK-6.5). Expressible.
+- All views show the same committed state (PK-7.5); the formula shows the live value of `a` (PK-6.5). Expressible.
 
 ### 13.4 Vector addition
 
@@ -352,24 +366,28 @@ Arrows for `u`, `w`, `sum`; draggable arrow heads with inverse `head -> vector =
 ### 13.5 Narrated projectile lesson
 
 ```text
-timeline for ProjectileLab {
+timeline {
   scene launch {
-    beat { show marker(pos); narrate("A ball is launched at 45 degrees.") }
-    beat { run(rate 1); wait_until(landed) }
-    beat { hold; highlight(range); narrate("It lands here. Why this distance?") }
-    beat { seek(t0); show equation(range_formula); narrate("Watch the horizontal speed.") }
-    beat { run(rate 0.5); show arrow(vel.x); wait_until(landed) }
+    beat { in scene { marker(pos) as ball }; narrate "A ball is launched at 45 degrees." for 4 s }
+    beat { run rate 1 until landed }
+    beat { hold; highlight ball; narrate "It lands here. Why this distance?" for 3 s }
+    beat {
+      seek t0                                      // applies before the formula appears (PK-9.2a)
+      show formula("R", speed^2 * sin(2 * angle) / g, live: true)
+      narrate "Watch the horizontal speed." for 3 s
+    }
+    beat { in scene { arrow((vel.x, 0), from: pos) }; run rate 0.5 until landed }
   }
   scene try_it {
-    beat { explore(controls: slider(v0.angle), limit 60 s) keep(v0) }
-    beat { run(rate 1); wait_until(landed); narrate("Compare with your prediction.") }
+    beat { explore limit 60 s keep angle { slider(angle, range: [10 deg, 80 deg]) } }
+    beat { request relaunch; run rate 1 until landed; narrate "Compare with your prediction." for 3 s }
   }
 }
 ```
 
 - The timeline waits on `landed`, holds, seeks back and replays (PK-9.2, PK-9.3), with the same trajectory both times (RC-12.2).
 - The `explore ... keep` beat lets the learner set the launch angle, then continues the lesson with it (PK-9.9). Without `keep`, the lesson would return to its own run. In video, the explore beat uses its fallback.
-- Gap: `v0.angle` assumes the model exposes the launch angle as a parameter. The model in MK 19.1 exposes `v0` as a vector; the reference program should define `speed` and `angle` parameters and derive `v0`. This is a reference-program authoring point, not a kernel gap.
+- Gap (resolved): an earlier draft of the model exposed the launch velocity as one vector `v0`, which a slider for the angle cannot target. The model now has `speed` and `angle` parameters (MK 19.1, RP-01), and relaunching is a requestable event (D-027).
 
 ### 13.6 Findings
 
@@ -393,6 +411,8 @@ The model kernel's open item (checks at an event instant) is resolved by `on(E)`
 |---|---|---|
 | D-025 | Learner model actions during a narrated lesson happen only in `explore` beats, on a branch; the lesson returns to its own run unless the beat keeps the learner's choice (Accepted) | 9.3 |
 | D-026 | Accessibility baseline in v1: generated text alternatives, keyboard operation of every control and drag, captions, no color-only encoding (Accepted) | 11 |
+| D-033 | Run-directing actions in a beat apply in written order before presentation time passes (Accepted; raised by syntax study S-8) | 9.1 |
+| D-034 | `formula` representation for expressions, definitions and labeled expressions; never strings (Accepted; raised by syntax study S-10) | 6 |
 
 **Elaborations (in this specification only):**
 

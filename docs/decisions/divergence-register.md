@@ -47,6 +47,13 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-025 | Learner exploration during a narrated lesson | Accepted |
 | D-026 | Accessibility baseline in v1 | Accepted |
 | D-027 | Requestable events | Accepted |
+| D-028 | Syntax direction: candidate A amended with author conveniences from B and C | Accepted |
+| D-029 | Function values that read model bindings | Accepted |
+| D-030 | Literal `0` adopts zero vectors | Accepted |
+| D-031 | Model variants in reference-program cases | Accepted |
+| D-032 | Tuple literals as vectors: typing by expected type | Accepted |
+| D-033 | Order of run-directing actions within a beat | Accepted |
+| D-034 | Formula representation for expressions | Accepted |
 
 ---
 
@@ -493,3 +500,131 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **History:**
   - 2026-09-29 proposed while writing reference program RP-08.
   - 2026-09-29 accepted by the owner.
+
+## D-028: Syntax direction
+
+- **Status:** Accepted (amended)
+- **Original position:** 09.3 enumerates syntax options and names a hybrid direction (R-44) without choosing; 09.10 and 09.11 write examples in inconsistent notations (F-05, R-69).
+- **Raised by:** the syntax study (`docs/syntax-study/`), carried out under D-006.
+- **Builds on:** D-006 (selection by comparison on all reference programs), R-44 (hybrid style), R-46 (distinctions to preserve), R-47 and D-019 (serializable IR edited by Mava Studio), D-002 (programming-literate authors).
+- **Question:** Which of the three candidate syntaxes, each used to write RP-01 to RP-08, becomes the base direction?
+- **Options considered:**
+  1. **A, flat keyword statements:** every statement starts with a keyword naming its kind; behaviors listed flat; braces. Every R-46 distinction is marked on the line; nearly one-to-one with the IR.
+  2. **B, mathematical sections:** roles by section headings, mathematical operators (`x'`, `:=`, `←`, intervals), inferred types, indentation. Closest to the science and 22 % fewer tokens, but `=` has four meanings chosen by section, inferred types move errors from their cause, and many IR elements have two surface forms.
+  3. **C, nested structure:** A's declarations, with behavior grouped in modes and processes, representations nested in views and interactions in representations. Removes repeated mode conditions, but modes hide a discrete state, add an implicit hold rule, and need a new IR construct or pattern recognition to print back.
+- **Recommended position:** option 1, amended with C's presentation structure (view trees, interactions inside representations, explicit `sequence` in beats), C's optional named processes (which map to MK-14.1), and B's default space for a model (`model Name in Space`). Modes, sections, inferred types and Unicode-first spelling are not adopted in v1; each may return as its own proposal with a program that needs it. Scientific notation for learners is carried by typeset equations (PK-6.5), not by the source.
+- **Reason:** A is strongest on local visibility of the R-46 distinctions and on round-tripping with the IR, the two criteria that are checkable properties rather than taste, and it suits the expected first authors (D-002). C's presentation structure is where C was clearly better and it round-trips one to one. The comparison, the diagnostic variants and the round-trip analysis are in `docs/syntax-study/comparison.md`.
+- **Owner amendment:** A is the base, and forms from B and C that improve the author's experience are adopted where they still lower to the same IR and print canonically:
+  1. **Grouped declaration blocks:** `const { }`, `param { }`, `input { }`, `state { }`, `discrete { }`, `derived { }`, each listing its declarations below the keyword. The one-line form (`param g: Acceleration = 9.81 m/s^2`) stays valid; the formatter prints blocks.
+  2. **Grouped flows:** `flow { der(x) = e; der(v) += e }`, so the laws of motion sit together. The one-line `flow` form stays valid.
+  3. **Interval ranges:** `angle: Angle = 45 deg in (0 deg, 90 deg)` as an alternative to `where`; both lower to one `reject` constraint. Intervals are also the one range notation in presentations and runs (plot axes, sliders, observation windows).
+  4. **Timeline shorthand:** `run rate 1 until landed` for the two actions `run rate 1` and `wait until landed`.
+  5. The recommended additions stand: C's view trees, interactions inside representations and explicit `sequence` in beats; C's optional named processes; B's default space (`model Name in Space`).
+  - Not adopted: types inferred from unit literals (keeps errors at their declaration), C's modes, B's sections, indentation and Unicode-first spelling.
+- **Accepted position:** the recommended position with the owner amendment. The working syntax is in `docs/syntax-study/working-syntax.md`.
+- **Consequences:** the combined candidate is written for all eight programs and becomes the working syntax for the prototype parser, still non-binding until frozen; a keyword and spelling pass follows as a separate entry; the study's specification findings S-1 to S-12 are resolved in the specification and reference programs; comments and identities across visual edits are settled with the IR format.
+- **History:**
+  - 2026-09-29 proposed by the syntax study.
+  - 2026-09-29 accepted with amendment by the owner: grouped declaration blocks (one-line form kept, formatter groups), grouped flows, interval ranges, timeline shorthand; type inference from unit literals declined.
+
+## D-029: Function values that read model bindings
+
+- **Status:** Accepted
+- **Original position:** MK-10.3: functions are pure and cannot read bindings other than their parameters and constants; a function that needs model state takes it as an argument. RP-06 defines `derived f : Real -> Real = fn(x) => a * x^2`, which reads the parameter `a`. MK 19.5 calls this expressible without addressing the conflict.
+- **Raised by:** syntax study, finding S-1 (`docs/syntax-study/comparison.md` section 7).
+- **Builds on:** R-13 (derived values are definitions), R-17 (expressions are pure), D-008 (dependency analysis), MK-10.6 (expressions keep their symbolic form).
+- **Question:** May a function value depend on the model's bindings, and if so, where?
+- **Options considered:**
+  1. **Derived function values.** A derived binding may have a function type, and its body may read model bindings (`derived { f(x: Real): Real = a * x^2 }`). It is re-evaluated at every instant like any derived binding, so `f(2)` always uses the current `a`. Its dependencies are the bindings its body reads, as for any derived binding. MK-10.3 keeps applying to declared functions (`fn`), which stay closed. Stored bindings (parameters, state, constants) of function type may hold only closed functions.
+  2. **Strict MK-10.3.** RP-06 becomes `fn f(a: Real, x: Real): Real = a * x^2`, and the presentation passes `a` in (`function_graph(x => f(a, x))`). The model then has no binding for "the function being studied"; the displayed formula is `f(a, x)`, not `f(x) = a x^2`, and lambdas move into presentations.
+  3. **Drop MK-10.3.** Any function may read bindings. Library functions would carry hidden dependencies on the model that calls them, and a function reused in two models would mean different things in each.
+- **Accepted position:** option 1.
+- **Reason:** "the function f with parameter a" is how the mathematics is taught, and the learner's slider acts on `a` while the graph and formula follow; that needs `f` to be a model element that depends on `a`. Keeping it a derived binding reuses existing rules: no stored value, no capture semantics (it is recomputed every instant), dependencies visible to the analysis of MK section 13. Restricting stored function values to closed functions avoids the question of which instant's `a` a stored function would remember.
+- **Consequences:** MK-10.3 is reworded to apply to declared functions; MK section 6 or 10 gains the rule for derived function values and the restriction on stored ones; a new static diagnostic for a stored binding holding a function that reads bindings; MK 19.5 cites this entry. RP-06 is unchanged in meaning.
+- **History:**
+  - 2026-09-29 proposed from syntax study finding S-1.
+  - 2026-09-29 accepted by the owner. Applied to the model kernel (MK-10.3, MK-10.7, MK-E20, MK 19.5).
+
+## D-030: Literal `0` adopts zero vectors
+
+- **Status:** Accepted
+- **Original position:** MK-3.8 (D-014): the bare literal `0` adopts whatever dimension its context requires. It does not say whether `0` may stand for a vector.
+- **Raised by:** syntax study, finding S-3. Every candidate had to write `(0, 0)` or `(0 m/s, 0 m/s)` for a zero velocity or rate.
+- **Builds on:** D-014, MK-4.4.
+- **Question:** May the literal `0` stand for the zero of a vector type?
+- **Options considered:**
+  1. `0` adopts the zero of any required `Quantity<D>` or `Vector<S, D>`. It never stands for a `Point` or an `Instant`, which have no zero (their counterparts are `origin` and `t0`).
+  2. Keep `0` scalar-only; vectors are written `(0, 0)`.
+- **Accepted position:** option 1.
+- **Reason:** the zero vector is as unambiguous as the zero quantity: it is the additive identity whatever the space and dimension, which the expected type supplies. `if flying then vel else 0` reads as the physics does. Points and instants are excluded because a zero there would silently mean "the origin", which D-014 and D-022 require to be explicit.
+- **Consequences:** MK-3.8 extended; the reference programs and working syntax write `0` for zero vectors.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-3 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-031: Model variants in reference-program cases
+
+- **Status:** Accepted
+- **Original position:** reference-program README: a case lists parameter overrides and configuration settings. RP-03 case `B-stop` changes the event's Zeno policy, which is neither.
+- **Raised by:** syntax study, finding S-4.
+- **Builds on:** D-012, R-53 (no implied inheritance), RC section 16.
+- **Question:** How does a reference program test a model that differs from its main model in structure?
+- **Options considered:**
+  1. **Named model variants in the reference-program format.** A program may list model variants, each with an ID and a stated change of named elements (like its diagnostic variants). A case names the variant it runs. Nothing is added to the language.
+  2. **A language construct for variants** (a model defined as another model with replacements). This is a form of inheritance, which R-53 limits, and no first-slice program needs it outside testing.
+  3. **Make the Zeno policy run configuration.** It is model meaning (what happens at accumulation), and RC-16.1 keeps configuration to settings that change accuracy or execution, not behavior.
+- **Accepted position:** option 1.
+- **Reason:** the need is a testing need, and the diagnostic variants already establish the pattern. A language construct can be proposed later if authors need model variants for teaching (comparing two models side by side).
+- **Consequences:** the reference-program README gains a "Model variants" part; RP-03 declares variant `V1` (Zeno policy `stop`) and case `B-stop` runs it.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-4 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-032: Tuple literals as vectors: typing by expected type
+
+- **Status:** Accepted
+- **Original position:** MK section 4 defines points and vectors but not how a vector is written. The sketches use tuples, typed by a declaration (`param u : Vector<Plane, Length> = (3 m, 0 m)`) or by nothing visible (`pivot + L * (sin(θ), -cos(θ))`).
+- **Raised by:** syntax study, finding S-5.
+- **Builds on:** D-014, D-022 (explicit spaces), MK-4.5.
+- **Question:** How does a tuple literal get its space and dimension?
+- **Options considered:**
+  1. **Expected type.** A tuple literal is a `Tuple` unless its context expects a vector, in which case it is that vector. The expected type comes from a declaration, a parameter of a called function, a flow target, or the other operand of `+`, `-` or a comparison, and propagates through scaling (the tuple in `L * (sin(θ), -cos(θ))` added to a `Point<Plane>` is expected to be `Vector<Plane, 1>`). Combining a `Tuple` with a vector where no expected type made it a vector is a static error.
+  2. **Explicit constructors** (`Plane.vec(1 m, 2 m)`). Unambiguous, but noisy in every formula.
+  3. **The model's default space** (D-028, `model Name in Space`) for every tuple. Fails silently in models with two spaces.
+- **Accepted position:** option 1, with an explicit constructor available where no context supplies the type.
+- **Reason:** the expected type is present wherever a physicist writes a vector (a declaration, a flow, an addition to a point), so the literal can stay mathematical while D-022's rule against implicit cross-space values still holds: the space always comes from a typed operand, never from a default.
+- **Consequences:** MK section 4 gains the rule; new static diagnostic MK-E21 (tuple used as a vector with no expected vector type); MK 19.3 cites it.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-5 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-033: Order of run-directing actions within a beat
+
+- **Status:** Accepted
+- **Original position:** PK-9.1: a beat's actions start together. RP-08 has `seek(t0)` with a live formula in one beat, and `request(relaunch)` with `run(rate 1)` in another; the order in which they take effect is not specified.
+- **Raised by:** syntax study, finding S-8.
+- **Builds on:** D-009, D-027, RC section 12, PK-8.7.
+- **Question:** When a beat starts, in what order do its actions that act on the lesson run take effect, and what do the other actions see?
+- **Options considered:**
+  1. **Written order for run-directing actions.** At a beat's start, its run-directing actions (`seek`, `reset`, `branch`, `intervene`, `request`, `run`, `hold`) take effect in the order written, at the same presentation instant and before any presentation time passes. The beat's other actions (show, narrate, animate, wait) then start together and see the result. `sequence` is needed only to order actions that take time.
+  2. **Explicit sequence required.** Two run-directing actions in one beat without `sequence` are a static error.
+  3. **Unordered.** Left to implementations. Breaks deterministic frames (PK-8.7).
+- **Accepted position:** option 1.
+- **Reason:** authors read a beat top to bottom, and the instantaneous run actions have an obvious intended order ("go back to the start, then play"). Applying them before presentation time passes keeps "actions start together" true for everything the learner sees, and keeps frames deterministic.
+- **Consequences:** PK-9.1 gains the rule; RP-08 needs no `sequence` in `b4` and `b8`.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-8 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-034: Formula representation for expressions
+
+- **Status:** Accepted
+- **Original position:** PK-6.3 lists an `equation` representation typeset from an equation or expression, with symbols linked to bindings (PK-6.5). RP-06 shows a string (`"y = a x^2"`); RP-08 shows `R = v^2 sin(2θ) / g`, where `R`, `v` and `θ` are not bindings.
+- **Raised by:** syntax study, finding S-10.
+- **Builds on:** MK-10.6 (symbolic expressions), MK-6.1 (display symbol metadata), D-026 (text alternatives), D-029.
+- **Question:** How does a presentation show a formula that is not a model equation, and how do its symbols relate to bindings?
+- **Options considered:**
+  1. **A `formula` representation.** `formula(e)` typesets an expression from its symbolic IR; `formula(f)` of a derived binding or derived function value shows its definition (`f(x) = a x²`); `formula("R", e)` adds a left-hand label, which is presentation text, not a binding. Symbols use each binding's display symbol (MK-6.1). `live` substitutes current values. Strings are never parsed as mathematics. `equation` stays the representation of a model equation (MK section 11).
+  2. **Require a model equation** for everything shown. Forces lesson-only formulas into the model.
+  3. **Typeset strings.** Loses the link to bindings, live values and generated text alternatives.
+- **Accepted position:** option 1.
+- **Reason:** every displayed symbol stays linked to a binding, so highlighting, live values and generated text alternatives work (D-026), without making lesson formulas part of the model.
+- **Consequences:** PK-6.3 gains `formula`; PK-6.5 covers both; RP-06 shows `formula(f, live)`; RP-01's `speed` and `angle` declare display symbols `v` and `θ`; RP-08 shows `formula("R", speed^2 * sin(2 * angle) / g, live)`.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-10 and accepted under the owner's standing delegation of 2026-09-30.

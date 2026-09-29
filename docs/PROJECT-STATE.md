@@ -2,8 +2,8 @@
 
 **Read this first.** This file is the entry point for anyone resuming work on Prismal, in a new session or years later. It records where the project stands, what is decided, and what comes next. Update it at the end of every working session.
 
-- **Last updated:** 2026-09-29
-- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Next: syntax study.
+- **Last updated:** 2026-09-30
+- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Syntax study done (`docs/syntax-study/`); D-028 accepted with amendment; working syntax written (`docs/syntax-study/working-syntax.md`); specification and reference programs converted to it; syntax study findings resolved (D-029 to D-034).
 
 ## What Prismal is
 
@@ -23,6 +23,7 @@ self-study, deep study, and syllabus-based educational content creation.
 | `docs/PROJECT-STATE.md` | Entry point and current state | Living |
 | `docs/decisions/divergence-register.md` | Every departure from the exploration record, with reasons and status | Living, authoritative |
 | `docs/spec/` | Core semantics specification (model kernel, runtime contract and presentation kernel v0 drafts) | Living, normative |
+| `docs/syntax-study/` | Syntax study (D-006): candidates A, B, C with all reference programs, comparison, specification findings S-1 to S-12 | Study record, non-normative |
 | `docs/decisions/carried-forward.md` | Every resolution from the exploration record that is kept (R-01 to R-70), and where it lands | Living |
 | `docs/audit/2026-09-29-design-audit.md` | Audit of the exploration record: findings F-01 to F-15 | Fixed record |
 | `docs/design/` (01 to 09.11) | Exploration record: case catalogue, models, semantics, DSL study | Frozen, non-normative |
@@ -64,19 +65,26 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-025:** learner model changes during a narrated lesson only in author-marked explore beats, on a branch; the lesson returns to its own run unless the beat is marked keep; outside explore beats the learner controls timeline and view only.
 - **D-026:** accessibility baseline in v1: generated text alternatives from bindings (overridable), keyboard operation of every control and drag, captions for narration, no color-only encoding.
 - **D-027:** requestable events: a model may declare events `on request`; a timeline, button or experiment triggers them through an intervention; the handler is ordinary model code, validated and logged.
+- **D-028:** syntax direction: candidate A (keyword-led statements) as the base, amended with grouped declaration and flow blocks (one-line form kept), interval ranges, the timeline shorthand `run rate r until E`, C's view trees, nested interactions, explicit beat sequences and named processes, and B's default space. No type inference from literals, no modes in v1.
+- **D-029:** derived bindings may hold function values that read model bindings (evaluated every instant); declared functions and stored function values stay closed (MK-10.3, MK-10.7, MK-E20).
+- **D-030:** the literal `0` also stands for the zero vector of a required vector type (never a point or instant).
+- **D-031:** reference programs may declare named model variants; cases may run them.
+- **D-032:** tuple literals are vectors when the context expects one (declaration, argument, flow target, other operand, through scaling); otherwise MK-E21.
+- **D-033:** run-directing actions in a beat apply in written order at its start, before presentation time passes.
+- **D-034:** `formula` representation typesets expressions, definitions and labeled expressions from the IR; never strings.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
 
-Nothing blocking. D-020 to D-027 were all accepted on 2026-09-29.
+Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recommended positions (see Working process).
 
 ## Next steps
 
-**Next session starts here:** the syntax study (D-006): write every reference program in two or three candidate syntaxes in R-44's hybrid style and compare them on the D-006 criteria (readability for programming-literate authors, closeness to the science, visibility of the R-46 distinctions, round-tripping with the IR for Mava Studio). The Rust kernel prototype (step 4) may start in parallel against the spec and the reference programs.
+**Next session starts here:** keyword and spelling pass on the working syntax (comparison section 8.2), then comments and identities in the IR (section 8.3), then the IR format and the Rust kernel prototype (step 4). The Rust kernel prototype (step 4) may start in parallel against the spec and the reference programs.
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances to be confirmed by the prototype.
-3. Syntax study: reference programs written in two or three candidate syntaxes (D-006).
+3. Syntax study: three candidates compared; D-028 accepted with amendment; working syntax written. Findings S-1 to S-12 resolved. Keyword pass to follow.
 4. Rust kernel prototype running the reference programs.
 
 ## Session log
@@ -87,13 +95,12 @@ Nothing blocking. D-020 to D-027 were all accepted on 2026-09-29.
 | 2026-09-29 | Core semantics spec started in `docs/spec/`: index and model kernel v0 (values, units, spaces, status, bindings, objects, collections, relations, domains, expressions, equations, constraints, dependency analysis, flows, events, operations, interface, static diagnostics). All first-slice reference programs checked expressible; one gap found (checks at event instants). D-020 to D-023 proposed. Carried-forward record gained spec pointers. D-020 accepted (check only). D-021 accepted (angles dimensionless). D-022 accepted (spaces and frames). D-023 accepted (declared intervenability). Runtime contract v0 drafted (clocks, runs, superdense trajectory, solvers, event location, event iteration, Zeno, failures, interventions, execution control, randomness, snapshots and replay, observer output); D-024 proposed and accepted. |
 | 2026-09-29 | Session work committed (dc42472). Presentation kernel v0 drafted: presentations, observation and data (including `on(E)` observations, closing the model kernel's gap), expectations, projection, representation set, views, presentation time and animation, explanation timeline, interaction, accessibility, output and media. D-025 and D-026 proposed. D-025 accepted (explore beats on a branch). D-026 accepted (accessibility baseline in v1). |
 | 2026-09-29 | Presentation kernel committed and pushed (a710ba4). First-slice reference programs written in `docs/spec/reference-programs/` (RP-01 to RP-08) with cases, expectations (analytic, reference, bound, behavior, diagnostic), learner scripts, and `tools/refvals.py` for every reference value. Conditional expectations resolved as cases. RP-08 exposed a gap (no way to request a model action from outside): D-027 proposed and accepted. |
+| 2026-09-29 | Syntax study (D-006) in `docs/syntax-study/`: candidates A (flat keyword statements), B (mathematical sections) and C (nested structure) each write RP-01 to RP-08; comparison on the four D-006 criteria, diagnostic variants and IR round-tripping; `tools/metrics.py` for line and token counts. Twelve specification findings recorded (S-1 to S-12). D-028 proposed (A as base with C's presentation structure and processes, B's default space), then accepted with amendment (grouped declaration and flow blocks, interval ranges, timeline shorthand; no type inference). Working syntax written for all eight programs. S-1 presented as D-029 and accepted; model kernel updated (MK-10.3 reworded, MK-10.7, MK-E20). |
+| 2026-09-30 | Owner delegated acceptance of recommended positions. Syntax study findings resolved: D-030 (zero vectors), D-031 (model variants in cases), D-032 (tuple literals typed by context), D-033 (order of run actions in a beat), D-034 (formula representation) accepted; corrections S-2, S-6, S-7 (MK-E22), S-9, S-11 (process kind), S-12 (representation names) applied. Specification examples and all reference programs converted to the working syntax; RP-04.D2 now expects MK-E01. |
 
 ## Working process
 
-Register entries are reviewed **one at a time**, each presented with enough context to decide without
-rereading the audit. The decision and its reasoning are recorded in the register immediately.
-
-All entries D-001 to D-019 have been reviewed (2026-09-29). New entries follow the same one-at-a-time process.
+Since 2026-09-30 the owner has delegated acceptance: recommended positions are recorded directly as Accepted, noting the delegation, with full options and reasons, and summarized to the owner afterwards. Choices of product direction or owner taste, and hard-to-reverse choices, are still put to the owner. (Until then, entries were reviewed one at a time; D-001 to D-029 were reviewed that way.)
 
 ## Conventions
 

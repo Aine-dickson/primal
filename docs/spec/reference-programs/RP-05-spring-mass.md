@@ -6,29 +6,33 @@ A mass on an ideal spring, released from rest at 0.1 m from equilibrium. The tra
 
 ## Model
 
-**sketch (non-binding, D-006)**
+**working syntax (D-028, non-binding)**
 
 ```text
-object SpringMass {
-  param m  : Mass              = 1 kg
-  param k  : Quantity<M/T^2>   = 4 N/m
-  param x0 : Length            = 0.1 m
-  constraint m > 0 kg : reject
-  constraint k > 0 N/m : reject
+model SpringMass {
+  param {
+    m:  Mass            = 1 kg      where m > 0 kg
+    k:  Quantity<M/T^2> = 4 N/m     where k > 0 N/m
+    x0: Length          = 0.1 m
+  }
+  state {
+    x: Length   = x0                  // displacement from equilibrium
+    v: Velocity = 0
+  }
+  derived {
+    energy: Energy = 0.5 * m * v^2 + 0.5 * k * x^2
+    T:      Time   = 2π * sqrt(m / k)
+  }
 
-  state x : Length        = x0                // displacement from equilibrium
-  state v : Quantity<L/T> = 0
+  flow {
+    der(x) = v
+    der(v) = -(k / m) * x
+  }
 
-  flow der(x) = v
-  flow der(v) = -(k / m) * x
+  equation period_law:   T == 2π * sqrt(m / k)
+  equation conservation: energy == 0.5 * k * x0^2 checked within 2e-5 J
 
-  derived energy : Energy = 0.5 * m * v^2 + 0.5 * k * x^2
-  derived T      : Time   = 2π * sqrt(m / k)
-
-  equation display period_law   : T = 2π * sqrt(m / k)
-  equation check   conservation : energy = 0.5 * k * x0^2  within 2e-5 J
-
-  event pass on rising(x) { }                 // once per period
+  event pass on rising(x)             // once per period
 }
 ```
 
@@ -36,10 +40,12 @@ object SpringMass {
 
 ```text
 presentation SpringChecks for SpringMass {
-  observe x_10       = x at(t0 + 10 s)
-  observe passes     = elapsed on(pass)
-  observe energy     = energy every(0.01 s)
-  observe residuals  = diagnostics of conservation over(t0, t_end)
+  observe {
+    x_10      = x                           at t0 + 10 s
+    passes    = elapsed                     on pass
+    energy    = energy                      every 0.01 s
+    residuals = diagnostics of conservation over [t0, t_end]
+  }
 }
 ```
 
@@ -85,10 +91,11 @@ Energy drift measured with plain floating-point implementations over 100 s (`too
 
 | ID | Change | Expected diagnostic |
 |---|---|---|
-| RP-05.D1 | `equation display period_law : T = 2π * sqrt(k / m)` | MK-E01 (sides have dimensions T and 1/T) |
-| RP-05.D2 | `derived energy : Energy = 0.5 * m * v^2 + 0.5 * k * x` | MK-E01 (adding energy and force) |
+| RP-05.D1 | `equation period_law: T == 2π * sqrt(k / m)` | MK-E01 (sides have dimensions T and 1/T) |
+| RP-05.D2 | `energy: Energy = 0.5 * m * v^2 + 0.5 * k * x` in the `derived` block | MK-E01 (adding energy and force) |
 | RP-05.D3 | `flow der(v) = -(k / m) * x + 1` | MK-E03 (bare non-zero literal added to an acceleration) |
 
 ## History
 
 - 2026-09-29 written.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied.

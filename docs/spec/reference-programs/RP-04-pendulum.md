@@ -6,30 +6,36 @@ A simple pendulum of length 1 m released from 10 degrees. It checks angles as di
 
 ## Model
 
-**sketch (non-binding, D-006)**
+**working syntax (D-028, non-binding)**
 
 ```text
-object Pendulum {
-  param g     : Acceleration = 9.81 m/s^2
-  param L     : Length       = 1 m
-  param m     : Mass         = 1 kg
-  param pivot : Point<Plane> = origin
-  param θ0    : Real         = 10 deg
-  constraint L > 0 m : reject
-  constraint m > 0 kg : reject
+space Plane = euclidean(2)
 
-  state θ : Real          = θ0               // angle from the downward vertical
-  state ω : Quantity<1/T> = 0
+model Pendulum in Plane {
+  param {
+    g:     Acceleration = 9.81 m/s^2
+    L:     Length       = 1 m      where L > 0 m
+    m:     Mass         = 1 kg     where m > 0 kg
+    pivot: Point        = origin
+    θ0:    Angle        = 10 deg
+  }
+  state {
+    θ: Angle         = θ0                 // angle from the downward vertical
+    ω: Quantity<1/T> = 0
+  }
+  derived {
+    bob:    Point  = pivot + L * (sin(θ), -cos(θ))
+    energy: Energy = 0.5 * m * (L * ω)^2 + m * g * L * (1 - cos(θ))
+  }
 
-  flow der(θ) = ω
-  flow der(ω) = -(g / L) * sin(θ)
+  flow {
+    der(θ) = ω
+    der(ω) = -(g / L) * sin(θ)
+  }
 
-  derived bob    : Point<Plane> = pivot + L * (sin(θ), -cos(θ))
-  derived energy : Energy       = 0.5 * m * (L * ω)^2 + m * g * L * (1 - cos(θ))
+  constraint rod: |bob - pivot| == L within 1e-9 m policy report
 
-  constraint |bob - pivot| = L within 1e-9 m : report
-
-  event upswing on rising(θ) { }              // once per period, moving toward positive θ
+  event upswing on rising(θ)              // once per period, moving toward positive θ
 }
 ```
 
@@ -37,10 +43,12 @@ object Pendulum {
 
 ```text
 presentation PendulumChecks for Pendulum {
-  observe theta_start = θ at(t0)
-  observe upswings    = elapsed on(upswing)
-  observe energy      = energy every(0.01 s)
-  observe diagnostics = diagnostics over(t0, t_end)
+  observe {
+    theta_start = θ           at t0
+    upswings    = elapsed     on upswing
+    energy      = energy      every 0.01 s
+    diagnostics = diagnostics over [t0, t_end]
+  }
 }
 ```
 
@@ -91,9 +99,10 @@ E10 records the teaching point of the per-solver drift in D-012: the choice of s
 
 | ID | Change | Expected diagnostic |
 |---|---|---|
-| RP-04.D1 | `state θ : Length = 10 cm` | MK-E02 (dimensioned argument to `sin`) |
-| RP-04.D2 | `derived bob = pivot + (sin(θ), -cos(θ))` (no `L`) | MK-E04 (point plus a vector whose dimension is not length) |
+| RP-04.D1 | `θ: Length = 10 cm` in the `state` block | MK-E02 (dimensioned argument to `sin`) |
+| RP-04.D2 | `bob: Point = pivot + (sin(θ), -cos(θ))` (no `L`) | MK-E01 (the tuple is expected to be a displacement, D-032, but its components are dimensionless) |
 
 ## History
 
 - 2026-09-29 written.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied (`Plane` declared; `Plane` is the default space). RP-04.D2 now expects MK-E01 instead of MK-E04: under D-032 the tuple takes the expected type `Vector<Plane, L>`, so the error is found in its components.

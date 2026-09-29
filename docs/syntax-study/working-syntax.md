@@ -1,0 +1,501 @@
+# Working Syntax
+
+Candidate A amended as accepted in D-028: A's keyword-led statements, with grouped declaration and flow blocks, interval ranges and the timeline shorthand (owner amendment), C's view trees, nested interactions, explicit sequences and named processes, and B's default space.
+
+- **Status:** working syntax for the prototype parser. Non-binding until the syntax is frozen; keywords and spellings are subject to the keyword pass (comparison section 8.2).
+- **Fixed parts:** the shared expression and type sublanguage of the study (`README.md`), with interval notation as the single range form.
+
+## 1. Design
+
+### 1.1 Model
+
+| Form | Kernel element |
+|---|---|
+| `space Plane = euclidean(2)` | space (MK-4.1) |
+| `model Name [in Space] { ... }` | root object type; with `in Space`, `origin`, `Point` and `Vector<D>` refer to that space; `object` for contained types |
+| `const { x: T = e ... }` | constants |
+| `param { x: T = e [in I \| where cond] [modifiers] ... }` | parameters; `in I` or `where` attaches a `reject` constraint (MK-12.4) |
+| `input { x: T ... }` | inputs |
+| `state { x: T = e ... }` | continuous state with initial definitions |
+| `discrete { x: T = e ... }` | discrete state |
+| `derived { x: T = e; f(x: A): B = e ... }` | derived bindings, including function-valued ones |
+| `fn f(x: A): B = e` | pure function (MK-10.3) |
+| `flow { der(x) = e; der(y) += e ... }` | defining flows and contributions (MK-14.7) |
+| `process P { flow ...; event ... }` | named process (MK-14.1), optional |
+| `event E on <trigger> [if cond] [{ ops }] [zeno stop \| zeno settle { ops }]` | event (MK-15) |
+| `equation N: lhs == rhs [checked within tol]` | equation (MK-11) |
+| `constraint [N:] cond [within tol] [policy p]` | constraint (MK-12) |
+
+Every block keyword also has a one-line form for a single declaration (`param g: Acceleration = 9.81 m/s^2`, `flow der(x) = v`). Both parse to the same IR; the formatter prints blocks.
+
+**Intervals** are the one range notation: `[a, b]`, `(a, b)`, `[a, b)`, `(a, b]`, with `inf` for an unbounded end. `x in [a, b)` is the constraint `a <= x < b`. The formatter prints a parameter's `reject` constraint as an interval when it bounds only that parameter from both sides, as `where` otherwise.
+
+Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit deg`.
+
+Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E`, `on start`, `on input(i)`, `on request [(payload: T)]`. Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`.
+
+### 1.2 Presentation
+
+| Form | Element |
+|---|---|
+| `presentation Name for Model { ... }` | presentation |
+| `observe { name = expr schedule ... }` | observations; schedules `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over I` |
+| `view name: spatial(Space, scale: 1 m -> 40 px, y: up) { reps }`, `view name: plot(x: I, y: I) { reps }` | views containing their representations |
+| `panel name { reps }` | region without a coordinate system (controls, formulas) |
+| `rep(...) [as name] { on drag [part] as p { propose x = e } }` | representation with its declared inverse |
+| `permit learner { ... }` | permissions |
+| `timeline { scene S { beat B { actions } } }` | timeline; run-directing actions apply in written order at the beat's start, then the others start together (D-033); `sequence { }` orders actions that take time |
+| `run rate r until E` | shorthand for `run rate r` and `wait until E` in the same beat |
+
+### 1.3 Runs
+
+`run Name of Model with Presentation { param { ... } config { ... } until τ; learner { ... } expect { ... } }`.
+
+### 1.4 Canonical printing (C4)
+
+The formatter prints, from the IR: declarations grouped in blocks by role, in the order kind (const, param, input, state, discrete, derived), then flows, processes, events, equations, constraints; parameter ranges as intervals when two-sided on that parameter alone; `run ... until` when a beat holds exactly those two actions; representations inside their views. Everything else prints in its only form.
+
+---
+
+## RP-01 Projectile, no drag
+
+```text
+space Plane = euclidean(2)
+
+model Projectile in Plane {
+  param {
+    g:     Acceleration  = 9.81 m/s^2
+    k:     Quantity<1/L> = 0        where k >= 0              // quadratic drag coefficient
+    speed: Velocity      = 20 m/s   where speed > 0 m/s
+    angle: Angle         = 45 deg   in (0 deg, 90 deg)
+  }
+  state {
+    pos: Point            = origin
+    vel: Vector<Velocity> = speed * (cos(angle), sin(angle))
+  }
+  discrete {
+    flying: Boolean = true
+  }
+
+  flow {
+    der(pos) = if flying then vel else 0
+  }
+  process gravity { flow der(vel) += if flying then (0, -g) else 0 }
+  process drag    { flow der(vel) += -k * |vel| * vel }
+
+  event apex   on falling(vel.y)
+  event landed on falling(pos.y) {
+    set flying = false
+    set vel = 0
+  }
+}
+
+presentation ProjectileChecks for Projectile {
+  observe {
+    t_apex  = elapsed   on apex
+    h_apex  = pos.y     on apex
+    t_land  = elapsed   on landed
+    range   = pos.x     on landed
+    y_land  = pos.y     on landed
+    at_rest = pos       at t0 + 5 s
+    events  = event_log over [t0, t0 + 5 s]
+  }
+}
+```
+
+```cases
+run A_45deg of Projectile with ProjectileChecks {
+  until t0 + 5 s
+  expect {
+    t_land == 2.88320807823261 s within 1e-9 s
+    range  == 40.7747196738022 m within 1e-8 m
+    y_land in [-1e-8 m, 0 m]
+    t_apex == 1.44160403911630 s within 1e-9 s
+    h_apex == 10.1936799184506 m within 1e-8 m
+    at_rest == (pos on landed) exactly
+    events == [apex, landed]
+  }
+}
+
+run B_60deg of Projectile with ProjectileChecks {
+  param { angle = 60 deg }
+  until t0 + 5 s
+  expect {
+    t_land == 3.53119430697019 s within 1e-9 s
+    range  == 35.3119430697019 m within 1e-8 m
+  }
+}
+```
+
+## RP-02 Projectile with drag
+
+The RP-01 model, unchanged. Because gravity and drag are named processes, each contribution can also be observed on its own.
+
+```text
+presentation DragChecks for Projectile {
+  observe {
+    t_apex  = elapsed on apex
+    h_apex  = pos.y   on apex
+    t_land  = elapsed on landed
+    range   = pos.x   on landed
+    v_land  = vel     on landed microstep 0                         // before the reset
+    energy  = 0.5 * |vel|^2 + g * (pos - origin).y   every 0.01 s   // per unit mass
+    balance = der(vel) - ((0, -g) - k * |vel| * vel) every 0.01 s
+  }
+}
+```
+
+```cases
+run A_default of Projectile with DragChecks {
+  param { k = 0.01 /m }
+  until t0 + 5 s
+  expect {
+    t_land == 2.67328857282834 s within rel 1e-5
+    range  == 31.3229266146783 m within rel 1e-5
+    v_land == (9.76677238322685 m/s, -12.3148244403059 m/s) within rel 1e-5
+    (vel on landed) == 0 exactly
+  }
+}
+
+run B_tight of Projectile with DragChecks {
+  param  { k = 0.01 /m }
+  config { rtol = 1e-10; atol = 1e-12 }
+  until t0 + 5 s
+  expect { t_land == 2.67328857282834 s within rel 1e-8 }
+}
+```
+
+## RP-03 Bouncing ball
+
+```text
+model BouncingBall {
+  param {
+    g:  Acceleration = 9.81 m/s^2
+    h0: Length       = 1 m      where h0 > 0 m
+    e:  Real         = 0.8      in [0, 1)                // restitution
+  }
+  state {
+    y: Length   = h0
+    v: Velocity = 0
+  }
+  discrete {
+    resting: Boolean = false
+  }
+
+  flow {
+    der(y) = v
+    der(v) = if resting then 0 else -g
+  }
+
+  event bounce on falling(y) {
+    set v = -e * v
+  } zeno settle {
+    set y = 0 m
+    set v = 0 m/s
+    set resting = true
+  }
+
+  event top on falling(v)                                // apex of each flight
+}
+
+presentation BounceChecks for BouncingBall {
+  observe {
+    bounce_times = elapsed on bounce
+    top_heights  = y       on top
+    zeno         = event_log of bounce where zeno_applied
+    final        = (y, v, resting) at t0 + 6 s
+    late_events  = event_log over [t0 + 4.1 s, t0 + 6 s]
+  }
+}
+```
+
+```cases
+run A_settle of BouncingBall with BounceChecks {
+  until t0 + 6 s
+  expect {
+    bounce_times[1] == 0.451523640985731 s within 1e-8 s
+    top_heights[1]  == 0.64 m within 1e-8 m
+    final == (0 m, 0 m/s, true) exactly
+    late_events == []
+  }
+}
+
+run C_invalid_e of BouncingBall {
+  param  { e = 1.2 }
+  expect { initialization fails }
+}
+```
+
+Case `B-stop` is a model variant (comparison S-4).
+
+## RP-04 Pendulum
+
+```text
+space Plane = euclidean(2)
+
+model Pendulum in Plane {
+  param {
+    g:     Acceleration = 9.81 m/s^2
+    L:     Length       = 1 m      where L > 0 m
+    m:     Mass         = 1 kg     where m > 0 kg
+    pivot: Point        = origin
+    θ0:    Angle        = 10 deg
+  }
+  state {
+    θ: Angle         = θ0                 // from the downward vertical
+    ω: Quantity<1/T> = 0
+  }
+  derived {
+    bob:    Point  = pivot + L * (sin(θ), -cos(θ))
+    energy: Energy = 0.5 * m * (L * ω)^2 + m * g * L * (1 - cos(θ))
+  }
+
+  flow {
+    der(θ) = ω
+    der(ω) = -(g / L) * sin(θ)
+  }
+
+  constraint rod: |bob - pivot| == L within 1e-9 m policy report
+
+  event upswing on rising(θ)              // once per period
+}
+
+presentation PendulumChecks for Pendulum {
+  observe {
+    theta_start = θ           at t0
+    upswings    = elapsed     on upswing
+    energy      = energy      every 0.01 s
+    diagnostics = diagnostics over [t0, t_end]
+  }
+}
+```
+
+```cases
+run A_dopri5 of Pendulum with PendulumChecks {
+  until t0 + 100 s
+  expect {
+    upswings[1] == 1.50741947047395 s within rel 1e-5
+    diagnostics == []
+  }
+}
+
+run B_rk4 of Pendulum with PendulumChecks {
+  config { solver = rk4; h = 0.01 s }
+  until t0 + 100 s
+}
+
+run C_rk4_no_step of Pendulum {
+  config { solver = rk4 }
+  expect { configuration rejected }
+}
+```
+
+## RP-05 Spring-mass
+
+```text
+model SpringMass {
+  param {
+    m:  Mass            = 1 kg      where m > 0 kg
+    k:  Quantity<M/T^2> = 4 N/m     where k > 0 N/m
+    x0: Length          = 0.1 m
+  }
+  state {
+    x: Length   = x0                  // displacement from equilibrium
+    v: Velocity = 0
+  }
+  derived {
+    energy: Energy = 0.5 * m * v^2 + 0.5 * k * x^2
+    T:      Time   = 2π * sqrt(m / k)
+  }
+
+  flow {
+    der(x) = v
+    der(v) = -(k / m) * x
+  }
+
+  equation period_law:   T == 2π * sqrt(m / k)
+  equation conservation: energy == 0.5 * k * x0^2 checked within 2e-5 J
+
+  event pass on rising(x)             // once per period
+}
+
+presentation SpringChecks for SpringMass {
+  observe {
+    x_10      = x                           at t0 + 10 s
+    passes    = elapsed                     on pass
+    energy    = energy                      every 0.01 s
+    residuals = diagnostics of conservation over [t0, t_end]
+  }
+}
+```
+
+```cases
+run A_dopri5 of SpringMass with SpringChecks {
+  until t0 + 100 s
+  expect {
+    x_10 == 0.0408082061813392 m within 1e-5 m
+    residuals == []
+  }
+}
+
+run B_rk4 of SpringMass with SpringChecks {
+  config { solver = rk4; h = 0.01 s }
+  until t0 + 100 s
+  expect { x_10 == 0.0408082061813392 m within 1e-7 m }
+}
+```
+
+## RP-06 Function plot with draggable parameter
+
+```text
+model QuadraticDemo {
+  param   { a: Real = 1  in [-5, 5] }
+  derived { f(x: Real): Real = a * x^2 }
+}
+
+presentation QuadraticPlot for QuadraticDemo {
+  view plot: plot(x: [-3, 3], y: [-5, 20]) {
+    function_graph(f)
+    marker(at: (1, f(1))) {
+      on drag as p { propose a = p.y / 1^2 }            // x fixed at 1
+    }
+  }
+  panel controls {
+    slider(a, range: [-5, 5], step: 0.1)
+    formula(f, live: true)
+  }
+  observe {
+    a_now = a    live
+    f2    = f(2) live
+    log   = intervention_log
+  }
+}
+```
+
+## RP-07 Vector addition
+
+```text
+space Plane = euclidean(2)
+
+model VectorDemo in Plane {
+  param {
+    A: Point          = origin + (1 m, 2 m)
+    u: Vector<Length> = (3 m, 0 m)
+    w: Vector<Length> = (0 m, 2 m)
+  }
+  derived {
+    sum:    Vector<Length> = u + w
+    length: Length         = |sum|
+    B:      Point          = A + sum
+    mid:    Point          = A + u            // where w starts
+  }
+}
+
+presentation VectorPlot for VectorDemo {
+  view scene: spatial(Plane, scale: 1 m -> 40 px, y: up) {
+    axes; grid
+    marker(A)
+    arrow(u, from: A) {
+      on drag head as h { propose u = h - A }
+    }
+    arrow(w, from: mid)
+    arrow(sum, from: A)
+    label(length)
+  }
+  observe { state = (sum, length, B) live }
+}
+```
+
+## RP-08 Narrated projectile lesson
+
+The RP-01 model with display symbols and one addition (D-027):
+
+```text
+  param {
+    ...
+    speed: Velocity = 20 m/s   where speed > 0 m/s       symbol "v"
+    angle: Angle    = 45 deg   in (0 deg, 90 deg)        symbol "θ"
+  }
+
+  event relaunch on request {
+    set pos    = origin
+    set vel    = speed * (cos(angle), sin(angle))
+    set flying = true
+  }
+```
+
+```text
+presentation ProjectileLesson for Projectile {
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    axes
+  }
+  permit learner { timeline_controls; zoom; pan }
+  observe {
+    landings = (elapsed, pos.x) on landed
+    log      = event_log
+  }
+
+  timeline {
+    scene launch {
+      beat b1 {
+        in scene { marker(pos) as ball; arrow(vel, from: pos) }
+        narrate "A ball is launched at 45 degrees." for 4 s
+      }
+      beat b2 { run rate 1 until landed }
+      beat b3 {
+        hold
+        highlight ball
+        narrate "It lands here. Why this distance?" for 3 s
+      }
+      beat b4 {
+        seek t0                                  // applies first (PK-9.2a, D-033)
+        show formula("R", speed^2 * sin(2 * angle) / g, live: true)
+        narrate "Watch the horizontal speed." for 3 s
+      }
+      beat b5 {
+        in scene { arrow((vel.x, 0), from: pos) }
+        run rate 0.5 until landed
+      }
+    }
+    scene try_it {
+      beat b6 { hold; narrate "Choose your own angle." for 3 s }
+      beat b7 {
+        explore limit 60 s keep angle {
+          slider(angle, range: [10 deg, 80 deg])
+        } fallback {
+          sequence { intervene { set angle = 60 deg }; wait 3 s }
+        }
+      }
+      beat b8 { request relaunch; run rate 1 until landed }
+      beat b9 { narrate "Compare the distance with the first launch." for 3 s }
+    }
+  }
+}
+```
+
+```cases
+run A_keep of Projectile with ProjectileLesson {
+  learner {
+    at 23.0 s: set slider angle = 60 deg
+    at 25.0 s: continue
+  }
+  expect {
+    start of b3 == 6.88320807823261 s within 1e-8 s
+    end of b8   == 28.5311943069702 s within 1e-8 s
+  }
+}
+```
+
+---
+
+## 2. Notes
+
+- **Blocks versus local marks.** Grouped blocks make the role sectional rather than local (comparison section 3), but unlike B's sections each block is a brace-delimited keyword block whose role word is never more than a screen away, and it survives copy and paste. The one-line form is still available where a single declaration is quoted or moved.
+- **`in` has two uses:** a range on a declaration (`in [0, 1)`) and a target view in a timeline (`in scene { ... }`). They occur in different contexts; the keyword pass may still separate them.
+- **Mode conditions remain** (`if flying then ... else 0`); modes stay deferred (D-028).
+- **The reference programs are now written in this syntax** (`docs/spec/reference-programs/`), with the corrections of 2026-09-30. Where the two differ, the reference programs are current.
+
+## History
+
+- 2026-09-29 written after D-028 was accepted with amendment.
+- 2026-09-30 zero vectors written `0` (D-030); `sequence` dropped where D-033 orders run-directing actions; reference programs converted.
