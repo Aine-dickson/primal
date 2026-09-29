@@ -46,6 +46,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-024 | No event priorities; ordering by cascades | Accepted |
 | D-025 | Learner exploration during a narrated lesson | Accepted |
 | D-026 | Accessibility baseline in v1 | Accepted |
+| D-027 | Requestable events | Accepted |
 
 ---
 
@@ -474,4 +475,21 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequence:** the frame description (presentation kernel section 12) carries text alternatives and announcements from the start; the web player exposes them to assistive technology.
 - **History:**
   - 2026-09-29 proposed in the presentation kernel spec v0.
+  - 2026-09-29 accepted by the owner.
+
+## D-027: Requestable events
+
+- **Status:** Accepted
+- **Original position:** Interactions produce operations on the model (08 sections 73-76); a button may trigger an action (08). The model kernel (MK-17.2) limits interventions to `set` on intervenable bindings and `create` or `destroy` on intervenable collections.
+- **Raised by:** reference program RP-08 (narrated lesson). The lesson needs a "launch again" step, for the timeline and for a learner's button. With `set` alone this cannot be expressed: changing `angle` after the start does not relaunch the ball, because the launch velocity is an initial value; and a presentation that set `pos`, `vel` and `flying` itself would be doing the model's physics outside the model.
+- **Builds on:** D-023 (the model declares what may be changed from outside), MK section 15 (events), RC section 11 (interventions).
+- **Question:** How does the outside (a timeline, a learner's button, an experiment) ask the model to perform one of its own actions?
+- **Options considered:**
+  1. **Requestable events.** A model may declare an event with the trigger `on request`, optionally with a typed payload. An intervention may request it. The event's handler is ordinary model code: it runs with the model's own rules (ownership, conflicts, constraints), at the intervention's instant, and is logged like any intervention.
+  2. Presentation-side scripts that `set` several state bindings. Puts model logic (how to relaunch) in the presentation, and requires every bound state to be intervenable.
+  3. `reset` with new parameter values. Loses everything else in the run (the log, the lesson's history), and cannot express actions in the middle of a run (a "drop another ball" button).
+- **Accepted position:** option 1. Only events the model declares `on request` can be requested; this extends D-023 from values to actions, and keeps the model author in control of what the outside can do.
+- **Consequences:** MK-15.3 gains the trigger `on request`; MK-17.2 gains "request a requestable event"; the timeline gains the action `request(E)`; a `button` control can target a requestable event. The RP-01 model gains `relaunch on request` for RP-08.
+- **History:**
+  - 2026-09-29 proposed while writing reference program RP-08.
   - 2026-09-29 accepted by the owner.

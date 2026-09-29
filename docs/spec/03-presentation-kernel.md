@@ -144,7 +144,7 @@ The presentation kernel has these concepts:
 | `label` | text, optionally with a value readout | text, any binding |
 | `equation` | a typeset equation or expression, with symbols linked to bindings | equation, expression |
 | `table` | rows of values | data |
-| `slider`, `number_input`, `toggle`, `button` | a control | intervenable binding or an action |
+| `slider`, `number_input`, `toggle`, `button` | a control | intervenable binding; for `button`, a requestable event (D-027) or a runtime control |
 | `group` | a set of representations with a shared transform | representations |
 
 - **PK-6.4** Controls are representations of bindings with a declared inverse (PK-5.6): a slider shows a parameter's value and, when moved, proposes a new one. A control can only target an intervenable binding (D-023).
@@ -207,6 +207,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 | `run(rate)`, `hold` | set the time mapping (PK-8.2): play the simulation at a rate, or pause it |
 | `seek(τ)`, `reset`, `branch` | execution control on the lesson's run (RC section 12) |
 | `intervene(ops)` | an intervention on intervenable bindings (MK-17.2), such as setting the launch angle for the next demonstration |
+| `request(E)` | request a requestable model event (MK-17.2a, D-027), such as relaunching the projectile |
 | `wait(d)` | wait a presentation duration |
 | `wait_until(E)` | wait until model event `E` occurs on the lesson's run |
 | `wait_until(t = τ)` | wait until the simulation reaches instant `τ` |
@@ -418,7 +419,7 @@ The model kernel's open item (checks at an event instant) is resolved by `on(E)`
 | Field representations (heatmaps, vector fields, D-010) | Slice with field state |
 | 3D views and projection from 3D to 2D | Slice that needs them |
 | Construction tools (creating points, lines, objects by interaction; 08 sections 43-46) | Slice with dynamic collections and relations |
-| Conditional expectations (`expect ... when k = 0`) (13.1) | Reference-program specification |
+| Conditional expectations (`expect ... when k = 0`) (13.1) | Resolved: expectations belong to named cases (run configurations), `reference-programs/README.md` |
 | Video, image and vector renderers | After the web player (D-018) |
 | Frame description format and renderer interface | Implementation specification |
 | Narration audio (recorded or synthesized), language and localization | Later |

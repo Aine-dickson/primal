@@ -244,6 +244,7 @@ At an event time `t`, starting from `(t, 0)`:
 - **RC-11.2** The runtime chooses `τ`. In an interactive run it is normally the simulation time on display when the learner acts. If the runtime has already computed beyond `τ`, it restores the latest snapshot at or before `τ` and recomputes to `τ` (section 14), discarding the states computed beyond it. The trajectory after `τ` is recomputed from the new state.
 - **RC-11.3** An intervention is one transition: its operations commit together or not at all, and are validated against constraints (MK-16.3). Interventions arriving for the same `τ` from different sources are applied as separate transitions in the order they are logged.
 - **RC-11.4** Only intervenable targets are accepted (D-023, MK-6.10). An intervention on anything else is rejected with a diagnostic and never reaches the model.
+- **RC-11.4a** (D-027) A request for an `on request` event (MK-17.2a) is an intervention: it takes effect at its logged instant, after the model's own event iteration there. The requested event is due at the intervention's microstep and is handled with any other operations of that intervention in one transition.
 - **RC-11.5** Direct manipulation (dragging) produces a stream of proposed values. Only interventions that are committed are logged; the stream's intermediate proposals belong to the presentation kernel (R-41).
 
 ### 11.2 Inputs

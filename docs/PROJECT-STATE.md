@@ -3,7 +3,7 @@
 **Read this first.** This file is the entry point for anyone resuming work on Prismal, in a new session or years later. It records where the project stands, what is decided, and what comes next. Update it at the end of every working session.
 
 - **Last updated:** 2026-09-29
-- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-024 accepted; D-020 to D-026 accepted. Next: reference programs.
+- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Next: syntax study.
 
 ## What Prismal is
 
@@ -63,18 +63,19 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-024:** no event priorities; all events due at one microstep form one transition; ordering only by emitted cascades.
 - **D-025:** learner model changes during a narrated lesson only in author-marked explore beats, on a branch; the lesson returns to its own run unless the beat is marked keep; outside explore beats the learner controls timeline and view only.
 - **D-026:** accessibility baseline in v1: generated text alternatives from bindings (overridable), keyboard operation of every control and drag, captions for narration, no color-only encoding.
+- **D-027:** requestable events: a model may declare events `on request`; a timeline, button or experiment triggers them through an intervention; the handler is ordinary model code, validated and logged.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
 
-Nothing blocking. D-020 to D-026 (raised by the three spec parts) were all accepted on 2026-09-29.
+Nothing blocking. D-020 to D-027 were all accepted on 2026-09-29.
 
 ## Next steps
 
-**Next session starts here:** write the first-slice reference programs with expected results (`docs/spec/reference-programs/`, D-012), stated as expectations (PK section 4), using the sketch syntax. Known authoring points: the projectile should expose `speed` and `angle` parameters (PK 13.5); conditional expectations need a form (PK 15); landing-position tolerance (RC 17).
+**Next session starts here:** the syntax study (D-006): write every reference program in two or three candidate syntaxes in R-44's hybrid style and compare them on the D-006 criteria (readability for programming-literate authors, closeness to the science, visibility of the R-46 distinctions, round-tripping with the IR for Mava Studio). The Rust kernel prototype (step 4) may start in parallel against the spec and the reference programs.
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
-2. Reference programs with expected results, used as the acceptance suite (D-012).
+2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances to be confirmed by the prototype.
 3. Syntax study: reference programs written in two or three candidate syntaxes (D-006).
 4. Rust kernel prototype running the reference programs.
 
@@ -85,6 +86,7 @@ Nothing blocking. D-020 to D-026 (raised by the three spec parts) were all accep
 | 2026-09-29 | Design series imported into `docs/design/`. Name Prismal adopted. Design audit completed; divergence register created with D-001 to D-016. Owner clarified purpose: D-017 accepted. D-001 accepted (first slice: 2D mechanics + math). D-002 accepted (kernel-first; educators and creators author). D-018 opened. D-007 accepted (causal v1). D-018 accepted (web player first; output follows content and intent). D-002 amended twice (authors likely programmers; authorship open). D-019 accepted (Mava Studio built on Prismal). Carried-forward record created (R-01 to R-70); audit corrected for F-01, F-02, F-06. D-003 to D-016 accepted (D-016 with correction notes allowed; notes added to 09.10b and 09.11). Agreed to review register entries one at a time. |
 | 2026-09-29 | Core semantics spec started in `docs/spec/`: index and model kernel v0 (values, units, spaces, status, bindings, objects, collections, relations, domains, expressions, equations, constraints, dependency analysis, flows, events, operations, interface, static diagnostics). All first-slice reference programs checked expressible; one gap found (checks at event instants). D-020 to D-023 proposed. Carried-forward record gained spec pointers. D-020 accepted (check only). D-021 accepted (angles dimensionless). D-022 accepted (spaces and frames). D-023 accepted (declared intervenability). Runtime contract v0 drafted (clocks, runs, superdense trajectory, solvers, event location, event iteration, Zeno, failures, interventions, execution control, randomness, snapshots and replay, observer output); D-024 proposed and accepted. |
 | 2026-09-29 | Session work committed (dc42472). Presentation kernel v0 drafted: presentations, observation and data (including `on(E)` observations, closing the model kernel's gap), expectations, projection, representation set, views, presentation time and animation, explanation timeline, interaction, accessibility, output and media. D-025 and D-026 proposed. D-025 accepted (explore beats on a branch). D-026 accepted (accessibility baseline in v1). |
+| 2026-09-29 | Presentation kernel committed and pushed (a710ba4). First-slice reference programs written in `docs/spec/reference-programs/` (RP-01 to RP-08) with cases, expectations (analytic, reference, bound, behavior, diagnostic), learner scripts, and `tools/refvals.py` for every reference value. Conditional expectations resolved as cases. RP-08 exposed a gap (no way to request a model action from outside): D-027 proposed and accepted. |
 
 ## Working process
 

@@ -4,7 +4,7 @@
 - **Part:** model kernel (D-011). The runtime contract (`02`) and presentation kernel (`03`) are separate documents.
 - **Scope:** the meaning of a model: what exists in it, what values it holds, what is true of it, and how it may change. How changes are computed and scheduled is the runtime contract. How the model is shown and manipulated is the presentation kernel.
 
-Every section follows accepted decisions (including D-020 to D-023, raised by this document) or carried-forward resolutions.
+Every section follows accepted decisions (including D-020 to D-023, raised by this document) or carried-forward resolutions, including D-027 (raised by reference program RP-08).
 
 ## Contents
 
@@ -446,6 +446,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 | `on(E)` | event `E` occurred at the previous microstep | cascades; payload of `E` is readable |
 | `on start` | run start, after initialization | |
 | `on input(i)` | the environment changes input `i` | |
+| `on request` | an intervention requests this event (D-027) | the event may declare a typed payload, supplied by the request |
 
 - **MK-15.4** Continuous guards are crossings, never level conditions (D-004). A crossing is due at the instant the guard function changes sign in the declared direction; a guard that touches zero without changing sign is not a crossing.
 - **MK-15.5** A level condition (a Boolean over state) is permitted only as an enabling condition or in a discrete-time trigger. The enabling condition is evaluated at the instant the trigger is due; the event occurs only if it is true.
@@ -515,6 +516,7 @@ The model kernel exposes a narrow interface (D-011). The runtime contract and th
 
 - **MK-17.1** **Read** (observation, R-19): any public binding, the value of any equation residual, event occurrences with payloads, and structure (object, collection and relation identities). Reading never changes the model.
 - **MK-17.2** **Intervene**: a set of `set` operations on intervenable bindings (MK-6.10), and `create` or `destroy` on collections the model declares intervenable. An intervention is delivered at an event instant and validated like any transition (section 16.2). Interventions name semantic targets, never visual ones (R-40).
+- **MK-17.2a** **Request** (D-027): an intervention may request an event the model declares with the trigger `on request` (MK-15.3), with its payload. The event's handler runs as model code at the intervention's instant: ownership (MK-7.10), conflicts (MK-16.4) and constraints apply as to any transition. Events without that trigger cannot be requested.
 - **MK-17.3** **Supply input**: the environment sets `input` bindings, or marks them `unavailable` or `pending`. External input is distinct from intervention (SEM-07).
 - **MK-17.4** **Execution control** (play, pause, seek, reset, branch, used by the explanation timeline, D-009) belongs to the runtime contract. It acts on runs, not on the model, and is not an intervention.
 - **MK-17.5** The model never depends on any reader, intervener or controller: removing every presentation leaves its meaning unchanged (D-009, D-011).
@@ -690,6 +692,7 @@ Positions that elaborate accepted decisions without changing them are specified 
 | D-021 | Plane angle is dimensionless, with `rad`, `deg`, `rev` units (Accepted) | 3.5 |
 | D-022 | Spaces have frames; cross-frame and cross-space values need explicit conversion (Accepted) | 4 |
 | D-023 | Only declared bindings are intervenable; parameters by default (Accepted) | 6.3, 17 |
+| D-027 | Requestable events: the outside may request events the model declares `on request` (Accepted; raised by RP-08) | 15, 17 |
 
 **Elaborations (in this specification only):**
 
