@@ -427,7 +427,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 ## 15. Events
 
 - **Restates:** R-28, R-29, R-60, RUN-02 and RUN-05 (R-62).
-- **Decisions:** D-004, D-005, D-009.
+- **Decisions:** D-004, D-005, D-009, D-027, D-038.
 - **Prior art:** follows hybrid automata (guards and resets), Modelica `when` clauses with `reinit` and `pre`, and FMI event indicators (zero-crossing functions). Follows superdense time (Maler, Manna and Pnueli; Lee and Zheng, Ptolemy II) for event cascades at one instant.
 
 ### 15.1 Structure
@@ -464,7 +464,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 
 ### 15.4 Zeno policy
 
-- **MK-15.11** An event is **self-retriggering** if its handler writes a binding that its trigger depends on (directly or through derived bindings). This is decided statically from the dependency graph.
+- **MK-15.11** An event is **self-retriggering** if its handler writes a binding that its trigger depends on, directly, through derived bindings, or through the flows of continuous state it depends on. Before a flow is followed, conditionals that test discrete state the handler sets to a constant are resolved to the branch that constant selects; conditions that cannot be resolved keep both branches (D-038). This is decided statically from the dependency graph.
 - **MK-15.12** Every self-retriggering event with a crossing trigger MUST declare a **Zeno policy** (D-004):
   - `stop`: when accumulation is detected, stop the run with a diagnostic.
   - `settle { operations }`: when accumulation is detected, apply the given operations instead of the handler, typically setting discrete state that switches to a resting mode (section 14.4).
@@ -708,6 +708,7 @@ Positions that elaborate accepted decisions without changing them are specified 
 | D-027 | Requestable events: the outside may request events the model declares `on request` (Accepted; raised by RP-08) | 15, 17 |
 | D-030 | Literal `0` adopts zero vectors (Accepted; raised by syntax study S-3) | 3.3 |
 | D-032 | Tuple literals are typed as vectors by their expected type (Accepted; raised by syntax study S-5) | 4, 18 |
+| D-038 | Self-retriggering decided through flows, specialized on the handler's constant discrete writes (Accepted; raised by the prototype) | 15.4 |
 | D-029 | Derived function values may read bindings; declared and stored functions stay closed (Accepted; raised by syntax study S-1) | 10, 18 |
 
 **Elaborations (in this specification only):**

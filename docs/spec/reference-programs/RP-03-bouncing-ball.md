@@ -99,8 +99,8 @@ Exact values, with `t1 = sqrt(2 h0 / g)` (first impact) and `v1 = sqrt(2 g h0)` 
 | RP-03.E6 | `bounce_times[10]` | 3.57889295102044 s | abs 1e-8 s | analytic | fixed |
 | RP-03.E7 | `top_heights[1..3]` | 0.64 m, 0.4096 m, 0.262144 m | abs 1e-8 m | analytic | fixed |
 | RP-03.E8 | no `top` at `t0` | the first `top` is after `bounce_times[1]` | exact | behavior | fixed |
-| RP-03.E9 | `zeno` | exactly one entry, at bounce number 61 to 65 | - | behavior | provisional |
-| RP-03.E10 | time of the `zeno` entry | before `t_∞` and within `1e-4 s` of it | - | bound | provisional |
+| RP-03.E9 | `zeno` | exactly one entry, at bounce number 61 to 65 | - | behavior | fixed |
+| RP-03.E10 | time of the `zeno` entry | before `t_∞` and within `1e-4 s` of it | - | bound | fixed |
 | RP-03.E11 | `final` | `(0 m, 0 m/s, true)` exactly | exact | behavior | fixed |
 | RP-03.E12 | `late_events` | empty: no event after the settle | exact | behavior | fixed |
 
@@ -133,3 +133,4 @@ E9 and E10 are provisional because detection depends on the location error of th
 
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied; case `B-stop` now runs the declared model variant `RP-03.V1` (D-031).
+- 2026-09-30 E9 and E10 confirmed by the Rust prototype and made fixed: Zeno accumulation detected at bounce 63, `t = 4.06370922186394 s` (predicted bounce 63 at 4.06370922604679 s), 3.5e-6 s before `t_inf`. Bounce 10 located within 3.5e-11 s.

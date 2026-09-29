@@ -3,7 +3,7 @@
 **Read this first.** This file is the entry point for anyone resuming work on Prismal, in a new session or years later. It records where the project stands, what is decided, and what comes next. Update it at the end of every working session.
 
 - **Last updated:** 2026-09-30
-- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Syntax study done (`docs/syntax-study/`); D-028 accepted with amendment; working syntax written (`docs/syntax-study/working-syntax.md`); specification and reference programs converted to it; syntax study findings resolved (D-029 to D-034).
+- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Syntax study done (`docs/syntax-study/`); D-028 accepted with amendment; working syntax written (`docs/syntax-study/working-syntax.md`); specification and reference programs converted to it; syntax study findings resolved (D-029 to D-034). Keyword pass (D-035), IR identities and comments (D-036), IR format (`docs/spec/04-ir.md`, D-037). Rust kernel prototype running the reference programs (`crates/`, `docs/prototype.md`); D-038 raised by it.
 
 ## What Prismal is
 
@@ -23,6 +23,9 @@ self-study, deep study, and syllabus-based educational content creation.
 | `docs/PROJECT-STATE.md` | Entry point and current state | Living |
 | `docs/decisions/divergence-register.md` | Every departure from the exploration record, with reasons and status | Living, authoritative |
 | `docs/spec/` | Core semantics specification (model kernel, runtime contract and presentation kernel v0 drafts) | Living, normative |
+| `docs/spec/04-ir.md` | Semantic IR format (JSON, D-037) | Living, normative |
+| `docs/prototype.md` | Rust kernel prototype: structure, coverage of the reference programs, measured accuracy, gaps | Living |
+| `crates/` | Prototype source: `prismal-ir`, `prismal-kernel`, `prismal-runtime`; `cargo test` runs the reference programs | Living |
 | `docs/syntax-study/` | Syntax study (D-006): candidates A, B, C with all reference programs, comparison, specification findings S-1 to S-12 | Study record, non-normative |
 | `docs/decisions/carried-forward.md` | Every resolution from the exploration record that is kept (R-01 to R-70), and where it lands | Living |
 | `docs/audit/2026-09-29-design-audit.md` | Audit of the exploration record: findings F-01 to F-15 | Fixed record |
@@ -72,6 +75,10 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-032:** tuple literals are vectors when the context expects one (declaration, argument, flow target, other operand, through scaling); otherwise MK-E21.
 - **D-033:** run-directing actions in a beat apply in written order at its start, before presentation time passes.
 - **D-034:** `formula` representation typesets expressions, definitions and labeled expressions from the IR; never strings.
+- **D-035:** keywords and spelling of the working syntax (`derived`, `discrete`, `falling(g)`, `==` for equality, ASCII operators, `///` documentation comments).
+- **D-036:** identities live in the IR and are matched by declaration path; tool renames keep identity, plain-text renames break references visibly; documentation comments are IR notes.
+- **D-037:** the IR is serialized as versioned JSON.
+- **D-038:** an event is self-retriggering if its handler writes something its guard depends on through derived bindings or flows, with flows specialized on the discrete values the handler sets.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
@@ -80,12 +87,13 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 
 ## Next steps
 
-**Next session starts here:** keyword and spelling pass on the working syntax (comparison section 8.2), then comments and identities in the IR (section 8.3), then the IR format and the Rust kernel prototype (step 4). The Rust kernel prototype (step 4) may start in parallel against the spec and the reference programs.
+**Next session starts here:** owner review of the overnight work (session log 2026-09-30, `docs/prototype.md`, register D-035 to D-038). Then, in order: the text parser for the working syntax (lowering to the IR the prototype runs), the presentation prototype (views, frames, timeline engine) to cover RP-06 E10 to E13, RP-07 rendering and RP-08 timing, then the web player (D-018).
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
-2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances to be confirmed by the prototype.
-3. Syntax study: three candidates compared; D-028 accepted with amendment; working syntax written. Findings S-1 to S-12 resolved. Keyword pass to follow.
-4. Rust kernel prototype running the reference programs.
+2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances confirmed by the prototype and fixed.
+3. Syntax study: done (D-028, D-035). IR format: done (D-036, D-037).
+4. Rust kernel prototype: done for the model kernel and runtime; all model-side expectations of RP-01 to RP-07 and RP-08's model behavior pass (`docs/prototype.md`).
+5. Next: text parser, presentation prototype, web player.
 
 ## Session log
 
@@ -97,6 +105,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 | 2026-09-29 | Presentation kernel committed and pushed (a710ba4). First-slice reference programs written in `docs/spec/reference-programs/` (RP-01 to RP-08) with cases, expectations (analytic, reference, bound, behavior, diagnostic), learner scripts, and `tools/refvals.py` for every reference value. Conditional expectations resolved as cases. RP-08 exposed a gap (no way to request a model action from outside): D-027 proposed and accepted. |
 | 2026-09-29 | Syntax study (D-006) in `docs/syntax-study/`: candidates A (flat keyword statements), B (mathematical sections) and C (nested structure) each write RP-01 to RP-08; comparison on the four D-006 criteria, diagnostic variants and IR round-tripping; `tools/metrics.py` for line and token counts. Twelve specification findings recorded (S-1 to S-12). D-028 proposed (A as base with C's presentation structure and processes, B's default space), then accepted with amendment (grouped declaration and flow blocks, interval ranges, timeline shorthand; no type inference). Working syntax written for all eight programs. S-1 presented as D-029 and accepted; model kernel updated (MK-10.3 reworded, MK-10.7, MK-E20). |
 | 2026-09-30 | Owner delegated acceptance of recommended positions. Syntax study findings resolved: D-030 (zero vectors), D-031 (model variants in cases), D-032 (tuple literals typed by context), D-033 (order of run actions in a beat), D-034 (formula representation) accepted; corrections S-2, S-6, S-7 (MK-E22), S-9, S-11 (process kind), S-12 (representation names) applied. Specification examples and all reference programs converted to the working syntax; RP-04.D2 now expects MK-E01. |
+| 2026-09-30 | Overnight work on branch `syntax-study-and-prototype` (owner's delegation). Keyword pass (D-035); identities and comments across text and visual editing (D-036); IR format `docs/spec/04-ir.md` with JSON serialization (D-037). Rust workspace `crates/` (IR, kernel, runtime): checker with MK diagnostics, `dopri5` and `rk4` with dense output, crossing location, superdense event iteration, Zeno detection, constraints, equation checks, interventions, requests, time events, sessions with undo. All model-side expectations of RP-01 to RP-07 and RP-08's model behavior pass, with bit-identical replay; provisional tolerances confirmed and fixed (Zeno at bounce 63 as predicted). The prototype exposed a contradiction in MK-15.11, resolved by D-038. Report: `docs/prototype.md`. |
 
 ## Working process
 

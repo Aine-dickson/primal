@@ -72,10 +72,10 @@ presentation PendulumChecks for Pendulum {
 | ID | Observation | Expected | Tolerance | Kind | Status |
 |---|---|---|---|---|---|
 | RP-04.E1 | `theta_start` | 0.174532925199433 (= 10 π/180) | exact in binary64 | analytic | fixed |
-| RP-04.E2 | `upswings[1]` | 1.50741947047395 s | rel 1e-5 | analytic | provisional |
-| RP-04.E3 | `upswings[k+1] - upswings[k]`, every `k` in the run | 2.00989262729860 s | rel 1e-5 | analytic | provisional |
+| RP-04.E2 | `upswings[1]` | 1.50741947047395 s | rel 1e-5 | analytic | fixed |
+| RP-04.E3 | `upswings[k+1] - upswings[k]`, every `k` in the run | 2.00989262729860 s | rel 1e-5 | analytic | fixed |
 | RP-04.E4 | measured period against `T0` | `period / T0 - 1` in `[1.85e-3, 1.96e-3]` | - | bound | fixed |
-| RP-04.E5 | `energy` | max relative deviation from its initial value below `1e-3` | - | bound | provisional |
+| RP-04.E5 | `energy` | max relative deviation from its initial value below `1e-3` | - | bound | fixed |
 | RP-04.E6 | `diagnostics` | none: the rod constraint never reports | exact | behavior | fixed |
 | RP-04.E7 | number of upswings | 50 (`floor((100 s - 3T/4) / T) + 1`; the last at 99.992 s) | exact | behavior | fixed |
 
@@ -83,9 +83,9 @@ presentation PendulumChecks for Pendulum {
 
 | ID | Observation | Expected | Tolerance | Kind | Status |
 |---|---|---|---|---|---|
-| RP-04.E8 | `upswings[k+1] - upswings[k]` | 2.00989262729860 s | rel 1e-6 | analytic | provisional |
-| RP-04.E9 | `energy` | max relative deviation below `1e-6` | - | bound | provisional |
-| RP-04.E10 | `energy` compared with case A | case B's max deviation is smaller than case A's | - | behavior | provisional |
+| RP-04.E8 | `upswings[k+1] - upswings[k]` | 2.00989262729860 s | rel 1e-6 | analytic | fixed |
+| RP-04.E9 | `energy` | max relative deviation below `1e-6` | - | bound | fixed |
+| RP-04.E10 | `energy` compared with case A | case B's max deviation is smaller than case A's | - | behavior | fixed |
 
 E10 records the teaching point of the per-solver drift in D-012: the choice of solver visibly changes how well energy is conserved, and the author can see it (MK-1.2, RC-16.1).
 
@@ -106,3 +106,4 @@ E10 records the teaching point of the per-solver drift in D-012: the choice of s
 
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied (`Plane` declared; `Plane` is the default space). RP-04.D2 now expects MK-E01 instead of MK-E04: under D-032 the tuple takes the expected type `Vector<Plane, L>`, so the error is found in its components.
+- 2026-09-30 provisional tolerances confirmed by the Rust prototype and made fixed. Measured: `dopri5` first upswing rel error 5.4e-8, worst period 2.0e-7, energy drift 7.7e-5 (1645 steps); `rk4` 8.0e-9, 7.9e-9, 1.35e-7.

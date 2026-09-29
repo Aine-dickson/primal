@@ -166,6 +166,9 @@ struct Engine<'a> {
     n: u32,
     refs: Vec<Option<bool>>,
     zeno: Vec<ZenoMonitor>,
+    /// Next instant of each time event (RC-7.9); `every_k` counts `every` occurrences.
+    time_next: Vec<Option<f64>>,
+    every_k: Vec<u64>,
     run: Run,
 }
 
@@ -252,8 +255,14 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
         n: 0,
         refs: vec![None; cm.events.len()],
         zeno: (0..cm.events.len()).map(|_| ZenoMonitor { last: None, recent: VecDeque::new() }).collect(),
+        time_next: vec![None; cm.events.len()],
+        every_k: vec![0; cm.events.len()],
         run,
     };
+    if let Err(d) = e.schedule_time_events() {
+        e.run.status = RunStatus::NotStarted(RunDiag { category: Category::Initialization, ..d });
+        return e.run;
+    }
     // RC-5.2: constraints on the initial state.
     match e.check_constraints(&e.vals.clone(), true) {
         Ok(reports) => e.run.diagnostics.extend(reports),
@@ -263,7 +272,9 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
         }
     }
     e.commit();
-    let start: Vec<usize> = cm.events.iter().enumerate().filter(|(_, ev)| matches!(ev.trigger, Some(CTrigger::Start))).map(|(i, _)| i).collect();
+    // RC-5.3: `on start` and time events at t0 are due at (t0, 0).
+    let mut start: Vec<usize> = cm.events.iter().enumerate().filter(|(_, ev)| matches!(ev.trigger, Some(CTrigger::Start))).map(|(i, _)| i).collect();
+    start.extend(e.take_time_events());
     if let Err(d) = e.iterate(start, vec![]) {
         e.run.status = RunStatus::Stopped(d);
         return e.run;
@@ -276,6 +287,59 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
 }
 
 impl<'a> Engine<'a> {
+    /// Evaluates the instants of `at` and `every` triggers (RC-7.9). `at(τ)` is evaluated once,
+    /// at initialization; the k-th instant of `every` is `from + k Δ`, never accumulated.
+    fn schedule_time_events(&mut self) -> Result<(), RunDiag> {
+        for ei in 0..self.cm.events.len() {
+            let vals = self.vals.clone();
+            let c = self.ctx(&vals);
+            match &self.cm.events[ei].trigger {
+                Some(CTrigger::At(tau)) => {
+                    let t = tau.eval(&c).map_err(|s| self.diag(Category::Model, s.cause, None))?.num();
+                    self.time_next[ei] = if t >= self.cfg.t0 { Some(t) } else { None };
+                }
+                Some(CTrigger::Every { period, from }) => {
+                    let d = period.eval(&c).map_err(|s| self.diag(Category::Model, s.cause, None))?.num();
+                    let f = from.eval(&c).map_err(|s| self.diag(Category::Model, s.cause, None))?.num();
+                    if d <= 0.0 {
+                        return Err(self.diag(Category::Model, "an `every` period must be positive".into(), Some(&self.cm.events[ei].id)));
+                    }
+                    let k = ((self.cfg.t0 - f) / d).ceil().max(0.0) as u64;
+                    self.every_k[ei] = k;
+                    self.time_next[ei] = Some(f + k as f64 * d);
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn next_time_event(&self) -> Option<f64> {
+        self.time_next.iter().flatten().copied().fold(None, |m, t| Some(m.map_or(t, |x: f64| x.min(t))))
+    }
+
+    /// Time events due at the current time; advances their schedules.
+    fn take_time_events(&mut self) -> Vec<usize> {
+        let mut due = vec![];
+        for ei in 0..self.cm.events.len() {
+            if self.time_next[ei] != Some(self.t) {
+                continue;
+            }
+            due.push(ei);
+            match &self.cm.events[ei].trigger {
+                Some(CTrigger::Every { period, from }) => {
+                    let vals = self.vals.clone();
+                    let c = self.ctx(&vals);
+                    let (d, f) = (period.eval(&c).map(|v| v.num()).unwrap_or(f64::NAN), from.eval(&c).map(|v| v.num()).unwrap_or(f64::NAN));
+                    self.every_k[ei] += 1;
+                    self.time_next[ei] = Some(f + self.every_k[ei] as f64 * d);
+                }
+                _ => self.time_next[ei] = None,
+            }
+        }
+        due
+    }
+
     fn diag(&self, category: Category, message: String, element: Option<&str>) -> RunDiag {
         RunDiag { category, message, element: element.map(|s| s.to_string()), t: self.t, n: self.n }
     }
@@ -405,7 +469,10 @@ impl<'a> Engine<'a> {
                 break;
             }
             cm.store_y(&self.vals, &mut y);
-            let next_stop = pending.front().map(|s| s.t.min(self.cfg.t_end)).unwrap_or(self.cfg.t_end);
+            let mut next_stop = pending.front().map(|s| s.t.min(self.cfg.t_end)).unwrap_or(self.cfg.t_end);
+            if let Some(te) = self.next_time_event() {
+                next_stop = next_stop.min(te);
+            }
             let base = self.run.committed.len() - 1;
             let mut rhs = SegmentRhs { cm, scratch: self.vals.clone(), t0: self.cfg.t0 };
             let span = next_stop - self.t;
@@ -503,6 +570,14 @@ impl<'a> Engine<'a> {
             cm.update_derived(&mut self.vals, self.t, self.cfg.t0).map_err(|s| self.diag(Category::Model, s.cause, None))?;
             self.refs = new_refs;
             self.after_step_checks()?;
+            // RC-6.7, RC-7.9: a step never crosses a time event; it lands on it.
+            let timed = self.take_time_events();
+            if !timed.is_empty() {
+                self.commit();
+                self.iterate(timed, vec![])?;
+                self.retake_refs();
+                h = None;
+            }
         }
         let last = self.run.committed.last().unwrap();
         if last.t != self.t {
@@ -613,8 +688,11 @@ impl<'a> Engine<'a> {
                 }
                 self.run.log.push(LogEntry { event: ei, name: self.cm.events[ei].name.clone(), t: self.t, n: self.n, zeno: z, requested: rq });
             }
-            // Next microstep: emitted events (MK-15.10) and crossings caused by jumps (RC-8.5).
-            let mut next: Vec<usize> = emitted;
+            // Next microstep: `on(E)` for each emitted E (MK-15.10), and crossings caused by
+            // jumps (RC-8.5).
+            let mut next: Vec<usize> = (0..self.cm.events.len())
+                .filter(|&j| matches!(self.cm.events[j].trigger, Some(CTrigger::On(src)) if emitted.contains(&src)))
+                .collect();
             for ei in 0..self.cm.events.len() {
                 if let Some(CTrigger::Crossing { dir, .. }) = &self.cm.events[ei].trigger {
                     let before = self.run.committed[self.run.committed.len() - 2].vals.clone();
@@ -690,7 +768,12 @@ impl<'a> Engine<'a> {
                     }
                 };
                 match self.transition(&cops, true) {
-                    Ok(emitted) => self.iterate(emitted, vec![]),
+                    Ok(emitted) => {
+                        let due = (0..self.cm.events.len())
+                            .filter(|&j| matches!(self.cm.events[j].trigger, Some(CTrigger::On(src)) if emitted.contains(&src)))
+                            .collect();
+                        self.iterate(due, vec![])
+                    }
                     Err(d) if d.category == Category::Intervention => {
                         self.run.rejected.push(d);
                         Ok(())
@@ -800,4 +883,81 @@ impl Run {
 /// The type of an observation expression.
 pub fn observation_type(cm: &CModel, e: &Expr) -> Type {
     compile_expr(cm, e, None).expect("checks").1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prismal_ir::build::*;
+    use prismal_ir::{Op, Trigger, Type};
+    use prismal_kernel::check_model;
+
+    /// `emit(E)` makes `on(E)` due at the next microstep (MK-15.10); an endless cascade is
+    /// stopped by the cascade limit (RC-8.3).
+    #[test]
+    fn cascades_and_cascade_limit() {
+        let mut b = ModelBuilder::new("M");
+        let x = b.state("x", Type::qty("L"), num(1.0, "m"));
+        b.flow(&x, num(-1.0, "m/s"));
+        let n = b.discrete("n", Type::real(), lit(0.0));
+        b.event("cross", falling(r(&x)), vec![Op::Emit { event: "M.event.cross".into(), payload: None }]);
+        b.event("second", Trigger::On { event: "M.event.cross".into() }, vec![set(&n, r(&n) + lit(1.0))]);
+        let cm = check_model(&[], &b.finish()).unwrap();
+        let out = run(&cm, Config::until(2.0));
+        let names: Vec<(&str, u32)> = out.log.iter().map(|l| (l.name.as_str(), l.n)).collect();
+        assert_eq!(names, vec![("cross", 1), ("second", 2)]);
+        assert_eq!(out.final_value("M.n").num(), 1.0);
+
+        let mut b = ModelBuilder::new("L");
+        let x = b.state("x", Type::qty("L"), num(1.0, "m"));
+        b.flow(&x, num(-1.0, "m/s"));
+        b.event("ping", falling(r(&x)), vec![Op::Emit { event: "L.event.ping".into(), payload: None }]);
+        b.event("pong", Trigger::On { event: "L.event.ping".into() }, vec![Op::Emit { event: "L.event.pong".into(), payload: None }]);
+        b.event("back", Trigger::On { event: "L.event.pong".into() }, vec![Op::Emit { event: "L.event.ping".into(), payload: None }]);
+        let cm = check_model(&[], &b.finish()).unwrap();
+        let out = run(&cm, Config::until(2.0));
+        match out.status {
+            RunStatus::Stopped(d) => assert_eq!(d.category, Category::Cascade),
+            s => panic!("expected a cascade failure, got {s:?}"),
+        }
+    }
+
+    /// `every(Δ)` occurs at `from + kΔ` exactly, without drift (RC-7.9); `at(τ)` once.
+    #[test]
+    fn time_events() {
+        let mut b = ModelBuilder::new("T");
+        let x = b.state("x", Type::qty("L"), num(0.0, "m"));
+        b.flow(&x, num(1.0, "m/s"));
+        let n = b.discrete("n", Type::real(), lit(0.0));
+        b.event("tick", Trigger::Every { period: num(0.1, "s"), from: t0() }, vec![set(&n, r(&n) + lit(1.0))]);
+        b.event("once", Trigger::At { time: t0() + num(0.25, "s") }, vec![]);
+        let cm = check_model(&[], &b.finish()).unwrap();
+        let out = run(&cm, Config::until(1.0));
+        let ticks: Vec<f64> = out.times("tick");
+        assert_eq!(ticks.len(), 11, "t0, 0.1, ..., 1.0");
+        for (k, t) in ticks.iter().enumerate() {
+            assert_eq!(*t, k as f64 * 0.1, "tick {k}");
+        }
+        assert_eq!(out.times("once"), vec![0.25]);
+        assert_eq!(out.final_value("T.n").num(), 11.0);
+        assert!((out.at(0.25, &r(&x)).num() - 0.25).abs() < 1e-15);
+    }
+
+    /// Two events setting one binding at the same instant are a conflict (MK-16.4, RC-10.2).
+    #[test]
+    fn same_instant_conflict() {
+        let mut b = ModelBuilder::new("C");
+        let x = b.state("x", Type::qty("L"), num(1.0, "m"));
+        b.flow(&x, num(-1.0, "m/s"));
+        let k = b.discrete("k", Type::real(), lit(0.0));
+        b.event("a", falling(r(&x)), vec![set(&k, lit(1.0))]);
+        b.event("b", falling(r(&x)), vec![set(&k, lit(1.0))]);
+        let cm = check_model(&[], &b.finish()).unwrap();
+        let out = run(&cm, Config::until(2.0));
+        match out.status {
+            RunStatus::Stopped(d) => assert_eq!(d.category, Category::Conflict),
+            s => panic!("expected a conflict, got {s:?}"),
+        }
+        assert_eq!(out.committed.last().unwrap().n, 0, "no partial commit (RC-10.1)");
+    }
 }

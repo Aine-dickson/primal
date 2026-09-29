@@ -57,6 +57,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-035 | Keywords and spelling of the working syntax | Accepted |
 | D-036 | Comments and identities across text and visual editing | Accepted |
 | D-037 | IR serialization: versioned JSON | Accepted |
+| D-038 | Self-retriggering decided through flows, specialized on the handler's discrete values | Accepted |
 
 ---
 
@@ -686,3 +687,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Reason:** the IR's first consumers are the web player and Mava Studio, both in the browser, and authors reviewing changes in version control. Size is not a first-slice concern.
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-038: Self-retriggering is decided through flows, specialized on the handler's discrete values
+
+- **Status:** Accepted
+- **Original position:** MK-15.11: an event is self-retriggering if its handler writes a binding its trigger depends on "directly or through derived bindings". MK 19.2 and RP-03 say the bouncing ball's `bounce` is self-retriggering because its guard `y` depends on `v` "through the flow".
+- **Raised by:** the Rust kernel prototype. The two readings disagree on the reference programs: following derived bindings only, `bounce` is not self-retriggering and RP-03.D1 (expects MK-E16) fails; following flows as well, RP-01's `landed` (which writes `vel` and `flying`, both read by the flow of `pos`) is self-retriggering and the valid RP-01 model is rejected.
+- **Builds on:** D-004 (declared Zeno policy), MK-13 (dependency graph), MK-14.12 (flow conditions depend only on discrete state).
+- **Question:** When must a crossing event declare a Zeno policy?
+- **Options considered:**
+  1. **Derived bindings only** (the text of MK-15.11). Misses the bouncing ball, the canonical Zeno case.
+  2. **Derived bindings and flows.** Catches the bouncing ball, but also flags every event that stops the motion it detects (a landing that switches the flight mode off), which cannot retrigger.
+  3. **Derived bindings and flows, with flows specialized on the handler's constant discrete writes.** Where the handler sets discrete state to a constant (`set flying = false`), conditionals in flows that test that state are resolved before following the flow. The projectile's `der(pos)` becomes `0` after `landed`, so `pos.y` no longer depends on anything the handler writes; the bouncing ball's `der(y) = v` does not depend on discrete state, so `bounce` is still self-retriggering.
+- **Accepted position:** option 3. The analysis stays static and conservative: when a condition cannot be resolved, both branches are followed.
+- **Reason:** it gives the intended answer on every reference program and matches the physics: an event is self-retriggering only if the state after its handler can still carry the guard back across zero. Because flow conditions may read only discrete state, parameters and constants (MK-14.12), the specialization is always well defined.
+- **Consequences:** MK-15.11 is reworded; the prototype implements it (`self_retriggering` in `crates/prismal-kernel/src/check.rs`); RP-01 and RP-03 are unchanged.
+- **History:**
+  - 2026-09-30 found by the prototype, proposed and accepted under the owner's standing delegation of 2026-09-30.

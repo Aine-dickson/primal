@@ -66,19 +66,19 @@ Energy drift measured with plain floating-point implementations over 100 s (`too
 
 | ID | Observation | Expected | Tolerance | Kind | Status |
 |---|---|---|---|---|---|
-| RP-05.E1 | `x_10` | 0.0408082061813392 m (`0.1 cos 20`) | abs 1e-5 m | analytic | provisional |
-| RP-05.E2 | `passes[1]` | 2.35619449019234 s | rel 1e-5 | analytic | provisional |
-| RP-05.E3 | `passes[k+1] - passes[k]`, every `k` | 3.14159265358979 s | rel 1e-5 | analytic | provisional |
+| RP-05.E1 | `x_10` | 0.0408082061813392 m (`0.1 cos 20`) | abs 1e-5 m | analytic | fixed |
+| RP-05.E2 | `passes[1]` | 2.35619449019234 s | rel 1e-5 | analytic | fixed |
+| RP-05.E3 | `passes[k+1] - passes[k]`, every `k` | 3.14159265358979 s | rel 1e-5 | analytic | fixed |
 | RP-05.E4 | number of passes | 32 (the last at 99.745 s) | exact | behavior | fixed |
-| RP-05.E5 | `energy` | max relative deviation from 0.02 J below `1e-3` | - | bound | provisional |
-| RP-05.E6 | `residuals` | none reported (every residual within `2e-5 J`) | - | behavior | provisional |
+| RP-05.E5 | `energy` | max relative deviation from 0.02 J below `1e-3` | - | bound | fixed |
+| RP-05.E6 | `residuals` | none reported (every residual within `2e-5 J`) | - | behavior | fixed |
 
 ### Case B-rk4
 
 | ID | Observation | Expected | Tolerance | Kind | Status |
 |---|---|---|---|---|---|
-| RP-05.E7 | `x_10` | 0.0408082061813392 m | abs 1e-7 m | analytic | provisional |
-| RP-05.E8 | `energy` | max relative deviation below `1e-7` | - | bound | provisional |
+| RP-05.E7 | `x_10` | 0.0408082061813392 m | abs 1e-7 m | analytic | fixed |
+| RP-05.E8 | `energy` | max relative deviation below `1e-7` | - | bound | fixed |
 
 ### Both cases
 
@@ -99,3 +99,4 @@ Energy drift measured with plain floating-point implementations over 100 s (`too
 
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied.
+- 2026-09-30 provisional tolerances confirmed by the Rust prototype and made fixed. Measured: `dopri5` `x_10` abs error 2.1e-7, worst period rel error 5.2e-8, energy drift 4.9e-5; `rk4` 2.4e-9, 1.3e-9, 1.8e-8.
