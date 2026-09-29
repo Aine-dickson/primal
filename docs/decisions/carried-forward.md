@@ -176,7 +176,21 @@ Pointers from resolutions to the specification sections that restate them. `MK` 
 | R-19 | RC 15 |
 | R-35 | MK 13 (runtime contract relies on it) |
 
-Presentation resolutions (R-37 to R-42) are restated in `03` when it is written.
+`PK` is `docs/spec/03-presentation-kernel.md`.
+
+| Resolutions | Restated in |
+|---|---|
+| R-07, R-19, R-20, R-37, R-38, R-39, R-40, R-42 | PK 1 |
+| R-39 | PK 2, PK 12 |
+| R-19, R-23, R-31 | PK 3 |
+| R-37, R-38 | PK 5 |
+| R-37, R-59 | PK 6 |
+| R-07, R-37 | PK 7 |
+| R-23, R-31, R-32 | PK 8 |
+| R-22, R-23, R-32 | PK 9 |
+| R-33, R-40, R-41 | PK 10 |
+| R-37 | PK 11, PK 12 |
+| R-62 (SEM-05, SEM-06, SEM-07, SEM-08) | PK 3, 5, 10 |
 
 ## Maintenance
 

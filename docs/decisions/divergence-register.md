@@ -44,6 +44,8 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-022 | Spaces have frames; conversions are explicit | Accepted |
 | D-023 | Intervenable bindings are declared by the model | Accepted |
 | D-024 | No event priorities; ordering by cascades | Accepted |
+| D-025 | Learner exploration during a narrated lesson | Accepted |
+| D-026 | Accessibility baseline in v1 | Accepted |
 
 ---
 
@@ -437,4 +439,39 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequence:** 06 section 18 (priority) is not carried forward in v0. Priorities can be added later if a reference program shows that cascades are too awkward.
 - **History:**
   - 2026-09-29 proposed in the runtime contract spec v0.
+  - 2026-09-29 accepted by the owner.
+
+## D-025: Learner exploration during a narrated lesson
+
+- **Status:** Accepted
+- **Original position:** Not addressed. The exploration record treats guided interaction and experiments as educational layers (08 sections 80-83) without saying how learner changes interact with an authored sequence. D-009 made the timeline able to direct the simulation and noted that the learner may pause, intervene or branch.
+- **Raised by:** core semantics spec v0, presentation kernel section 9.3.
+- **Builds on:** D-009, D-017 (use modes), D-023 (intervenable bindings), RC section 12 (branching).
+- **Question:** While a narrated lesson plays, what happens when the learner changes the model (moves the ball, changes gravity)? The narration was written for the author's run, so learner changes can make it wrong.
+- **Options considered:**
+  1. Learner changes allowed at any time and carried into the lesson. Maximum freedom; narration may stop matching what is on screen.
+  2. Learner changes allowed only in author-marked `explore` beats, on a branch of the lesson run. When the learner continues, the lesson returns to its own run where it left off, unless the beat is marked `keep`, in which case the lesson continues with the learner's choices (and its narration is written for that).
+  3. No learner model changes during lessons; exploration only in separate self-study presentations.
+- **Accepted position:** option 2. Outside `explore` beats the learner still controls the timeline (pause, replay, narration speed) and the view (zoom, pan) where the presentation allows, but not the model.
+- **Reason:** keeps narration truthful while supporting "try it yourself" moments inside a lesson (use mode 3 content with use mode 1 and 2 moments). Branching already exists in the runtime contract, so no new mechanism is needed.
+- **Consequence:** in video export, `explore` beats use a declared fallback (a pause, a scripted demonstration, or omission).
+- **History:**
+  - 2026-09-29 proposed in the presentation kernel spec v0.
+  - 2026-09-29 accepted by the owner.
+
+## D-026: Accessibility baseline in v1
+
+- **Status:** Accepted
+- **Original position:** Accessibility and non-visual representations are named as representation concerns (07 sections 70-71) without requirements.
+- **Raised by:** core semantics spec v0, presentation kernel section 11.
+- **Builds on:** R-37, D-017 (education), D-018 (web player first).
+- **Question:** Is accessibility a v1 requirement of the presentation kernel, or a later addition?
+- **Options considered:**
+  1. Baseline in v1: every representation that conveys model information has a text alternative generated from its bindings (label, value, unit), overridable by the author; every control and every drag works from the keyboard; narration always has captions; color is never the only encoding of a value.
+  2. Later: build the web player first and add accessibility after.
+- **Accepted position:** option 1.
+- **Reason:** Prismal's representations are bound to named, typed, unit-carrying model values, so text alternatives can be generated rather than written by hand; that is cheap now and expensive to retrofit. Educational content is often required to meet accessibility rules (WCAG 2.2) in schools and universities. PhET has shown that accessible interactive simulations are practical.
+- **Consequence:** the frame description (presentation kernel section 12) carries text alternatives and announcements from the start; the web player exposes them to assistive technology.
+- **History:**
+  - 2026-09-29 proposed in the presentation kernel spec v0.
   - 2026-09-29 accepted by the owner.

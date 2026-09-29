@@ -716,6 +716,6 @@ Positions that elaborate accepted decisions without changing them are specified 
 | Field state evolution (D-010) | Slice that needs it |
 | Acausal equations, constraint enforcement (D-007, D-020) | Later extension |
 | Quantity kinds of equal dimension (torque and energy) | Open; to be raised when a reference program needs it |
-| Checks and measurements evaluated at event instants (19.1) | `03-presentation-kernel.md` (observation) |
+| Checks and measurements evaluated at event instants (19.1) | Resolved: `03-presentation-kernel.md` PK-3.4 (`on(E)` observations) and section 4 (expectations) |
 | Modules, imports, packaging, versioning of libraries (R-55) | Extension specification |
 | IR format | IR specification |

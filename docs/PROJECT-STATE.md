@@ -3,7 +3,7 @@
 **Read this first.** This file is the entry point for anyone resuming work on Prismal, in a new session or years later. It records where the project stands, what is decided, and what comes next. Update it at the end of every working session.
 
 - **Last updated:** 2026-09-29
-- **Phase:** Core semantics spec v0. Model kernel and runtime contract drafted (`docs/spec/01`, `02`); D-020 to D-024 accepted. Next: presentation kernel.
+- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-024 accepted; D-020 to D-026 accepted. Next: reference programs.
 
 ## What Prismal is
 
@@ -22,7 +22,7 @@ self-study, deep study, and syllabus-based educational content creation.
 |---|---|---|
 | `docs/PROJECT-STATE.md` | Entry point and current state | Living |
 | `docs/decisions/divergence-register.md` | Every departure from the exploration record, with reasons and status | Living, authoritative |
-| `docs/spec/` | Core semantics specification (model kernel and runtime contract v0 drafts; presentation kernel not started) | Living, normative |
+| `docs/spec/` | Core semantics specification (model kernel, runtime contract and presentation kernel v0 drafts) | Living, normative |
 | `docs/decisions/carried-forward.md` | Every resolution from the exploration record that is kept (R-01 to R-70), and where it lands | Living |
 | `docs/audit/2026-09-29-design-audit.md` | Audit of the exploration record: findings F-01 to F-15 | Fixed record |
 | `docs/design/` (01 to 09.11) | Exploration record: case catalogue, models, semantics, DSL study | Frozen, non-normative |
@@ -61,17 +61,19 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-022:** points and vectors belong to a declared space with standard axes; spaces may declare extra frames; components read in a named frame; cross-space values need explicit conversion.
 - **D-023:** parameters are intervenable by default; state only when the model declares it; constants, derived values and inputs never; ranges are `reject` constraints; interventions apply at an event instant.
 - **D-024:** no event priorities; all events due at one microstep form one transition; ordering only by emitted cascades.
+- **D-025:** learner model changes during a narrated lesson only in author-marked explore beats, on a branch; the lesson returns to its own run unless the beat is marked keep; outside explore beats the learner controls timeline and view only.
+- **D-026:** accessibility baseline in v1: generated text alternatives from bindings (overridable), keyboard operation of every control and drag, captions for narration, no color-only encoding.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
 
-Nothing blocking. D-020 to D-024 (raised by the model kernel and runtime contract) were all accepted on 2026-09-29.
+Nothing blocking. D-020 to D-026 (raised by the three spec parts) were all accepted on 2026-09-29.
 
 ## Next steps
 
-**Next session starts here:** write the presentation kernel (`docs/spec/03-presentation-kernel.md`): observation and data, projection, representation, view, explanation timeline, interaction (D-009, D-011, D-018, D-023; R-37 to R-42). Include the model kernel's open item: checks and measurements evaluated at an event instant (MK 19.1). The runtime contract's observer interface is RC section 15; execution control is RC section 12.
+**Next session starts here:** write the first-slice reference programs with expected results (`docs/spec/reference-programs/`, D-012), stated as expectations (PK section 4), using the sketch syntax. Known authoring points: the projectile should expose `speed` and `angle` parameters (PK 13.5); conditional expectations need a form (PK 15); landing-position tolerance (RC 17).
 
-1. Core semantics spec v0: model kernel and runtime contract drafted; presentation kernel next (D-009, D-011, D-018).
+1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results, used as the acceptance suite (D-012).
 3. Syntax study: reference programs written in two or three candidate syntaxes (D-006).
 4. Rust kernel prototype running the reference programs.
@@ -82,6 +84,7 @@ Nothing blocking. D-020 to D-024 (raised by the model kernel and runtime contrac
 |---|---|
 | 2026-09-29 | Design series imported into `docs/design/`. Name Prismal adopted. Design audit completed; divergence register created with D-001 to D-016. Owner clarified purpose: D-017 accepted. D-001 accepted (first slice: 2D mechanics + math). D-002 accepted (kernel-first; educators and creators author). D-018 opened. D-007 accepted (causal v1). D-018 accepted (web player first; output follows content and intent). D-002 amended twice (authors likely programmers; authorship open). D-019 accepted (Mava Studio built on Prismal). Carried-forward record created (R-01 to R-70); audit corrected for F-01, F-02, F-06. D-003 to D-016 accepted (D-016 with correction notes allowed; notes added to 09.10b and 09.11). Agreed to review register entries one at a time. |
 | 2026-09-29 | Core semantics spec started in `docs/spec/`: index and model kernel v0 (values, units, spaces, status, bindings, objects, collections, relations, domains, expressions, equations, constraints, dependency analysis, flows, events, operations, interface, static diagnostics). All first-slice reference programs checked expressible; one gap found (checks at event instants). D-020 to D-023 proposed. Carried-forward record gained spec pointers. D-020 accepted (check only). D-021 accepted (angles dimensionless). D-022 accepted (spaces and frames). D-023 accepted (declared intervenability). Runtime contract v0 drafted (clocks, runs, superdense trajectory, solvers, event location, event iteration, Zeno, failures, interventions, execution control, randomness, snapshots and replay, observer output); D-024 proposed and accepted. |
+| 2026-09-29 | Session work committed (dc42472). Presentation kernel v0 drafted: presentations, observation and data (including `on(E)` observations, closing the model kernel's gap), expectations, projection, representation set, views, presentation time and animation, explanation timeline, interaction, accessibility, output and media. D-025 and D-026 proposed. D-025 accepted (explore beats on a branch). D-026 accepted (accessibility baseline in v1). |
 
 ## Working process
 

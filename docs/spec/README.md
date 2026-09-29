@@ -11,7 +11,7 @@ This directory holds the normative specification of Prismal's core semantics. It
 |---|---|---|
 | `01-model-kernel.md` | Model kernel: values, types, bindings, identity, objects, relations, collections, domains, expressions, functions, equations, constraints, state, processes, events, operations | v0 draft |
 | `02-runtime-contract.md` | Runtime contract: clocks, steps, commit, event instants, randomness, snapshots, replay | v0 draft |
-| `03-presentation-kernel.md` | Presentation kernel: observation and data, projection, representation, view, explanation timeline, interaction | Not started |
+| `03-presentation-kernel.md` | Presentation kernel: observation and data, projection, representation, view, explanation timeline, interaction | v0 draft |
 | `reference-programs/` | Acceptance suite with expected results (D-012) | Not started |
 
 ## Conventions
