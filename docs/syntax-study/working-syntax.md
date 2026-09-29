@@ -55,6 +55,17 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 
 The formatter prints, from the IR: declarations grouped in blocks by role, in the order kind (const, param, input, state, discrete, derived), then flows, processes, events, equations, constraints; parameter ranges as intervals when two-sided on that parameter alone; `run ... until` when a beat holds exactly those two actions; representations inside their views. Everything else prints in its only form.
 
+### 1.5 Lexical rules and reserved words (D-035)
+
+- **Source text** is UTF-8. Identifiers are a letter or `_` followed by letters, digits or `_`; letters include Unicode letters (`θ`, `ω`, `θ0`). Identifiers are case-sensitive.
+- **Numbers:** `12`, `0.5`, `1e-9`, `2.5e3`. A number directly followed by an identifier constant (`2π`) is a product.
+- **Units** follow a number and are written with unit symbols, `*`, `/` and integer powers: `9.81 m/s^2`, `4 N/m`, `0.01 /m`, `45 deg`. The unit ends at the first token that cannot continue it.
+- **Operators** are ASCII: `+ - * / ^ == != < <= > >= = += -> .. | . , : ;` and the words `and`, `or`, `not`, `if`, `then`, `else`, `otherwise`. `|v|` is the norm.
+- **Comments:** `//` to end of line. `///` is a documentation comment; together with an ordinary comment block directly before a declaration it becomes that element's author notes in the IR (D-036).
+- **Statements** end at a newline or `;`. A line ending in an operator, `,` or an open bracket continues on the next line.
+- **Reserved words:** `model object space const param input state discrete derived fn flow process event on if zeno stop settle set contribute create destroy connect disconnect emit enter equation checked within constraint policy reject report where in intervenable private symbol unit rising falling crossing at every from start request presentation for view panel observe live over microstep show as drag propose permit timeline scene beat sequence run rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight animate camera bind release config expect exactly rel true false`.
+- **Built-in names** (not reserved, but predefined): `t`, `t0`, `elapsed`, `origin`, `der`, `inf`, `π`, `pi`, the SI units and named dimensions of MK section 3.
+
 ---
 
 ## RP-01 Projectile, no drag

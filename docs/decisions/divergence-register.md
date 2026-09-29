@@ -54,6 +54,9 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-032 | Tuple literals as vectors: typing by expected type | Accepted |
 | D-033 | Order of run-directing actions within a beat | Accepted |
 | D-034 | Formula representation for expressions | Accepted |
+| D-035 | Keywords and spelling of the working syntax | Accepted |
+| D-036 | Comments and identities across text and visual editing | Accepted |
+| D-037 | IR serialization: versioned JSON | Accepted |
 
 ---
 
@@ -628,3 +631,58 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** PK-6.3 gains `formula`; PK-6.5 covers both; RP-06 shows `formula(f, live)`; RP-01's `speed` and `angle` declare display symbols `v` and `θ`; RP-08 shows `formula("R", speed^2 * sin(2 * angle) / g, live)`.
 - **History:**
   - 2026-09-30 proposed from syntax study finding S-10 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-035: Keywords and spelling of the working syntax
+
+- **Status:** Accepted
+- **Original position:** D-028 fixed the structure of the working syntax and left keywords and spellings to a later pass (`docs/syntax-study/comparison.md` section 8.2).
+- **Raised by:** syntax study, open item "keyword and spelling pass".
+- **Builds on:** D-028, R-46, D-002, D-019.
+- **Question:** Which keywords and spellings does the working syntax use?
+- **Options considered (per item):**
+  1. Derived bindings: `derived` (kept) or `let` (rejected: in most programming languages `let` computes once, while a derived binding is re-evaluated at every instant) or `def`.
+  2. Discrete state: `discrete` (kept) or `mode` (rejected: "mode" is the concept, not the binding, MK-14.4).
+  3. Crossing triggers: `falling(g)`, `rising(g)`, `crossing(g)` (kept: the kernel terms, short, and they state the direction) or phrases such as `g falls through 0` (rejected: longer, and a second spelling per trigger).
+  4. Microsteps in observations: `on E microstep n` (kept: one general form) or a named form such as `before handlers` (rejected: covers one case only).
+  5. Equality: `==` for equations, constraints and expectations; `=` only gives a value (kept, D-028).
+  6. `in`: a range after a declaration (`in [0, 1)`) and a target view in a timeline (`in scene { }`) (kept: the two contexts never overlap).
+  7. Operators: ASCII only (`^`, `-`, `<=`, `->`). Unicode letters are allowed in identifiers (`θ`, `ω`, `π`). The formatter never introduces Unicode.
+  8. Comments: `//` line comments; `///` documentation comments attached to the next element, carried into the IR (D-036).
+  9. Constraint policy: `policy reject | report | stop`; equation role: `checked within tol`; parameter range: `where cond` or `in I`.
+- **Accepted position:** the kept choices above. The full reserved-word list and lexical rules are in `docs/syntax-study/working-syntax.md` section 1.5.
+- **Reason:** each choice keeps one spelling per construct (canonical printing, D-019), uses the kernel's own term where one exists, and avoids words whose common programming meaning contradicts the semantics.
+- **History:**
+  - 2026-09-30 proposed by the keyword pass and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-036: Comments and identities across text and visual editing
+
+- **Status:** Accepted
+- **Original position:** R-47 and D-019: the IR is complete and serializable; declared elements have identities stable across edits (MK-7.6). How identities and comments survive when the same model is edited as text and in Mava Studio was left open (`docs/syntax-study/comparison.md` section 8.3).
+- **Raised by:** syntax study, round-trip analysis.
+- **Builds on:** R-47, D-019, MK-6.2, MK-7.6, PK-2.3.
+- **Question:** Where do element identities and author comments live, so that a text edit and a visual edit of one model both preserve them?
+- **Options considered:**
+  1. **Identities inline in the text** (`param g @id(4f2a) ...`). Always recoverable, but every line carries noise that authors must not touch.
+  2. **A sidecar identity file** maintained by the compiler, mapping declaration paths to identities. Survives plain text edits except renames, and adds a second file to every model.
+  3. **Identities in the IR, matched by declaration path.** The compiler matches each declaration to the previous IR by its path (`Projectile.param.speed`) and keeps its identity. A rename made through a tool (language server, Mava Studio) is an identity-preserving rename operation. A rename made by plain text editing is a removal and an addition; references that break are reported (PK-2.3), never silently rebound.
+- **Accepted position:** option 3 for identities. For comments: `///` documentation comments and a comment block directly before a declaration are **author notes** of that element in the IR, and print back before it; other comments (inside expressions, at end of line) are kept by the text formatter but may be lost by a visual edit of that element, which the editor reports before saving.
+- **Reason:** keeps source text free of machine data (D-002 authors), keeps the IR authoritative (R-47), and turns the failure case (a plain-text rename) into a reported breakage instead of a silent change of meaning. Notes attached to elements are what a visual editor can show and keep.
+- **Consequences:** the IR format (`docs/spec/04-ir.md`) gives every declared element an identity and a `notes` field; the compiler keeps the previous IR to match paths.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-037: IR serialization
+
+- **Status:** Accepted
+- **Original position:** D-019 and R-47 require a complete, serializable IR; the format was left to a separate specification.
+- **Raised by:** IR format specification (`docs/spec/04-ir.md`), before the Rust prototype.
+- **Builds on:** D-019, D-036, R-47.
+- **Question:** How is the IR serialized?
+- **Options considered:**
+  1. **JSON**, versioned, with opaque string identities and tagged expression trees. Readable in every language, native in the browser (D-018, the web player and Mava Studio), diffable in version control, supported by serde in Rust.
+  2. **A binary format** (CBOR, Protocol Buffers). Smaller and faster, but not readable or diffable, and needs a schema toolchain in every consumer.
+  3. **The text syntax itself as the stored form.** Rejected by D-036: text carries no identities or notes reliably, and a visual editor would need the parser.
+- **Accepted position:** option 1. A binary encoding of the same structure MAY be added later for large models; JSON stays the reference form.
+- **Reason:** the IR's first consumers are the web player and Mava Studio, both in the browser, and authors reviewing changes in version control. Size is not a first-slice concern.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
