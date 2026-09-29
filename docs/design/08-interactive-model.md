@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL
+# Prismal
 ## 08 Interactive Model
 
 ### 1. Purpose
@@ -181,7 +181,8 @@ This does not mean every interaction modifies the model.
 
 Some interactions modify only:
 
-```text view
+```text
+view
 runtime execution
 presentation state
 ```
@@ -367,12 +368,14 @@ The same physical input can represent different intents.
 
 For example:
 
-```text pointer drag
+```text
+pointer drag
 ```
 
 may mean:
 
-```text drag object
+```text
+drag object
 pan camera
 draw geometry
 select region
@@ -407,13 +410,15 @@ Mode determines how raw input is interpreted.
 
 For example:
 
-```text SELECT + pointer_down
+```text
+SELECT + pointer_down
 → select target
 ```
 
 while:
 
-```text MEASURE + pointer_down
+```text
+MEASURE + pointer_down
 → begin measurement
 ```
 
@@ -425,7 +430,8 @@ An interaction mode may be exposed through a tool.
 
 Examples:
 
-```text SelectionTool
+```text
+SelectionTool
 MeasurementTool
 ConstructionTool
 ProbeTool
@@ -438,7 +444,8 @@ Tools are not necessarily core semantic primitives.
 
 They can be composed from:
 
-```text input
+```text
+input
 +
 interaction state
 +
@@ -455,7 +462,8 @@ Some interactions span multiple input events.
 
 For example:
 
-```text pointer_down
+```text
+pointer_down
     ↓
 dragging
     ↓
@@ -591,7 +599,8 @@ target selection
 
 Hit testing can consider:
 
-```text geometry
+```text
+geometry
 visibility
 z-order
 interaction priority
@@ -621,7 +630,8 @@ Model Object / Property
 
 For example:
 
-```text screen coordinate
+```text
+screen coordinate
        ↓
 circle_A
        ↓
@@ -638,7 +648,8 @@ Multiple representations may occupy the same location.
 
 For example:
 
-```text particle
+```text
+particle
 +
 velocity arrow
 +
@@ -653,7 +664,8 @@ The interaction system therefore needs target resolution rules.
 
 Possible mechanisms:
 
-```text priority
+```text
+priority
 layer
 z-order
 semantic role
@@ -670,7 +682,8 @@ The exact policy belongs to the interaction system rather than the renderer.
 
 Selection is a fundamental interaction result.
 
-```text Input
+```text
+Input
  ↓
 Target
  ↓
@@ -679,7 +692,8 @@ Selection
 
 Selection can be:
 
-```text single
+```text
+single
 multiple
 toggle
 range
@@ -695,22 +709,26 @@ Selection usually belongs to presentation/interaction state rather than semantic
 
 Important distinction:
 
-```text selected_objects = [A,B]
+```text
+selected_objects = [A,B]
 ```
 
 does not imply:
 
-```text model contains only A,B
+```text
+model contains only A,B
 ```
 
 and:
 
-```text A is selected
+```text
+A is selected
 ```
 
 does not necessarily mean:
 
-```text A.selected = true
+```text
+A.selected = true
 ```
 
 unless the author explicitly defines selection as model state.
@@ -721,7 +739,8 @@ unless the author explicitly defines selection as model state.
 
 Interaction state may include:
 
-```text hovered_target
+```text
+hovered_target
 focused_target
 active_target
 selected_targets
@@ -731,7 +750,8 @@ These are generally transient interaction state.
 
 They can drive representation changes:
 
-```text hover
+```text
+hover
  ↓
 highlight
 ```
@@ -746,7 +766,8 @@ Direct manipulation means changing semantic values through a representation.
 
 Examples:
 
-```text drag point
+```text
+drag point
 rotate vector
 resize region
 move node
@@ -755,7 +776,8 @@ adjust control point
 
 The general path is:
 
-```text User Input
+```text
+User Input
  ↓
 Representation
  ↓
@@ -772,14 +794,16 @@ State Change
 
 Dragging is not simply:
 
-```text position = mouse_position
+```text
+position = mouse_position
 ```
 
 because the representation and model may use different spaces.
 
 Instead:
 
-```text pointer position
+```text
+pointer position
  ↓
 view → projection inverse
  ↓
@@ -798,17 +822,20 @@ Suppose a point must remain on a circle.
 
 The raw pointer position may be:
 
-```text p_raw
+```text
+p_raw
 ```
 
 but the valid model position is:
 
-```text p_valid = project_to_constraint(p_raw)
+```text
+p_valid = project_to_constraint(p_raw)
 ```
 
 Therefore:
 
-```text input
+```text
+input
  ↓
 inverse projection
  ↓
@@ -827,22 +854,26 @@ Interactive manipulation introduces an important distinction.
 
 During dragging:
 
-```text pointer moves
+```text
+pointer moves
 ```
 
 may produce a proposed state:
 
-```text S_proposed
+```text
+S_proposed
 ```
 
 before the runtime commits:
 
-```text S_current → S_new
+```text
+S_current → S_new
 ```
 
 This is useful when:
 
-```text constraints
+```text
+constraints
 validation
 preview
 expensive computation
@@ -858,7 +889,8 @@ Some interactions should preview an operation before committing it.
 
 Examples:
 
-```text drawing a circle
+```text
+drawing a circle
 moving an object
 constructing a line
 selecting a region
@@ -866,7 +898,8 @@ selecting a region
 
 Conceptually:
 
-```text committed state
+```text
+committed state
       ↓
 temporary interaction state
       ↓
@@ -885,26 +918,30 @@ A multi-step interaction may be treated as a transaction.
 
 Example:
 
-```text create triangle
+```text
+create triangle
 ```
 
 requires:
 
-```text point A
+```text
+point A
 point B
 point C
 ```
 
 Only after completion:
 
-```text CREATE triangle
+```text
+CREATE triangle
 ```
 
 is committed.
 
 Therefore:
 
-```text interaction transaction
+```text
+interaction transaction
 ├── begin
 ├── temporary operations
 ├── preview
@@ -920,7 +957,8 @@ Model-changing interactions naturally connect to history.
 
 For example:
 
-```text drag A
+```text
+drag A
  ↓
 change parameter
  ↓
@@ -929,7 +967,8 @@ delete B
 
 can produce:
 
-```text S₀
+```text
+S₀
  ↓
 S₁
  ↓
@@ -940,12 +979,14 @@ S₃
 
 Undo moves backward:
 
-```text S₃ → S₂
+```text
+S₃ → S₂
 ```
 
 Redo moves forward:
 
-```text S₂ → S₃
+```text
+S₂ → S₃
 ```
 
 The runtime history mechanism should record semantic operations or sufficient state information.
@@ -956,7 +997,8 @@ The runtime history mechanism should record semantic operations or sufficient st
 
 An interaction record may contain:
 
-```text InteractionRecord
+```text
+InteractionRecord
 ├── actor
 ├── input
 ├── intent
@@ -970,7 +1012,8 @@ An interaction record may contain:
 
 This supports:
 
-```text undo
+```text
+undo
 redo
 replay
 audit
@@ -985,12 +1028,14 @@ Parameters are especially important for educational simulations.
 
 Example:
 
-```text gravity = 9.81
+```text
+gravity = 9.81
 ```
 
 may be controlled by:
 
-```text slider
+```text
+slider
 numeric field
 keyboard
 programmatic input
@@ -998,7 +1043,8 @@ programmatic input
 
 The interaction path is:
 
-```text UI control
+```text
+UI control
  ↓
 parameter operation
  ↓
@@ -1017,7 +1063,8 @@ A parameter may configure the model without being an ordinary evolving state var
 
 For example:
 
-```text gravity
+```text
+gravity
 decay_constant
 initial_velocity
 temperature
@@ -1027,7 +1074,8 @@ may be exposed to the user.
 
 Changing them may require:
 
-```text recomputation
+```text
+recomputation
 restart
 reset
 branch
@@ -1043,14 +1091,16 @@ Some parameters can change while simulation runs.
 
 Example:
 
-```text drag coefficient
+```text
+drag coefficient
 ```
 
 may be modified during execution.
 
 Then:
 
-```text S(t)
+```text
+S(t)
  +
  parameter change
  →
@@ -1061,7 +1111,8 @@ The runtime semantics must determine when the change takes effect.
 
 Possible boundaries:
 
-```text immediately
+```text
+immediately
 next simulation step
 next event
 next committed state
@@ -1078,7 +1129,8 @@ Some interactions affect execution rather than model state.
 
 Examples:
 
-```text play
+```text
+play
 pause
 step
 stop
@@ -1090,12 +1142,14 @@ change simulation time
 
 These target:
 
-```text runtime
+```text
+runtime
 ```
 
 rather than:
 
-```text semantic model
+```text
+semantic model
 ```
 
 ---
@@ -1106,12 +1160,14 @@ Pause does not modify scientific state.
 
 It modifies:
 
-```text execution state
+```text
+execution state
 ```
 
 For example:
 
-```text RUNNING
+```text
+RUNNING
    ↓
 pause
    ↓
@@ -1128,7 +1184,8 @@ A step requests advancement of execution.
 
 Conceptually:
 
-```text current state
+```text
+current state
       ↓
 step request
       ↓
@@ -1141,7 +1198,8 @@ The exact size of the step belongs to runtime semantics.
 
 A user-level "step" therefore does not necessarily mean:
 
-```text Δt = 1
+```text
+Δt = 1
 ```
 
 It means:
@@ -1154,14 +1212,16 @@ It means:
 
 Interactive playback may allow:
 
-```text seek(t = 10s)
+```text
+seek(t = 10s)
 ```
 
 This is not necessarily equivalent to running forward from the current state.
 
 The runtime may use:
 
-```text snapshot
+```text
+snapshot
 +
 replay
 +
@@ -1178,17 +1238,20 @@ Interaction requests the seek; runtime executes it.
 
 Reset may mean:
 
-```text return to initial state
+```text
+return to initial state
 ```
 
 but this must be distinguished from:
 
-```text recreate model
+```text
+recreate model
 ```
 
 A reset may restore:
 
-```text semantic state
+```text
+semantic state
 parameters
 random state
 runtime clock
@@ -1203,7 +1266,8 @@ according to explicit semantics.
 
 An interactive experiment may branch:
 
-```text initial state
+```text
+initial state
        │
        ├── experiment A
        │
@@ -1212,7 +1276,8 @@ An interactive experiment may branch:
 
 For example:
 
-```text change gravity → branch A
+```text
+change gravity → branch A
 change mass → branch B
 ```
 
@@ -1226,7 +1291,8 @@ An intervention is an interaction that intentionally changes the model.
 
 Examples:
 
-```text add force
+```text
+add force
 remove particle
 change temperature
 move object
@@ -1236,7 +1302,8 @@ toggle switch
 
 Conceptually:
 
-```text State
+```text
+State
  ↓
 Intervention
  ↓
@@ -1245,7 +1312,8 @@ State'
 
 This differs from observation:
 
-```text State
+```text
+State
  ↓
 Observation
  ↓
@@ -1260,7 +1328,8 @@ An interactive system may provide tools that inspect without changing state.
 
 Examples:
 
-```text probe
+```text
+probe
 measurement
 distance tool
 angle tool
@@ -1271,7 +1340,8 @@ velocity probe
 
 For example:
 
-```text click particle
+```text
+click particle
  ↓
 read position
  ↓
@@ -1288,12 +1358,14 @@ A measurement interaction may itself be multi-stage.
 
 Example:
 
-```text distance tool
+```text
+distance tool
 ```
 
 becomes:
 
-```text select A
+```text
+select A
  ↓
 select B
  ↓
@@ -1316,12 +1388,14 @@ Some simulations may model measurement instruments explicitly.
 
 For example:
 
-```text thermometer
+```text
+thermometer
 ```
 
 may have:
 
-```text range
+```text
+range
 resolution
 uncertainty
 sampling rate
@@ -1329,7 +1403,8 @@ sampling rate
 
 Then:
 
-```text model
+```text
+model
  ↓
 instrument model
  ↓
@@ -1348,7 +1423,8 @@ Interaction may create new semantic structures.
 
 Examples:
 
-```text construct triangle
+```text
+construct triangle
 create graph edge
 draw vector
 add charge
@@ -1359,7 +1435,8 @@ define region
 
 The interaction becomes:
 
-```text User
+```text
+User
  ↓
 Construction
  ↓
@@ -1376,7 +1453,8 @@ Commit
 
 Construction may be driven by:
 
-```text points
+```text
+points
 dragging
 clicking
 typed values
@@ -1387,12 +1465,14 @@ templates
 
 For example:
 
-```text geometry construction
+```text
+geometry construction
 ```
 
 could create:
 
-```text Point A
+```text
+Point A
 Point B
 Line(A,B)
 ```
@@ -1407,7 +1487,8 @@ Deletion is a semantic operation.
 
 For example:
 
-```text select molecule
+```text
+select molecule
  ↓
 delete
  ↓
@@ -1416,7 +1497,8 @@ model object removed
 
 Deletion may cascade through:
 
-```text relations
+```text
+relations
 dependent observations
 representations
 ```
@@ -1431,7 +1513,8 @@ Interactive systems frequently change topology.
 
 Examples:
 
-```text add node
+```text
+add node
 remove node
 create edge
 break bond
@@ -1443,7 +1526,8 @@ destroy particle
 
 Interaction therefore needs operations beyond property assignment.
 
-```text create
+```text
+create
 destroy
 connect
 disconnect
@@ -1459,12 +1543,14 @@ A user may interact with a relation rather than an object.
 
 Example:
 
-```text graph edge
+```text
+graph edge
 ```
 
 may be:
 
-```text selected
+```text
+selected
 weighted
 deleted
 rerouted
@@ -1473,19 +1559,22 @@ edited
 
 Likewise:
 
-```text chemical bond
+```text
+chemical bond
 ```
 
 may be manipulated.
 
 The target model can therefore be:
 
-```text relation
+```text
+relation
 ```
 
 not only:
 
-```text entity
+```text
+entity
 ```
 
 ---
@@ -1496,7 +1585,8 @@ Fields can be interacted with indirectly or directly.
 
 Examples:
 
-```text move probe through electric field
+```text
+move probe through electric field
 inject heat
 modify boundary
 draw source distribution
@@ -1504,7 +1594,8 @@ draw source distribution
 
 The interaction may target:
 
-```text field parameters
+```text
+field parameters
 boundary conditions
 source terms
 sample location
@@ -1518,7 +1609,8 @@ rather than a field value directly.
 
 A region may be used as:
 
-```text selection region
+```text
+selection region
 measurement region
 boundary
 construction area
@@ -1528,7 +1620,8 @@ interaction target
 
 For example:
 
-```text drag region
+```text
+drag region
  ↓
 select particles inside region
 ```
@@ -1543,7 +1636,8 @@ The system must allow authors to define interactions beyond built-in tools.
 
 Conceptually:
 
-```text interaction
+```text
+interaction
     when condition
     target target
     operation operation
@@ -1559,17 +1653,20 @@ An interaction may have conditions.
 
 Example:
 
-```text allow dragging only if object is movable
+```text
+allow dragging only if object is movable
 ```
 
 or:
 
-```text allow bond creation only if distance < threshold
+```text
+allow bond creation only if distance < threshold
 ```
 
 Conceptually:
 
-```text interaction
+```text
+interaction
     guard predicate
     ↓
     action
@@ -1585,7 +1682,8 @@ Not every actor must be allowed to perform every operation.
 
 Conceptually:
 
-```text actor
+```text
+actor
  ↓
 capability check
  ↓
@@ -1594,7 +1692,8 @@ operation
 
 This can support:
 
-```text student mode
+```text
+student mode
 teacher mode
 author mode
 viewer mode
@@ -1608,7 +1707,8 @@ without making those roles core domain concepts.
 
 An interaction may depend on:
 
-```text active view
+```text
+active view
 active tool
 selection
 current simulation state
@@ -1620,7 +1720,8 @@ experiment branch
 
 Thus:
 
-```text Interaction
+```text
+Interaction
     + Context
     → Operation
 ```
@@ -1633,24 +1734,28 @@ During some interactions, input should remain associated with the active interac
 
 Example:
 
-```text pointer_down on object A
+```text
+pointer_down on object A
 ```
 
 then:
 
-```text pointer_move leaves A
+```text
+pointer_move leaves A
 ```
 
 should generally continue dragging A.
 
 This requires:
 
-```text input capture
+```text
+input capture
 ```
 
 until:
 
-```text pointer_up
+```text
+pointer_up
 cancel
 interaction failure
 ```
@@ -1663,7 +1768,8 @@ Interactive operations need cancellation semantics.
 
 Examples:
 
-```text Escape
+```text
+Escape
 right click
 pointer cancellation
 focus loss
@@ -1672,7 +1778,8 @@ invalid state
 
 A cancelled interaction should not necessarily commit its temporary changes.
 
-```text begin
+```text
+begin
  ↓
 temporary state
  ↓
@@ -1689,7 +1796,8 @@ Failures should be distinguishable.
 
 Examples:
 
-```text invalid target
+```text
+invalid target
 invalid operation
 constraint violation
 unsupported operation
@@ -1706,17 +1814,20 @@ The system should not silently turn all failures into no-ops.
 
 Suppose:
 
-```text x ≥ 0
+```text
+x ≥ 0
 ```
 
 and the user drags an object toward:
 
-```text x < 0
+```text
+x < 0
 ```
 
 Possible semantics include:
 
-```text reject
+```text
+reject
 clamp
 project onto valid region
 allow temporary violation
@@ -1735,12 +1846,14 @@ Some interactions produce a continuous stream of changes.
 
 Example:
 
-```text slider movement
+```text
+slider movement
 ```
 
 may produce:
 
-```text parameter:
+```text
+parameter:
 1.0
 1.1
 1.2
@@ -1750,7 +1863,8 @@ may produce:
 
 or:
 
-```text drag:
+```text
+drag:
 p₀ → p₁ → p₂ → ...
 ```
 
@@ -1758,7 +1872,8 @@ The system must define whether each intermediate value becomes a committed model
 
 Possible semantics:
 
-```text every update
+```text
+every update
 batched updates
 preview-only until release
 sampled updates
@@ -1770,14 +1885,16 @@ sampled updates
 
 These frequencies may differ.
 
-```text USER INPUT:       120 Hz
+```text
+USER INPUT:       120 Hz
 SIMULATION:            60 Hz
 RENDERING:             144 Hz
 ```
 
 Therefore the system cannot assume:
 
-```text one input = one simulation step = one frame
+```text
+one input = one simulation step = one frame
 ```
 
 This is a critical separation.
@@ -1788,7 +1905,8 @@ This is a critical separation.
 
 The runtime may receive:
 
-```text input events
+```text
+input events
 simulation events
 scheduled events
 external events
@@ -1798,7 +1916,8 @@ These may need ordering.
 
 For example:
 
-```text simulation reaches t = 2.0
+```text
+simulation reaches t = 2.0
 user changes gravity
 collision occurs
 ```
@@ -1811,19 +1930,22 @@ The runtime must establish deterministic semantics for their relative ordering.
 
 Input may carry:
 
-```text wall-clock timestamp
+```text
+wall-clock timestamp
 ```
 
 while the model uses:
 
-```text simulation time
+```text
+simulation time
 ```
 
 These are not equivalent.
 
 A runtime may need to map:
 
-```text wall-clock input
+```text
+wall-clock input
         ↓
 simulation-time intervention
 ```
@@ -1836,14 +1958,16 @@ depending on execution mode.
 
 In real-time simulation:
 
-```text wall clock ≈ simulation clock
+```text
+wall clock ≈ simulation clock
 ```
 
 A user intervention can therefore be applied approximately at the current simulation time.
 
 In accelerated simulation:
 
-```text simulation time ≫ wall-clock time
+```text
+simulation time ≫ wall-clock time
 ```
 
 input scheduling becomes more complicated.
@@ -1854,7 +1978,8 @@ input scheduling becomes more complicated.
 
 For reproducibility, an interaction sequence can become part of experiment history:
 
-```text initial state
+```text
+initial state
 +
 parameters
 +
@@ -1873,7 +1998,8 @@ This makes interaction itself part of provenance.
 
 A recorded interaction stream might be:
 
-```text t=1.0 select A
+```text
+t=1.0 select A
 t=2.2 change gravity=5
 t=4.0 drag A
 t=8.0 pause
@@ -1881,7 +2007,8 @@ t=8.0 pause
 
 Replay can reconstruct the same experiment if:
 
-```text model
+```text
+model
 runtime
 randomness
 inputs
@@ -1897,14 +2024,16 @@ These must remain distinct.
 
 Animation:
 
-```text presentation state
+```text
+presentation state
  ↓
 temporal transformation
 ```
 
 Interaction:
 
-```text external input
+```text
+external input
  ↓
 operation
 ```
@@ -1921,14 +2050,16 @@ The two can be connected.
 
 Example:
 
-```text user selects particle
+```text
+user selects particle
  ↓
 highlight animation
 ```
 
 or:
 
-```text user releases object
+```text
+user releases object
  ↓
 snap animation
 ```
@@ -1941,7 +2072,8 @@ The animation is a presentation consequence of the interaction.
 
 Likewise:
 
-```text user changes gravity
+```text
+user changes gravity
  ↓
 model parameter changes
  ↓
@@ -1960,17 +2092,20 @@ They should not be merged.
 
 Projection maps:
 
-```text model → representation
+```text
+model → representation
 ```
 
 Interaction can use:
 
-```text representation → target
+```text
+representation → target
 ```
 
 and, where supported:
 
-```text representation → inverse projection → model operation
+```text
+representation → inverse projection → model operation
 ```
 
 Therefore interaction depends on projection metadata but does not become projection itself.
@@ -1981,17 +2116,20 @@ Therefore interaction depends on projection metadata but does not become project
 
 A binding can optionally support:
 
-```text model → representation
+```text
+model → representation
 ```
 
 and:
 
-```text representation input → model operation
+```text
+representation input → model operation
 ```
 
 Example:
 
-```text particle.position
+```text
+particle.position
       ↕
 circle.center
 ```
@@ -2006,29 +2144,34 @@ Not every binding is writable.
 
 Bindings may be:
 
-```text read-only
+```text
+read-only
 write-only
 read-write
 ```
 
 Examples:
 
-```text temperature → color
+```text
+temperature → color
 ```
 
 is usually:
 
-```text read-only
+```text
+read-only
 ```
 
 while:
 
-```text point.position ↔ draggable point
+```text
+point.position ↔ draggable point
 ```
 
 may be:
 
-```text read-write
+```text
+read-write
 ```
 
 ---
@@ -2037,7 +2180,8 @@ may be:
 
 A writable representation must define:
 
-```text input
+```text
+input
  ↓
 inverse mapping
  ↓
@@ -2056,14 +2200,16 @@ This avoids treating screen-space values as semantic values.
 
 Consider:
 
-```text temperature → color
+```text
+temperature → color
 ```
 
 Many temperatures may produce similar colors.
 
 Therefore:
 
-```text color → temperature
+```text
+color → temperature
 ```
 
 is ambiguous.
@@ -2072,7 +2218,8 @@ The representation may still be interactive if it defines a separate interaction
 
 For example:
 
-```text click color scale
+```text
+click color scale
  ↓
 choose temperature
 ```
@@ -2085,7 +2232,8 @@ This is not necessarily mathematical inversion.
 
 We therefore generalize:
 
-```text Input
+```text
+Input
  ↓
 Interaction Mapping
  ↓
@@ -2094,7 +2242,8 @@ Operation
 
 rather than requiring every interaction to be:
 
-```text P⁻¹
+```text
+P⁻¹
 ```
 
 Inverse projection is one possible mechanism.
@@ -2105,7 +2254,8 @@ Inverse projection is one possible mechanism.
 
 The core operation vocabulary can include:
 
-```text SET
+```text
+SET
 MODIFY
 CREATE
 DESTROY
@@ -2135,14 +2285,16 @@ Some operations should be atomic.
 
 Example:
 
-```text create bond(A,B)
+```text
+create bond(A,B)
 ```
 
 should not leave the model half-connected if validation fails.
 
 Atomicity becomes especially important for:
 
-```text topology changes
+```text
+topology changes
 multi-object creation
 constraint-sensitive operations
 transactions
@@ -2156,12 +2308,14 @@ A user action may correspond to several operations.
 
 Example:
 
-```text delete molecule
+```text
+delete molecule
 ```
 
 may imply:
 
-```text destroy molecule
+```text
+destroy molecule
 destroy bonds
 update collections
 invalidate observations
@@ -2178,7 +2332,8 @@ Operations may depend on one another.
 
 For example:
 
-```text create node
+```text
+create node
  ↓
 create edge(node, existing_node)
 ```
@@ -2195,7 +2350,8 @@ Multiple actors or input sources may exist.
 
 For example:
 
-```text user
+```text
+user
 +
 sensor
 +
@@ -2214,7 +2370,8 @@ This is not necessarily required for the first implementation, but the semantic 
 
 External inputs may be continuously supplied:
 
-```text sensor temperature
+```text
+sensor temperature
 GPS position
 microcontroller data
 network message
@@ -2223,7 +2380,8 @@ camera tracking
 
 These are conceptually similar to user interaction:
 
-```text external source
+```text
+external source
  ↓
 input
  ↓
@@ -2234,7 +2392,8 @@ but they may not represent human intent.
 
 Thus:
 
-```text interaction ⊂ external influence
+```text
+interaction ⊂ external influence
 ```
 
 is useful conceptually, but human interaction deserves its own semantic layer.
@@ -2247,7 +2406,8 @@ Educational simulations introduce specialized interaction patterns.
 
 Examples:
 
-```text predict
+```text
+predict
 experiment
 change parameter
 measure
@@ -2261,7 +2421,8 @@ explore
 
 The underlying mechanisms still reduce to:
 
-```text input
+```text
+input
 intent
 target
 operation
@@ -2277,12 +2438,14 @@ Education-specific semantics can therefore be layered above the interaction core
 
 A prediction interaction may ask:
 
-```text Where will the projectile land?
+```text
+Where will the projectile land?
 ```
 
 The user's response can be stored as:
 
-```text Prediction
+```text
+Prediction
 ├── target
 ├── predicted value
 └── timestamp
@@ -2290,7 +2453,8 @@ The user's response can be stored as:
 
 The simulation can then evolve and compare:
 
-```text prediction
+```text
+prediction
 vs
 observed result
 ```
@@ -2301,7 +2465,8 @@ observed result
 
 An educational experiment may expose:
 
-```text parameters
+```text
+parameters
 initial conditions
 controls
 measurements
@@ -2311,7 +2476,8 @@ The learner changes conditions and observes results.
 
 Conceptually:
 
-```text Experiment
+```text
+Experiment
 ├── Model
 ├── Controls
 ├── Interventions
@@ -2327,7 +2493,8 @@ This extends the Experiment concept from the generalized model.
 
 A lesson may constrain available actions:
 
-```text step 1 → select object
+```text
+step 1 → select object
 step 2 → change parameter
 step 3 → run simulation
 step 4 → measure result
@@ -2341,7 +2508,8 @@ Guidance should be layered over the general interaction system rather than embed
 
 Interaction may generate feedback:
 
-```text action
+```text
+action
  ↓
 evaluation
  ↓
@@ -2350,7 +2518,8 @@ feedback
 
 Examples:
 
-```text correct
+```text
+correct
 incorrect
 valid
 invalid
@@ -2366,7 +2535,8 @@ Feedback itself may be represented visually, textually, or audibly.
 
 A user-driven experiment can record:
 
-```text actor
+```text
+actor
 action
 target
 time
@@ -2376,7 +2546,8 @@ result
 
 This enables:
 
-```text experiment replay
+```text
+experiment replay
 assessment
 analysis
 debugging
@@ -2389,22 +2560,26 @@ reproducibility
 
 The semantic model should distinguish:
 
-```text requested operation
+```text
+requested operation
 ```
 
 from:
 
-```text authorized operation
+```text
+authorized operation
 ```
 
 and:
 
-```text valid operation
+```text
+valid operation
 ```
 
 An operation may therefore fail because:
 
-```text permission denied
+```text
+permission denied
 constraint violated
 invalid target
 unsupported
@@ -2421,7 +2596,8 @@ The runtime ultimately determines when an interaction becomes part of semantic s
 
 The generalized flow is:
 
-```text Input
+```text
+Input
  ↓
 Interaction
  ↓
@@ -2444,12 +2620,14 @@ This deliberately connects Artifact 08 back to Artifact 06.
 
 After an interaction commits:
 
-```text Sₙ → Sₙ₊₁
+```text
+Sₙ → Sₙ₊₁
 ```
 
 observations and projections can react:
 
-```text Sₙ₊₁
+```text
+Sₙ₊₁
  ├──→ Observation
  └──→ Projection
           ↓
@@ -2503,7 +2681,8 @@ This is the complete closed loop.
 
 The refined interactive subsystem is:
 
-```text INTERACTION SYSTEM
+```text
+INTERACTION SYSTEM
 ├── INPUT
 │   ├── source
 │   ├── event
@@ -2556,7 +2735,8 @@ The refined interactive subsystem is:
 
 The interactive model now gives us:
 
-```text Input
+```text
+Input
     → produces → Interaction Event
 
 Interaction Event
@@ -2593,7 +2773,8 @@ Representation
 
 The interactive model should preserve:
 
-```text 1. Input ≠ Interaction.
+```text
+1. Input ≠ Interaction.
 
 2. Interaction ≠ Operation.
 
@@ -2734,22 +2915,26 @@ Before DSL design, we have established four major semantic questions.
 
 ### 1. What exists?
 
-```text Model
+```text
+Model
 ```
 
 ### 2. How does it evolve?
 
-```text Runtime
+```text
+Runtime
 ```
 
 ### 3. How is it represented?
 
-```text Projection / Representation / View
+```text
+Projection / Representation / View
 ```
 
 ### 4. How can an external actor participate?
 
-```text Interaction
+```text
+Interaction
 ```
 
 These form the semantic foundation:
@@ -2782,7 +2967,8 @@ There is now one final major question before DSL design:
 
 For example, should an author explicitly define:
 
-```text projection
+```text
+projection
 binding
 hit testing
 inverse mapping
@@ -2799,12 +2985,14 @@ point.position
 
 and:
 
-```text draggable point
+```text
+draggable point
 ```
 
 Should the system automatically infer:
 
-```text pointer
+```text
+pointer
  ↓
 inverse projection
  ↓
@@ -2815,7 +3003,8 @@ Or should the author explicitly specify the mapping?
 
 Likewise:
 
-```text particles → circles
+```text
+particles → circles
 ```
 
 Should creation/destruction of circles automatically follow collection membership?

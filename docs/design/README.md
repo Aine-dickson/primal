@@ -51,7 +51,10 @@ documents include their original "where we are" tracking notes.
 
 ## Status
 
-The design is complete through **09.11 DSL Validation**. No implementation exists yet.
+**Frozen exploration record. Not normative.**
 
-Note: early documents still use the working title "Interactive Scientific Visualization DSL";
-the name Prismal was chosen after 09.11.
+These documents were audited on 2026-09-29 (`docs/audit/2026-09-29-design-audit.md`). They remain
+as the historical record; their text is not rewritten, but marked correction notes point to the
+current position where the audit found errors. Departures and decisions are tracked in
+`docs/decisions/divergence-register.md`, which takes precedence. No DSL has been adopted.
+Current project state: `docs/PROJECT-STATE.md`.

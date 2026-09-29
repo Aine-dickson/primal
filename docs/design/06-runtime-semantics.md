@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL
+# Prismal
 ## 06 Runtime Semantics
 
 ### 1. Purpose
@@ -1357,7 +1357,8 @@ pending
 
 Validity can exist at multiple granularities:
 
-```text system
+```text
+system
 object
 property
 field
@@ -1651,7 +1652,8 @@ simulation processing time
 
 the runtime must choose a policy:
 
-```text slow down simulation
+```text
+slow down simulation
 drop presentation frames
 run simulation faster
 pause
@@ -1679,12 +1681,14 @@ such as:
 
 This modifies the mapping between:
 
-```text simulation time
+```text
+simulation time
 ```
 
 and:
 
-```text presentation/wall time
+```text
+presentation/wall time
 ```
 
 not the scientific equations themselves.
@@ -1808,7 +1812,8 @@ Advances according to the model's defined stepping semantics.
 
 A step might mean:
 
-```text one discrete transition
+```text
+one discrete transition
 one fixed timestep
 one event
 one solver interval
@@ -1862,12 +1867,14 @@ the user may create:
 
 Branch A:
 
-```text mass = 1kg
+```text
+mass = 1kg
 ```
 
 Branch B:
 
-```text mass = 2kg
+```text
+mass = 2kg
 ```
 
 Both share the same historical ancestor.
@@ -1895,7 +1902,8 @@ Experiment
 
 This enables:
 
-```text replay
+```text
+replay
 undo
 redo
 branch
@@ -1911,7 +1919,8 @@ without making the visual animation itself the source of truth.
 
 A replay should conceptually reconstruct:
 
-```text initial state
+```text
+initial state
 +
 model version
 +
@@ -1928,17 +1937,20 @@ and reproduce the same transition sequence within the runtime's defined numerica
 
 External nondeterministic inputs must therefore either be:
 
-```text recorded
+```text
+recorded
 ```
 
 or:
 
-```text excluded from deterministic replay guarantees
+```text
+excluded from deterministic replay guarantees
 ```
 
 Examples:
 
-```text live sensor
+```text
+live sensor
 network packet
 wall-clock input
 user interaction
@@ -1964,7 +1976,8 @@ MODEL
 
 Examples:
 
-```text mouse
+```text
+mouse
 keyboard
 sensor
 microcontroller
@@ -2112,7 +2125,8 @@ heat(x,y,t)
 
 while the runtime decides:
 
-```text CPU
+```text
+CPU
 GPU
 CPU + GPU
 ```
@@ -2129,17 +2143,20 @@ Numerical execution is approximate.
 
 The runtime should distinguish:
 
-```text mathematical state
+```text
+mathematical state
 ```
 
 from:
 
-```text numerical approximation
+```text
+numerical approximation
 ```
 
 For example:
 
-```text exact:
+```text
+exact:
 π
 
 computed:
@@ -2148,7 +2165,8 @@ computed:
 
 and:
 
-```text exact model:
+```text
+exact model:
 dN/dt = -λN
 
 numerical state:
@@ -2157,7 +2175,8 @@ Nₙ
 
 The runtime may expose:
 
-```text estimated error
+```text
+estimated error
 relative error
 absolute error
 tolerance
@@ -2171,7 +2190,8 @@ convergence status
 
 A numerical computation may fail because of:
 
-```text divergence
+```text
+divergence
 overflow
 underflow
 NaN
@@ -2185,12 +2205,14 @@ These should produce explicit runtime diagnostics.
 
 The runtime must not silently convert:
 
-```text NaN
+```text
+NaN
 ```
 
 into:
 
-```text 0
+```text
+0
 ```
 
 unless the model or execution policy explicitly specifies such behavior.
@@ -2207,7 +2229,8 @@ The model itself is invalid.
 
 Example:
 
-```text square_root(-1)
+```text
+square_root(-1)
 ```
 
 under a real-valued domain.
@@ -2222,7 +2245,8 @@ The model is valid, but the selected execution strategy failed.
 
 Example:
 
-```text solver did not converge
+```text
+solver did not converge
 ```
 
 ### Runtime failure
@@ -2231,7 +2255,8 @@ The execution environment failed.
 
 Example:
 
-```text GPU device lost
+```text
+GPU device lost
 ```
 
 ### Presentation failure
@@ -2240,7 +2265,8 @@ The model executed correctly but could not be represented/rendered.
 
 Example:
 
-```text unsupported representation
+```text
+unsupported representation
 ```
 
 This distinction is important for debugging and authoring tools.
@@ -2324,7 +2350,8 @@ f(x) = x²
 
 may require:
 
-```text evaluate
+```text
+evaluate
 → project
 ```
 
@@ -2466,7 +2493,8 @@ The runtime should maintain dependency information.
 
 Example:
 
-```text mass
+```text
+mass
 velocity
    ↓
 kinetic_energy
@@ -2476,7 +2504,8 @@ energy_graph
 
 If velocity changes:
 
-```text velocity changed
+```text
+velocity changed
        ↓
 kinetic_energy invalid
        ↓
@@ -2485,7 +2514,8 @@ energy_graph invalid
 
 But:
 
-```text title
+```text
+title
 ```
 
 remains valid.
@@ -2500,26 +2530,30 @@ Not every derived value must be calculated immediately.
 
 For example:
 
-```text kinetic_energy
+```text
+kinetic_energy
 ```
 
 may only be needed when:
 
-```text graph
+```text
+graph
 ```
 
 requests it.
 
 Therefore:
 
-```text derived value
+```text
+derived value
 ```
 
 can be evaluated lazily.
 
 The runtime may use:
 
-```text dependency graph
+```text
+dependency graph
 +
 cache
 +
@@ -2534,7 +2568,8 @@ to avoid unnecessary computation.
 
 Computational caches may store:
 
-```text derived values
+```text
+derived values
 field samples
 geometry
 solver intermediates
@@ -2545,7 +2580,8 @@ But cache contents are not automatically semantic state.
 
 If a cache is lost:
 
-```text semantic model remains valid
+```text
+semantic model remains valid
 ```
 
 and the runtime reconstructs the cache.
@@ -2560,7 +2596,8 @@ A useful overarching principle emerges:
 
 Conceptually:
 
-```text BEGIN
+```text
+BEGIN
    ↓
 READ
    ↓
@@ -2577,7 +2614,8 @@ COMMIT
 
 If validation fails:
 
-```text ROLLBACK
+```text
+ROLLBACK
 ```
 
 The previous committed semantic state remains authoritative.
@@ -2602,7 +2640,8 @@ There are three useful determinism levels.
 
 Same:
 
-```text model
+```text
+model
 state
 inputs
 execution configuration
@@ -2618,7 +2657,8 @@ Results are equivalent within defined numerical tolerances.
 
 Execution may legitimately differ because of:
 
-```text uncontrolled randomness
+```text
+uncontrolled randomness
 external inputs
 parallel race semantics
 real-world data
@@ -2632,7 +2672,8 @@ The runtime should make the determinism level explicit.
 
 A reproducible experiment should be representable as:
 
-```text ReproducibilityRecord
+```text
+ReproducibilityRecord
 ├── model identity
 ├── model version
 ├── initial state
@@ -2698,7 +2739,8 @@ These are execution modes, not separate foundational models.
 
 A single system may combine several:
 
-```text HYBRID
+```text
+HYBRID
 ├── continuous
 ├── discrete
 ├── event-driven
@@ -2713,7 +2755,8 @@ A single system may combine several:
 
 Despite the large capability surface, the conceptual runtime kernel can remain small.
 
-```text RUNTIME KERNEL
+```text
+RUNTIME KERNEL
 ├── State Store
 ├── Transition Engine
 ├── Dependency Engine
@@ -2734,14 +2777,16 @@ Solvers, renderers, GPU execution, and domain engines plug into this kernel.
 
 A model should not specify:
 
-```text "use RK4"
+```text
+"use RK4"
 ```
 
 unless the author explicitly wants to control execution.
 
 Instead:
 
-```text MODEL
+```text
+MODEL
 dS/dt = f(S,t)
 
 EXECUTION
@@ -2751,18 +2796,21 @@ tolerance = ...
 
 Likewise:
 
-```text MODEL
+```text
+MODEL
 particle interaction
 ```
 
 does not require:
 
-```text spatial_hash
+```text
+spatial_hash
 ```
 
 or:
 
-```text BVH
+```text
+BVH
 ```
 
 to be part of the model.
@@ -2773,7 +2821,8 @@ to be part of the model.
 
 The runtime can therefore be viewed as implementing a contract:
 
-```text Given:
+```text
+Given:
 
 M  = Model
 S₀ = Initial State
@@ -2790,7 +2839,8 @@ P₁, P₂...
 
 where:
 
-```text S = semantic states
+```text
+S = semantic states
 O = observations/data
 P = presentation/projections
 ```
@@ -2803,7 +2853,8 @@ The execution strategy may change **how** the results are calculated without cha
 
 The runtime should preserve these invariants:
 
-```text 1. Semantic state is authoritative.
+```text
+1. Semantic state is authoritative.
 
 2. A transition does not partially commit semantic state.
 

@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL
+# Prismal
 ## 05b Model Gap Analysis and Extended Validation
 
 ### Purpose

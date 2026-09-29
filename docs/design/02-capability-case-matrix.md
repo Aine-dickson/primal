@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL
+# Prismal
 ## Capability / Case Matrix
 
 > **Purpose:** Identify the capabilities required across the test-case catalogue before designing the generalized model, runtime, renderer, or DSL.

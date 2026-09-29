@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL: Test Case Catalogue
+# Prismal: Test Case Catalogue
 
 > **Purpose:** A reference catalogue of concepts the system should eventually be able to author, simulate, visualize, animate, and/or interact with.
 >

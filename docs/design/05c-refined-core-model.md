@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL
+# Prismal
 ## 05c Refined Core Model
 
 ### Purpose

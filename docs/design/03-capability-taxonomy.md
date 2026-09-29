@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL
+# Prismal
 ## Capability Taxonomy
 
 > **Purpose:** Consolidate the recurring capabilities identified in the Test Case Catalogue and Capability / Case Matrix into a domain-independent taxonomy.

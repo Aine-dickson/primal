@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL
+# Prismal
 ## 07 Projection & Representation Model
 
 ### 1. Purpose
@@ -597,7 +597,8 @@ bar_height = scale(population)
 
 The mapping may be:
 
-```text linear
+```text
+linear
 logarithmic
 piecewise
 categorical
@@ -628,17 +629,20 @@ while the display may use:
 
 This requires a distinction between:
 
-```text physical scale
+```text
+physical scale
 ```
 
 and:
 
-```text presentation scale
+```text
+presentation scale
 ```
 
 For example:
 
-```text 1 meter = 10 pixels
+```text
+1 meter = 10 pixels
 ```
 
 is not a change to the model's unit.
@@ -651,7 +655,8 @@ It is a view/projection mapping.
 
 The system may involve several coordinate spaces:
 
-```text MODEL SPACE
+```text
+MODEL SPACE
      ↓
 PROJECTION SPACE
      ↓
@@ -662,7 +667,8 @@ SCREEN SPACE
 
 For example:
 
-```text model:
+```text
+model:
 (3 m, 2 m)
 
 projection:
@@ -685,7 +691,8 @@ Model space belongs to the semantic model.
 
 Example:
 
-```text position = (3 m, 2 m)
+```text
+position = (3 m, 2 m)
 ```
 
 Its coordinates have domain-specific meaning.
@@ -698,14 +705,16 @@ Projection space is an intermediate representational space.
 
 For example:
 
-```text Cartesian model
+```text
+Cartesian model
        ↓
 logarithmic graph coordinates
 ```
 
 or:
 
-```text geographic coordinates
+```text
+geographic coordinates
        ↓
 map projection
 ```
@@ -720,7 +729,8 @@ View space incorporates the current view configuration.
 
 Examples:
 
-```text camera
+```text
+camera
 zoom
 pan
 rotation
@@ -738,7 +748,8 @@ The renderer ultimately operates in a device/output space.
 
 Examples:
 
-```text pixels
+```text
+pixels
 SVG coordinates
 canvas coordinates
 GPU normalized coordinates
@@ -755,7 +766,8 @@ A model can exist in dimensions different from its representation.
 
 For example:
 
-```text 3D model
+```text
+3D model
    ↓
 2D projection
    ↓
@@ -764,14 +776,16 @@ For example:
 
 or:
 
-```text 4D mathematical object
+```text
+4D mathematical object
    ↓
 2D visualization
 ```
 
 Therefore:
 
-```text model dimensionality ≠ representation dimensionality
+```text
+model dimensionality ≠ representation dimensionality
 ```
 
 A 2D renderer does not imply a 2D model.
@@ -782,7 +796,8 @@ A 2D renderer does not imply a 2D model.
 
 The system should support multiple classes of projection.
 
-```text PROJECTION
+```text
+PROJECTION
 ├── Spatial
 ├── Geometric
 ├── Graph
@@ -806,14 +821,16 @@ Maps spatial model information to spatial representations.
 
 Example:
 
-```text particle.position
+```text
+particle.position
       ↓
 circle.center
 ```
 
 or:
 
-```text velocity vector
+```text
+velocity vector
       ↓
 arrow
 ```
@@ -826,14 +843,16 @@ Represents mathematical geometry.
 
 Example:
 
-```text circle equation
+```text
+circle equation
       ↓
 circle geometry
 ```
 
 or:
 
-```text function f(x)
+```text
+function f(x)
       ↓
 curve geometry
 ```
@@ -848,14 +867,16 @@ Maps relations into graph representations.
 
 Example:
 
-```text nodes
+```text
+nodes
 edges
 weights
 ```
 
 become:
 
-```text Node representations
+```text
+Node representations
 Edge representations
 Labels
 ```
@@ -872,7 +893,8 @@ Maps mathematical or logical meaning to symbolic representation.
 
 Examples:
 
-```text equation
+```text
+equation
 f(x) = x²
 ```
 
@@ -880,12 +902,14 @@ becomes a typeset mathematical representation.
 
 Or:
 
-```text derivative(f)
+```text
+derivative(f)
 ```
 
 becomes:
 
-```text df/dx
+```text
+df/dx
 ```
 
 The equation exists semantically independently of its typography.
@@ -898,7 +922,8 @@ A diagram can represent relationships that do not naturally have physical geomet
 
 Example:
 
-```text Input
+```text
+Input
    ↓
 Process
    ↓
@@ -907,7 +932,8 @@ Output
 
 or:
 
-```text electron
+```text
+electron
       ↓
 energy transition
       ↓
@@ -922,7 +948,8 @@ The diagram's layout is representational.
 
 Data may be projected into:
 
-```text histogram
+```text
+histogram
 scatter plot
 box plot
 bar chart
@@ -932,7 +959,8 @@ distribution curve
 
 For example:
 
-```text Dataset
+```text
+Dataset
    ↓
 histogram projection
    ↓
@@ -947,7 +975,8 @@ The bars are not the dataset itself.
 
 Time can be represented through:
 
-```text timeline
+```text
+timeline
 axis
 animation
 event markers
@@ -957,7 +986,8 @@ history plot
 
 Example:
 
-```text event.time
+```text
+event.time
       ↓
 timeline position
 ```
@@ -972,12 +1002,14 @@ Fields require special treatment because they contain values over a domain.
 
 Example:
 
-```text E(x,y)
+```text
+E(x,y)
 ```
 
 may become:
 
-```text vector arrows
+```text
+vector arrows
 contours
 streamlines
 heatmap
@@ -987,7 +1019,8 @@ glyphs
 
 The same field can therefore have multiple projections.
 
-```text E(x,y)
+```text
+E(x,y)
  ├──→ arrows
  ├──→ contours
  └──→ heatmap
@@ -1001,7 +1034,8 @@ Complex educational visualizations frequently combine representations.
 
 Example:
 
-```text projectile model
+```text
+projectile model
  ├── spatial trajectory
  ├── velocity vector
  ├── equation
@@ -1022,7 +1056,8 @@ A view is the context in which representations are observed together.
 
 Conceptually:
 
-```text View
+```text
+View
 ├── representations
 ├── coordinate systems
 ├── layout
@@ -1034,7 +1069,8 @@ Conceptually:
 
 A view may contain:
 
-```text spatial scene
+```text
+spatial scene
 +
 graph
 +
@@ -1068,13 +1104,15 @@ A view should not duplicate model semantics.
 
 For example:
 
-```text View A:
+```text
+View A:
 selected_particle = 4
 ```
 
 does not mean:
 
-```text particle 4 has a property called selected
+```text
+particle 4 has a property called selected
 ```
 
 unless selection is explicitly part of the model.
@@ -1087,7 +1125,8 @@ This keeps presentation state separate.
 
 Typical view state includes:
 
-```text camera.position
+```text
+camera.position
 camera.rotation
 camera.zoom
 viewport
@@ -1109,7 +1148,8 @@ A representation may also have its own state.
 
 For example:
 
-```text Circle
+```text
+Circle
 ├── geometry
 ├── style
 ├── visibility
@@ -1119,12 +1159,14 @@ For example:
 
 Some properties may be projected from the model:
 
-```text radius ← mass
+```text
+radius ← mass
 ```
 
 while others are presentation-only:
 
-```text stroke_width = 2px
+```text
+stroke_width = 2px
 ```
 
 ---
@@ -1133,14 +1175,16 @@ while others are presentation-only:
 
 A projection can be static:
 
-```text function f(x)
+```text
+function f(x)
  ↓
 curve
 ```
 
 or dynamic:
 
-```text particle.position(t)
+```text
+particle.position(t)
  ↓
 circle.center(t)
 ```
@@ -1153,7 +1197,8 @@ A projection may therefore update whenever its source changes.
 
 A dynamic projection has a lifecycle:
 
-```text CREATE
+```text
+CREATE
    ↓
 BIND
    ↓
@@ -1172,7 +1217,8 @@ A source object being destroyed may therefore cause its associated representatio
 
 Example:
 
-```text particle destroyed
+```text
+particle destroyed
       ↓
 particle projection invalid
       ↓
@@ -1187,17 +1233,20 @@ When possible, updates should preserve representation identity.
 
 Example:
 
-```text particle A
+```text
+particle A
 ```
 
 continues to correspond to:
 
-```text circle A
+```text
+circle A
 ```
 
 even as:
 
-```text position
+```text
+position
 velocity
 radius
 ```
@@ -1219,17 +1268,20 @@ This matters for:
 
 Suppose:
 
-```text particles = [A,B,C]
+```text
+particles = [A,B,C]
 ```
 
 becomes:
 
-```text particles = [A,C,D]
+```text
+particles = [A,C,D]
 ```
 
 The projection must determine:
 
-```text A → existing representation A
+```text
+A → existing representation A
 C → existing representation C
 B → remove representation B
 D → create representation D
@@ -1247,20 +1299,23 @@ Representations may be conditional.
 
 Example:
 
-```text if speed > threshold:
+```text
+if speed > threshold:
     show velocity arrow
 ```
 
 or:
 
-```text show only particles inside region
+```text
+show only particles inside region
 ```
 
 Visibility can therefore depend on semantic state.
 
 This creates:
 
-```text State
+```text
+State
  ↓
 predicate
  ↓
@@ -1277,7 +1332,8 @@ Representations can be grouped.
 
 Example:
 
-```text ParticleRepresentation
+```text
+ParticleRepresentation
 ├── body
 ├── velocity_arrow
 ├── force_arrow
@@ -1287,7 +1343,8 @@ Example:
 
 The group can then be:
 
-```text selected
+```text
+selected
 hidden
 animated
 transformed
@@ -1302,7 +1359,8 @@ as a unit.
 
 Representations may form a tree:
 
-```text Scene
+```text
+Scene
 ├── CoordinateSystem
 ├── Projectile
 │   ├── Body
@@ -1325,7 +1383,8 @@ A layout determines how representations are arranged.
 
 Examples:
 
-```text grid
+```text
+grid
 stack
 flow
 radial
@@ -1338,7 +1397,8 @@ constraint-based
 
 Layouts can operate on:
 
-```text representation geometry
+```text
+representation geometry
 ```
 
 without changing semantic state.
@@ -1349,7 +1409,8 @@ without changing semantic state.
 
 A graph is particularly important because it has abstract topology but may need spatial representation.
 
-```text Graph
+```text
+Graph
 nodes + edges
        ↓
 Layout
@@ -1361,14 +1422,16 @@ Node / Edge representations
 
 The layout-generated position is not necessarily:
 
-```text node.position
+```text
+node.position
 ```
 
 in the semantic model.
 
 It may simply be:
 
-```text representation.position
+```text
+representation.position
 ```
 
 unless the author explicitly makes graph layout part of the model.
@@ -1381,7 +1444,8 @@ Style belongs primarily to presentation.
 
 Examples:
 
-```text fill
+```text
+fill
 stroke
 stroke_width
 opacity
@@ -1393,7 +1457,8 @@ line_style
 
 Style may be:
 
-```text static
+```text
+static
 data-driven
 state-driven
 interaction-driven
@@ -1402,7 +1467,8 @@ animated
 
 For example:
 
-```text particle.charge
+```text
+particle.charge
       ↓
 color encoding
 ```
@@ -1415,7 +1481,8 @@ is a semantic-to-presentation mapping.
 
 Color should be treated carefully because it can represent:
 
-```text scalar
+```text
+scalar
 category
 direction
 state
@@ -1425,7 +1492,8 @@ selection
 
 Example:
 
-```text temperature
+```text
+temperature
     ↓
 normalized temperature
     ↓
@@ -1442,12 +1510,14 @@ When a visual encoding is not self-evident, the projection system may generate a
 
 For example:
 
-```text temperature → color
+```text
+temperature → color
 ```
 
 may produce:
 
-```text Legend
+```text
+Legend
 cold ───────── hot
 ```
 
@@ -1459,7 +1529,8 @@ The legend is a representation derived from the encoding definition.
 
 Labels can be projected from:
 
-```text object identity
+```text
+object identity
 property
 computed value
 equation
@@ -1468,7 +1539,8 @@ metadata
 
 Examples:
 
-```text particle.name
+```text
+particle.name
 velocity.value
 "F = ma"
 ```
@@ -1483,28 +1555,32 @@ Observations may themselves be represented.
 
 Example:
 
-```text Measurement
+```text
+Measurement
    ↓
 numeric readout
 ```
 
 or:
 
-```text measurement history
+```text
+measurement history
    ↓
 graph
 ```
 
 or:
 
-```text uncertainty
+```text
+uncertainty
    ↓
 error bars
 ```
 
 Thus observation and representation remain separate:
 
-```text State
+```text
+State
  ↓
 Measurement
  ↓
@@ -1523,7 +1599,8 @@ Scientific data may contain uncertainty.
 
 Representations may encode it through:
 
-```text error bars
+```text
+error bars
 bands
 opacity
 distribution width
@@ -1541,7 +1618,8 @@ A representation may display an approximation.
 
 Example:
 
-```text exact:
+```text
+exact:
 π
 
 display:
@@ -1550,7 +1628,8 @@ display:
 
 or:
 
-```text exact equation
+```text
+exact equation
 ↓
 numerical curve
 ```
@@ -1565,7 +1644,8 @@ Not everything has physical geometry.
 
 For example:
 
-```text algorithm state
+```text
+algorithm state
 graph node
 equation
 logical proposition
@@ -1578,7 +1658,8 @@ can still have representations.
 
 This is why the representation model cannot be reduced to:
 
-```text Shape + Position
+```text
+Shape + Position
 ```
 
 ---
@@ -1587,7 +1668,8 @@ This is why the representation model cannot be reduced to:
 
 A useful abstraction is:
 
-```text Representation
+```text
+Representation
 ├── structure
 ├── attributes
 ├── children
@@ -1604,7 +1686,8 @@ A representation can therefore be constructed, composed, transformed, queried, a
 
 Representations can undergo transformations such as:
 
-```text translate
+```text
+translate
 rotate
 scale
 reflect
@@ -1622,7 +1705,8 @@ These are representational transformations unless explicitly bound to model stat
 
 A representation hierarchy can have transforms:
 
-```text Scene
+```text
+Scene
   transform T₁
      ↓
  Group
@@ -1634,7 +1718,8 @@ A representation hierarchy can have transforms:
 
 The effective transformation becomes a composition:
 
-```text T = T₁ ∘ T₂ ∘ T₃
+```text
+T = T₁ ∘ T₂ ∘ T₃
 ```
 
 This allows hierarchical layouts and animation without changing the underlying model.
@@ -1645,17 +1730,20 @@ This allows hierarchical layouts and animation without changing the underlying m
 
 Most projections are:
 
-```text MODEL → REPRESENTATION
+```text
+MODEL → REPRESENTATION
 ```
 
 But interactive systems require some projections to support:
 
-```text REPRESENTATION → MODEL
+```text
+REPRESENTATION → MODEL
 ```
 
 For example:
 
-```text model.position
+```text
+model.position
       ↓
 screen position
 
@@ -1678,12 +1766,14 @@ A representation should not automatically become authoritative merely because it
 
 An inverse projection can be conceptualized as:
 
-```text P⁻¹ : Representation/Input → Model Action
+```text
+P⁻¹ : Representation/Input → Model Action
 ```
 
 It may depend on:
 
-```text camera
+```text
+camera
 coordinate transforms
 constraints
 selection
@@ -1694,14 +1784,16 @@ Not every projection has an inverse.
 
 For example:
 
-```text temperature → color
+```text
+temperature → color
 ```
 
 is generally many-to-one and cannot uniquely recover temperature.
 
 Therefore:
 
-```text projection ≠ automatically invertible
+```text
+projection ≠ automatically invertible
 ```
 
 ---
@@ -1712,33 +1804,38 @@ Many projections discard information.
 
 Example:
 
-```text 3D model
+```text
+3D model
  ↓
 2D projection
 ```
 
 or:
 
-```text distribution
+```text
+distribution
  ↓
 histogram
 ```
 
 or:
 
-```text vector
+```text
+vector
  ↓
 arrow direction only
 ```
 
 The projection system should recognize:
 
-```text information-preserving
+```text
+information-preserving
 ```
 
 versus:
 
-```text information-reducing
+```text
+information-reducing
 ```
 
 mappings.
@@ -1753,7 +1850,8 @@ A single projection may be lossy, while several together expose more information
 
 Example:
 
-```text 3D model
+```text
+3D model
  ├── 2D top view
  ├── 2D side view
  └── numeric depth
@@ -1761,7 +1859,8 @@ Example:
 
 or:
 
-```text particle
+```text
+particle
  ├── spatial view
  ├── velocity graph
  └── energy graph
@@ -1777,7 +1876,8 @@ Multiple projections of the same model must remain synchronized.
 
 Example:
 
-```text particle.position changes
+```text
+particle.position changes
         ↓
  ┌──────┼────────┐
  ↓      ↓        ↓
@@ -1813,7 +1913,8 @@ Some projections depend on other projections.
 
 For example:
 
-```text data
+```text
+data
  ↓
 normalization
  ↓
@@ -1836,17 +1937,20 @@ Projection and observation are related but distinct.
 
 Observation:
 
-```text State → Information
+```text
+State → Information
 ```
 
 Projection:
 
-```text Information → Representation
+```text
+Information → Representation
 ```
 
 For example:
 
-```text temperature(x,y)
+```text
+temperature(x,y)
       ↓
 observation/sample
       ↓
@@ -1857,7 +1961,8 @@ heatmap projection
 
 But a projection can also operate directly on state:
 
-```text particle.position
+```text
+particle.position
       ↓
 circle
 ```
@@ -1872,7 +1977,8 @@ Projection may perform computation, but should not silently redefine model seman
 
 For example:
 
-```text velocity
+```text
+velocity
  ↓
 magnitude
  ↓
@@ -1883,7 +1989,8 @@ is representational computation.
 
 Whereas:
 
-```text velocity
+```text
+velocity
  ↓
 force calculation
  ↓
@@ -1894,7 +2001,8 @@ is model/runtime computation.
 
 The distinction is:
 
-```text model computation → determines meaning/state
+```text
+model computation → determines meaning/state
 projection computation → determines presentation
 ```
 
@@ -1906,7 +2014,8 @@ Projections may expose parameters.
 
 Examples:
 
-```text scale
+```text
+scale
 range
 domain
 color_map
@@ -1924,7 +2033,8 @@ Changing these should normally affect representation rather than semantic model 
 
 A representation may have configuration:
 
-```text Circle
+```text
+Circle
 ├── geometry
 ├── style
 ├── bindings
@@ -1933,7 +2043,8 @@ A representation may have configuration:
 
 For example:
 
-```text radius ← mass × 2
+```text
+radius ← mass × 2
 fill = charge_color
 ```
 
@@ -1945,7 +2056,8 @@ The configuration defines how semantic information controls the representation.
 
 Representations may carry metadata useful to interaction and accessibility:
 
-```text source identity
+```text
+source identity
 semantic type
 description
 label
@@ -1957,7 +2069,8 @@ provenance
 
 This allows a viewer or tool to know:
 
-```text "this circle represents particle A"
+```text
+"this circle represents particle A"
 ```
 
 rather than treating it as an anonymous shape.
@@ -1970,7 +2083,8 @@ Because representations encode meaning, accessibility should be semantic rather 
 
 A representation may expose:
 
-```text textual description
+```text
+textual description
 numeric value
 semantic role
 relationships
@@ -1979,14 +2093,16 @@ state
 
 For example:
 
-```text "Particle A at x=3 m, y=2 m, moving at 5 m/s."
+```text
+"Particle A at x=3 m, y=2 m, moving at 5 m/s."
 ```
 
 This can be generated from the same projection metadata.
 
 Thus:
 
-```text semantic representation
+```text
+semantic representation
         ↓
 visual rendering
         ↓
@@ -2003,7 +2119,8 @@ The model should not force every representation to be graphical.
 
 Possible outputs include:
 
-```text visual
+```text
+visual
 textual
 symbolic
 auditory
@@ -2021,22 +2138,26 @@ Animation modifies presentation over presentation time.
 
 For example:
 
-```text circle.position
+```text
+circle.position
 ```
 
 may be driven by the model:
 
-```text model.position(t)
+```text
+model.position(t)
 ```
 
 while:
 
-```text opacity
+```text
+opacity
 ```
 
 may be author-driven:
 
-```text opacity: 0 → 1
+```text
+opacity: 0 → 1
 ```
 
 These remain distinct.
@@ -2049,7 +2170,8 @@ The representation model therefore provides the targets that animation operates 
 
 A representation may have transient presentation state:
 
-```text animation_progress
+```text
+animation_progress
 interpolation_factor
 hover
 highlight
@@ -2064,7 +2186,8 @@ This belongs to presentation, not semantic model state.
 
 When a semantic object is created:
 
-```text object created
+```text
+object created
  ↓
 projection detects new object
  ↓
@@ -2075,7 +2198,8 @@ optional entrance animation
 
 When it is destroyed:
 
-```text object destroyed
+```text
+object destroyed
  ↓
 representation invalidated
  ↓
@@ -2094,7 +2218,8 @@ The projection/representation model must end before renderer-specific details.
 
 Conceptually:
 
-```text Representation
+```text
+Representation
       ↓
 Presentation
       ↓
@@ -2103,7 +2228,8 @@ Render Backend
 
 Possible render backends might include:
 
-```text raster
+```text
+raster
 vector
 GPU
 SVG
@@ -2121,7 +2247,8 @@ The semantic representation should not depend on one of these.
 
 The same representation may support multiple outputs:
 
-```text Representation
+```text
+Representation
    ├──→ interactive window
    ├──→ image
    ├──→ animation
@@ -2155,7 +2282,8 @@ Representations should compose recursively.
 
 For example:
 
-```text Plot
+```text
+Plot
 ├── Axis
 │   ├── ticks
 │   └── labels
@@ -2167,7 +2295,8 @@ For example:
 
 And:
 
-```text Scene
+```text
+Scene
 ├── Projectile
 │   ├── Body
 │   ├── VelocityArrow
@@ -2184,19 +2313,22 @@ This gives the representation layer a tree/graph structure independent of the mo
 
 These are different graphs.
 
-```text MODEL GRAPH
+```text
+MODEL GRAPH
 A ─── relation ─── B
 ```
 
 might become:
 
-```text REPRESENTATION GRAPH
+```text
+REPRESENTATION GRAPH
 CircleA ─── Line ─── CircleB
 ```
 
 but the representation graph may contain additional nodes:
 
-```text labels
+```text
+labels
 arrows
 axes
 legends
@@ -2207,7 +2339,8 @@ and different relationships.
 
 Therefore:
 
-```text model topology ≠ representation topology
+```text
+model topology ≠ representation topology
 ```
 
 ---
@@ -2233,7 +2366,8 @@ Bindings connect semantic values to representational properties.
 
 Bindings can be:
 
-```text direct
+```text
+direct
 transformed
 aggregated
 conditional
@@ -2245,7 +2379,8 @@ composed
 
 Examples:
 
-```text direct:
+```text
+direct:
 x → position.x
 
 transformed:
@@ -2269,7 +2404,8 @@ A representation may summarize many semantic objects.
 
 Example:
 
-```text 1,000 particles
+```text
+1,000 particles
       ↓
 average velocity
       ↓
@@ -2278,7 +2414,8 @@ one arrow
 
 or:
 
-```text population
+```text
+population
       ↓
 histogram
 ```
@@ -2297,7 +2434,8 @@ One semantic object may produce many representations.
 
 Example:
 
-```text vector field
+```text
+vector field
       ↓
 sample grid
       ↓
@@ -2312,7 +2450,8 @@ The field itself is one semantic object, while its representation expands into m
 
 Therefore projections may support:
 
-```text 1 → 1
+```text
+1 → 1
 1 → many
 many → 1
 many → many
@@ -2326,7 +2465,8 @@ This is a core general capability.
 
 A projection may depend on context:
 
-```text model
+```text
+model
 +
 time
 +
@@ -2341,12 +2481,14 @@ resolution
 
 For example, a field representation may use:
 
-```text sampling_resolution = 20
+```text
+sampling_resolution = 20
 ```
 
 while another view uses:
 
-```text sampling_resolution = 100
+```text
+sampling_resolution = 100
 ```
 
 Both represent the same field.
@@ -2359,12 +2501,14 @@ Semantic state should not depend on display resolution.
 
 For example:
 
-```text field E(x,y)
+```text
+field E(x,y)
 ```
 
 can be represented at:
 
-```text 10 × 10
+```text
+10 × 10
 50 × 50
 500 × 500
 ```
@@ -2381,7 +2525,8 @@ Large models may require different representation detail.
 
 For example:
 
-```text zoomed out:
+```text
+zoomed out:
 population → one density field
 
 zoomed in:
@@ -2390,7 +2535,8 @@ population → individual particles
 
 The representation system may support:
 
-```text level of detail
+```text
+level of detail
 ```
 
 without requiring the model to change.
@@ -2403,7 +2549,8 @@ A representation may not be generated/rendered if it cannot affect the current v
 
 Examples:
 
-```text outside viewport
+```text
+outside viewport
 below pixel resolution
 hidden layer
 filtered object
@@ -2419,22 +2566,26 @@ It must not imply that the semantic object no longer exists.
 
 Visibility is presentation state.
 
-```text model object exists
+```text
+model object exists
 ```
 
 can coexist with:
 
-```text representation.visible = false
+```text
+representation.visible = false
 ```
 
 Likewise:
 
-```text object not represented
+```text
+object not represented
 ```
 
 does not mean:
 
-```text object does not exist
+```text
+object does not exist
 ```
 
 ---
@@ -2445,7 +2596,8 @@ Selection belongs to the interactive/presentation boundary.
 
 A selected object may receive:
 
-```text outline
+```text
+outline
 highlight
 label
 expanded representation
@@ -2464,7 +2616,8 @@ Educational visualization adds another dimension.
 
 A representation can intentionally emphasize:
 
-```text important variable
+```text
+important variable
 causal relationship
 equation
 step
@@ -2475,12 +2628,14 @@ prediction
 
 For example:
 
-```text force vector
+```text
+force vector
 ```
 
 may be highlighted while:
 
-```text velocity vector
+```text
+velocity vector
 ```
 
 is faded.
@@ -2493,7 +2648,8 @@ This is presentation intent, not necessarily model semantics.
 
 An educational view may contain representations that have no corresponding model entity:
 
-```text arrows
+```text
+arrows
 circles
 callouts
 text
@@ -2512,12 +2668,14 @@ Thus not every representation must originate from model state.
 
 A representation can be explicitly authored:
 
-```text text("Newton's Second Law")
+```text
+text("Newton's Second Law")
 ```
 
 without requiring a model object named:
 
-```text Newton's Second Law
+```text
+Newton's Second Law
 ```
 
 This supports pure explanatory animation and annotation.
@@ -2528,19 +2686,22 @@ This supports pure explanatory animation and annotation.
 
 The system therefore supports:
 
-```text MODEL-DRIVEN
+```text
+MODEL-DRIVEN
 State → Projection → Representation
 ```
 
 and:
 
-```text AUTHOR-DRIVEN
+```text
+AUTHOR-DRIVEN
 Author intent → Representation
 ```
 
 and:
 
-```text HYBRID
+```text
+HYBRID
 Model → Projection → Representation
                   ↑
            Author configuration
@@ -2554,14 +2715,16 @@ This is essential for a Manim-like system.
 
 After a semantic commit:
 
-```text Sₙ → Sₙ₊₁
+```text
+Sₙ → Sₙ₊₁
 ```
 
 the runtime identifies changed dependencies.
 
 Then:
 
-```text changed state
+```text
+changed state
       ↓
 affected projections
       ↓
@@ -2580,19 +2743,22 @@ This is the normal synchronization path.
 
 At a committed state:
 
-```text Sₙ
+```text
+Sₙ
 ```
 
 all projections claiming to represent that state should be internally consistent with it.
 
 For example:
 
-```text ball.position = (3,2)
+```text
+ball.position = (3,2)
 ```
 
 must not simultaneously produce:
 
-```text scene position = (3,2)
+```text
+scene position = (3,2)
 graph position = (8,5)
 ```
 
@@ -2600,7 +2766,8 @@ unless those views intentionally use different mappings.
 
 The distinction is:
 
-```text different representation
+```text
+different representation
 ≠
 inconsistent semantic source
 ```
@@ -2613,7 +2780,8 @@ For dynamic systems, the projection must identify which simulation time it repre
 
 For example:
 
-```text View A → t = 10
+```text
+View A → t = 10
 View B → t = 20
 ```
 
@@ -2621,7 +2789,8 @@ may be intentional.
 
 But if both claim to represent:
 
-```text t = 10
+```text
+t = 10
 ```
 
 they must derive from the same relevant state.
@@ -2642,19 +2811,22 @@ Some representations intentionally show past state.
 
 Example:
 
-```text particle trail
+```text
+particle trail
 ```
 
 does not represent only the current position.
 
 It may represent:
 
-```text {position(t₀), position(t₁)..., position(tₙ)}
+```text
+{position(t₀), position(t₁)..., position(tₙ)}
 ```
 
 This means projections may consume:
 
-```text current state
+```text
+current state
 historical state
 dataset
 experiment history
@@ -2668,17 +2840,20 @@ not just current state.
 
 A projection may request:
 
-```text last 5 seconds
+```text
+last 5 seconds
 ```
 
 or:
 
-```text entire trajectory
+```text
+entire trajectory
 ```
 
 or:
 
-```text events between t=10 and t=20
+```text
+events between t=10 and t=20
 ```
 
 This makes historical visualization a natural part of the projection system.
@@ -2691,14 +2866,16 @@ Events themselves may be represented.
 
 Example:
 
-```text collision event
+```text
+collision event
       ↓
 marker on trajectory
 ```
 
 or:
 
-```text decay event
+```text
+decay event
       ↓
 flash + label + timeline marker
 ```
@@ -2713,7 +2890,8 @@ The flash is representation/animation.
 
 Processes may be represented through:
 
-```text motion
+```text
+motion
 flow
 growth
 reaction arrows
@@ -2723,7 +2901,8 @@ animated transformations
 
 Again:
 
-```text process semantics
+```text
+process semantics
 ≠
 animation semantics
 ```
@@ -2736,7 +2915,8 @@ but they can be connected.
 
 An equation can have several representations:
 
-```text symbolic equation
+```text
+symbolic equation
 numeric values
 graph
 geometric interpretation
@@ -2745,12 +2925,14 @@ animated transformation
 
 For example:
 
-```text y = x²
+```text
+y = x²
 ```
 
 can produce:
 
-```text equation text
+```text
+equation text
 +
 curve
 +
@@ -2767,7 +2949,8 @@ All can depend on the same mathematical source.
 
 A function can be represented as:
 
-```text graph
+```text
+graph
 table
 equation
 mapping diagram
@@ -2784,7 +2967,8 @@ Therefore function representation is not intrinsically "plotting."
 
 Relations can be represented as:
 
-```text edge
+```text
+edge
 arrow
 bond
 connector
@@ -2801,7 +2985,8 @@ The same semantic relation can therefore have different visual forms.
 
 Collections can be represented as:
 
-```text list
+```text
+list
 table
 scatter plot
 particle cloud
@@ -2812,7 +2997,8 @@ graph
 
 Again:
 
-```text Collection ≠ visual list
+```text
+Collection ≠ visual list
 ```
 
 ---
@@ -2823,13 +3009,15 @@ The same concept can have multiple projections at different scales.
 
 Example:
 
-```text microscopic decay
+```text
+microscopic decay
 particles + random events
 ```
 
 and:
 
-```text macroscopic decay
+```text
+macroscopic decay
 N(t) curve
 ```
 
@@ -2843,7 +3031,8 @@ The representation layer must not assume that every entity must appear individua
 
 Projections can compose:
 
-```text Model
+```text
+Model
  ↓
 select particles
  ↓
@@ -2922,7 +3111,8 @@ They interact at the state boundary.
 
 A projection may cache:
 
-```text sampled values
+```text
+sampled values
 generated geometry
 layout positions
 formatted labels
@@ -2932,7 +3122,8 @@ but these are representational/computational state.
 
 If the projection is destroyed:
 
-```text model remains intact
+```text
+model remains intact
 ```
 
 ---
@@ -2941,12 +3132,14 @@ If the projection is destroyed:
 
 Suppose:
 
-```text circle.radius = 20px
+```text
+circle.radius = 20px
 ```
 
 and:
 
-```text radius ← mass
+```text
+radius ← mass
 ```
 
 The 20px is not the mass.
@@ -2963,19 +3156,22 @@ An author may intentionally override a projection.
 
 Example:
 
-```text mass → radius
+```text
+mass → radius
 ```
 
 but for educational emphasis:
 
-```text selected particle → radius × 2
+```text
+selected particle → radius × 2
 ```
 
 This should be understood as a presentation override.
 
 It must not alter:
 
-```text particle.mass
+```text
+particle.mass
 ```
 
 ---
@@ -2986,7 +3182,8 @@ Two projections may target the same representation property.
 
 Example:
 
-```text mass → radius
+```text
+mass → radius
 speed → radius
 ```
 
@@ -2994,7 +3191,8 @@ The system must not silently choose one.
 
 Possible semantics:
 
-```text composition
+```text
+composition
 priority
 conflict
 derived combination
@@ -3010,7 +3208,8 @@ Bindings should therefore have explicit resolution semantics.
 
 Possible forms:
 
-```text replace
+```text
+replace
 compose
 add
 multiply
@@ -3020,7 +3219,8 @@ exclusive
 
 For example:
 
-```text radius = base_radius × mass_scale × selection_scale
+```text
+radius = base_radius × mass_scale × selection_scale
 ```
 
 is composition rather than conflicting writes.
@@ -3033,7 +3233,8 @@ Representations can have constraints.
 
 Examples:
 
-```text text must remain inside viewport
+```text
+text must remain inside viewport
 label must not overlap
 arrow length ≥ minimum_visible_length
 graph axis range contains data
@@ -3049,7 +3250,8 @@ They should not automatically become scientific constraints.
 
 Layout systems may impose:
 
-```text alignment
+```text
+alignment
 spacing
 containment
 non-overlap
@@ -3068,7 +3270,8 @@ A camera is a view-level mapping.
 
 Conceptually:
 
-```text View Space
+```text
+View Space
      ↓
 Camera Transform
      ↓
@@ -3077,7 +3280,8 @@ Screen Space
 
 Camera changes:
 
-```text pan
+```text
+pan
 zoom
 rotate
 projection
@@ -3092,7 +3296,8 @@ must not change model coordinates.
 
 A camera can represent:
 
-```text 2D → 2D
+```text
+2D → 2D
 3D → 2D
 N-dimensional → lower-dimensional representation
 ```
@@ -3105,7 +3310,8 @@ The semantic camera abstraction should therefore not be unnecessarily tied to a 
 
 Views may restrict what is presented:
 
-```text viewport
+```text
+viewport
 clipping region
 time range
 value range
@@ -3122,7 +3328,8 @@ The underlying model remains unchanged.
 
 The system should support updates at multiple levels:
 
-```text whole view
+```text
+whole view
 whole representation tree
 representation group
 individual representation
@@ -3139,14 +3346,16 @@ A representation becomes invalid when its source dependency changes in a relevan
 
 Example:
 
-```text temperature field changed
+```text
+temperature field changed
       ↓
 heatmap invalid
 ```
 
 But:
 
-```text equation label
+```text
+equation label
 ```
 
 may remain valid.
@@ -3161,12 +3370,14 @@ The runtime should ideally reproject only affected portions.
 
 For:
 
-```text 1,000,000 particles
+```text
+1,000,000 particles
 ```
 
 if:
 
-```text particle #52 changes
+```text
+particle #52 changes
 ```
 
 it should not semantically require rebuilding every unrelated representation.
@@ -3181,7 +3392,8 @@ Generated representation data may be cached.
 
 Examples:
 
-```text curve geometry
+```text
+curve geometry
 text layout
 glyph geometry
 heatmap tiles
@@ -3196,7 +3408,8 @@ Caches are invalidated when their projection inputs change.
 
 Given:
 
-```text source
+```text
+source
 projection configuration
 view configuration
 ```
@@ -3205,7 +3418,8 @@ a deterministic projection should produce an equivalent representation.
 
 This matters for:
 
-```text recording
+```text
+recording
 testing
 replay
 rendering
@@ -3218,7 +3432,8 @@ cross-platform output
 
 A reproducible output may therefore depend on:
 
-```text model state
+```text
+model state
 projection definition
 projection configuration
 view configuration
@@ -3235,17 +3450,20 @@ Two representations may look identical but have different semantic bindings.
 
 For example:
 
-```text two circles at the same position
+```text
+two circles at the same position
 ```
 
 could represent:
 
-```text particle A
+```text
+particle A
 ```
 
 and:
 
-```text particle B
+```text
+particle B
 ```
 
 Therefore visual equality does not imply semantic equality.
@@ -3258,13 +3476,15 @@ Conversely, one semantic object can have visually different representations.
 
 The system may eventually define equivalence such as:
 
-```text same semantic source
+```text
+same semantic source
 different representation
 ```
 
 or:
 
-```text same visual output
+```text
+same visual output
 different semantic source
 ```
 
@@ -3278,7 +3498,8 @@ This may become useful for testing and accessibility.
 
 The resulting conceptual structure is:
 
-```text REPRESENTATION SYSTEM
+```text
+REPRESENTATION SYSTEM
 ├── SOURCE
 │   ├── state
 │   ├── object
@@ -3372,7 +3593,8 @@ Renderer ──consumes──→ Presentation
 
 The system should preserve these invariants:
 
-```text 1. Model ≠ Representation
+```text
+1. Model ≠ Representation
 
 2. Representation ≠ Rendered pixels
 
@@ -3439,7 +3661,8 @@ representation
 
 where context may include:
 
-```text time
+```text
+time
 view
 coordinate system
 selection
@@ -3450,7 +3673,8 @@ history
 
 and configuration may define:
 
-```text selection
+```text
+selection
 transformations
 encodings
 layout

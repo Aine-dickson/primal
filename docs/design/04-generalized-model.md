@@ -1,4 +1,4 @@
-# Interactive Scientific Visualization DSL
+# Prismal
 ## Generalized Model
 
 > **Purpose:** Define a domain-independent model capable of representing mathematical, physical, chemical, biological, computational, and abstract systems, together with their simulation, observation, interaction, visualization, and export.
