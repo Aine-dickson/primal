@@ -1,0 +1,9 @@
+[package]
+name = "prismal-kernel"
+description = "Prismal model kernel: static checking, dependency analysis and expression evaluation (docs/spec/01-model-kernel.md)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+prismal-ir = { path = "../prismal-ir" }

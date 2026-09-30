@@ -1,0 +1,10 @@
+[package]
+name = "prismal-ir"
+description = "Prismal semantic IR: serializable model representation (docs/spec/04-ir.md)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

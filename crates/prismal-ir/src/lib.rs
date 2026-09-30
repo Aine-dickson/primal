@@ -1,0 +1,472 @@
+//! Prismal semantic IR (docs/spec/04-ir.md).
+//!
+//! The IR records what the author meant: resolved identities, roles, types, flow kinds and
+//! trigger directions (R-47). It is serialized as versioned JSON (D-037).
+
+pub mod build;
+pub mod dim;
+pub mod expr;
+pub mod present;
+pub mod units;
+
+pub use dim::{Dim, Ratio};
+pub mod elaborate;
+
+pub use expr::{Agg, Arm, BinOp, Builtin, Constant, Expr, Func, Lambda};
+pub use units::Unit;
+
+use serde::{Deserialize, Serialize};
+
+/// Element identity (IR-1.4): opaque, unique within a document, stable across edits.
+pub type Id = String;
+
+pub const FORMAT: &str = "prismal-ir";
+pub const VERSION: &str = "0.1";
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Document {
+    pub format: String,
+    pub version: String,
+    #[serde(default)]
+    pub spaces: Vec<Space>,
+    #[serde(default)]
+    pub models: Vec<Model>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub presentations: Vec<present::Presentation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<present::RunCase>,
+}
+
+impl Document {
+    pub fn new(spaces: Vec<Space>, models: Vec<Model>) -> Document {
+        Document { format: FORMAT.into(), version: VERSION.into(), spaces, models, presentations: vec![], runs: vec![] }
+    }
+    pub fn model(&self, id: &str) -> Option<&Model> {
+        self.models.iter().find(|m| m.id == id)
+    }
+    pub fn presentation(&self, id: &str) -> Option<&present::Presentation> {
+        self.presentations.iter().find(|p| p.id == id)
+    }
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).expect("IR serializes")
+    }
+    pub fn from_json(s: &str) -> Result<Document, String> {
+        let d: Document = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        if d.format != FORMAT {
+            return Err(format!("not a Prismal IR document (format `{}`)", d.format));
+        }
+        Ok(d)
+    }
+}
+
+/// Types (MK section 2).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Type {
+    Boolean,
+    Integer,
+    /// `Real` is the dimensionless quantity (MK-3.2).
+    Quantity { dim: Dim },
+    Instant { dim: Dim },
+    Point { space: Id },
+    Vector { space: Id, dim: Dim },
+    Tuple { items: Vec<Type> },
+    /// A declared enumeration (D-049): its identity, which makes it nominal (MK-2.2), and
+    /// its cases in declaration order.
+    Enum { r#enum: Id, cases: Vec<String> },
+    Function { params: Vec<Type>, result: Box<Type> },
+}
+
+impl Type {
+    pub fn real() -> Type {
+        Type::Quantity { dim: Dim::NONE }
+    }
+    pub fn qty(dim: &str) -> Type {
+        Type::Quantity { dim: Dim::parse(dim).expect("valid dimension") }
+    }
+    pub fn point(space: &str) -> Type {
+        Type::Point { space: space.into() }
+    }
+    pub fn vector(space: &str, dim: &str) -> Type {
+        Type::Vector { space: space.into(), dim: Dim::parse(dim).expect("valid dimension") }
+    }
+    pub fn func(params: Vec<Type>, result: Type) -> Type {
+        Type::Function { params, result: Box::new(result) }
+    }
+}
+
+/// A space (MK-4.1).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Space {
+    pub id: Id,
+    pub name: String,
+    pub dimension: u32,
+    pub axes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    Constant,
+    Parameter,
+    Input,
+    Discrete,
+    Continuous,
+    Derived,
+}
+
+impl Role {
+    pub fn is_stored(self) -> bool {
+        self != Role::Derived
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Display {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+}
+
+/// A binding (MK-6.1).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Binding {
+    pub id: Id,
+    pub name: String,
+    pub role: Role,
+    #[serde(rename = "type")]
+    pub ty: Type,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub init: Option<Expr>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub def: Option<Expr>,
+    /// Explicit intervenability; `None` means the role's default (MK-6.10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intervenable: Option<bool>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub private: bool,
+    #[serde(default)]
+    pub display: Display,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+impl Binding {
+    /// MK-6.10: parameters by default, state only when declared, never others.
+    pub fn is_intervenable(&self) -> bool {
+        match self.role {
+            Role::Parameter => self.intervenable.unwrap_or(true),
+            Role::Discrete | Role::Continuous => self.intervenable.unwrap_or(false),
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessKind {
+    Continuous,
+    Discrete,
+    Algorithmic,
+    Stochastic,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Process {
+    pub id: Id,
+    pub name: String,
+    pub kind: ProcessKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlowKind {
+    Define,
+    Contribute,
+}
+
+/// A flow `der(target) = expr` or `der(target) += expr` (MK-14.7).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Flow {
+    pub id: Id,
+    pub target: Id,
+    pub kind: FlowKind,
+    pub expr: Expr,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<Id>,
+    /// The member whose binding `target` is, when the flow is written by a container for a
+    /// contained object: `der(ball.vel)` (`{"part": ...}`), or `der(b.vel)` in a loop
+    /// (`{"var": "b"}` with `each`) (D-055).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<Expr>,
+    /// `for b in row { ... }`: the flow is repeated for each member of `over`, named `var`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub each: Option<Each>,
+}
+
+/// A loop over the members of a collection (D-055).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Each {
+    pub var: String,
+    pub over: Id,
+}
+
+/// A contained object or a collection of fixed membership (MK-7.11, MK-8.1, D-055): `count`
+/// members (one when absent: a contained object) of the object type `object`, each with the
+/// overrides, read in the container's scope, where `{"builtin": "index"}` is its number.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Part {
+    pub id: Id,
+    pub name: String,
+    pub object: Id,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides: Vec<present::Override>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+/// Event triggers (MK-15.3).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Trigger {
+    Rising { guard: Expr },
+    Falling { guard: Expr },
+    Crossing { guard: Expr },
+    At { time: Expr },
+    Every { period: Expr, from: Expr },
+    On { event: Id },
+    Start,
+    Input { binding: Id },
+    Request,
+    /// Invalid in a checked model (MK-E13); exists so that such IR can be represented and rejected.
+    Level { cond: Expr },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Target {
+    pub binding: Id,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<usize>,
+}
+
+/// Operations (MK section 16). Structural operations are reserved with collections.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum Op {
+    Set { target: Target, value: Expr },
+    Contribute { target: Target, value: Expr },
+    Emit {
+        event: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<Expr>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "policy", rename_all = "snake_case")]
+pub enum ZenoPolicy {
+    Stop,
+    Settle { ops: Vec<Op> },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Zeno {
+    #[serde(flatten)]
+    pub policy: ZenoPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub n: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<f64>,
+}
+
+/// An event (MK section 15).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Event {
+    pub id: Id,
+    pub name: String,
+    pub trigger: Trigger,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable: Option<Expr>,
+    #[serde(default)]
+    pub handler: Vec<Op>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zeno: Option<Zeno>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<Id>,
+    /// The value each occurrence carries (MK-15.1, D-050), read in the enabling condition
+    /// and the handler as `{"payload": id}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<Payload>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+/// An event's payload: its name as written (for display) and its type.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Payload {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: Type,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EquationRole {
+    Display,
+    Check,
+}
+
+/// An equation (MK section 11).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Equation {
+    pub id: Id,
+    pub name: String,
+    pub lhs: Expr,
+    pub rhs: Expr,
+    pub role: EquationRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tol: Option<Expr>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Policy {
+    Reject,
+    Report,
+    Stop,
+}
+
+/// A constraint (MK section 12).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Constraint {
+    pub id: Id,
+    pub name: String,
+    pub cond: Expr,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tol: Option<Expr>,
+    pub policy: Policy,
+    /// Printing hint only (04-ir section 5.4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attached_to: Option<Id>,
+}
+
+/// A model: the root object type (MK-7.2).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Model {
+    pub id: Id,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_space: Option<Id>,
+    #[serde(default)]
+    pub bindings: Vec<Binding>,
+    #[serde(default)]
+    pub processes: Vec<Process>,
+    #[serde(default)]
+    pub flows: Vec<Flow>,
+    #[serde(default)]
+    pub events: Vec<Event>,
+    #[serde(default)]
+    pub equations: Vec<Equation>,
+    #[serde(default)]
+    pub constraints: Vec<Constraint>,
+    /// Declared enumerations (MK-2.2, D-049).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enums: Vec<EnumDecl>,
+    /// Declared functions (MK-10.3, D-048).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub functions: Vec<FunctionDecl>,
+    /// Object types declared in this model (MK-7.1, D-055), each with the body of a model.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<Model>,
+    /// Contained objects and collections (MK-7.11, MK-8.1, D-055).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<Part>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+/// A declared enumeration (MK-2.2, D-049): a nominal type whose values are its cases. Its
+/// identity is `Model.enum.Name`; types that use it carry that identity and the cases.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnumDecl {
+    pub id: Id,
+    pub name: String,
+    pub cases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+impl EnumDecl {
+    /// The type whose values are this enumeration's cases.
+    pub fn ty(&self) -> Type {
+        Type::Enum { r#enum: self.id.clone(), cases: self.cases.clone() }
+    }
+}
+
+/// A declared function (MK-10.3, D-048): typed parameters, a result type and a body that
+/// reads only its parameters (`{"param": i}`), constants and other declared functions. Its
+/// identity is `Model.fn.name`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FunctionDecl {
+    pub id: Id,
+    pub name: String,
+    pub params: Vec<FnParam>,
+    pub result: Type,
+    pub body: Expr,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+impl FunctionDecl {
+    /// The function's type, `(A, B) -> R`.
+    pub fn ty(&self) -> Type {
+        Type::func(self.params.iter().map(|p| p.ty.clone()).collect(), self.result.clone())
+    }
+    pub fn param_names(&self) -> Vec<String> {
+        self.params.iter().map(|p| p.name.clone()).collect()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FnParam {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: Type,
+}
+
+impl Model {
+    /// Whether the model contains objects, so that it needs elaboration (D-055).
+    pub fn has_parts(&self) -> bool {
+        !self.parts.is_empty()
+    }
+    pub fn object(&self, id: &str) -> Option<&Model> {
+        self.objects.iter().find(|o| o.id == id)
+    }
+    pub fn part(&self, id: &str) -> Option<&Part> {
+        self.parts.iter().find(|p| p.id == id)
+    }
+    pub fn function(&self, id: &str) -> Option<&FunctionDecl> {
+        self.functions.iter().find(|f| f.id == id)
+    }
+    pub fn enum_decl(&self, id: &str) -> Option<&EnumDecl> {
+        self.enums.iter().find(|e| e.id == id)
+    }
+    pub fn binding(&self, id: &str) -> Option<&Binding> {
+        self.bindings.iter().find(|b| b.id == id)
+    }
+    pub fn binding_by_name(&self, name: &str) -> Option<&Binding> {
+        self.bindings.iter().find(|b| b.name == name)
+    }
+    pub fn event_by_name(&self, name: &str) -> Option<&Event> {
+        self.events.iter().find(|e| e.name == name)
+    }
+}

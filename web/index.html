@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prismal Player</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <h1>Prismal <span>player</span></h1>
+    <label>Program
+      <select id="program"></select>
+    </label>
+    <label>Presentation
+      <select id="presentation"></select>
+    </label>
+    <label id="medium-label" hidden>Medium
+      <select id="medium">
+        <option value="interactive">interactive</option>
+        <option value="video">video (fallbacks)</option>
+      </select>
+    </label>
+  </header>
+
+  <main class="layout">
+    <section class="stage" aria-label="Presentation">
+      <div id="views" class="views"></div>
+      <div id="overlay" class="overlay" hidden></div>
+      <div id="captions" class="captions" aria-hidden="true"></div>
+
+      <div id="transport" class="transport" hidden>
+        <div class="transport-row">
+          <button id="play" type="button" aria-label="Play">Play</button>
+          <button id="restart" type="button" title="Play the lesson again without your inputs">Restart</button>
+          <button id="continue" type="button" class="accent" hidden>Continue</button>
+          <span id="clock" class="clock" aria-live="off">0 s</span>
+          <label class="voice" id="voice-label" hidden>Voice
+            <select id="voice" title="Narration sound: synthesized speech, or recordings named by cue (b1.mp3 ...)">
+              <option value="off">off</option>
+              <option value="speech">synthesized</option>
+              <option value="files">recordings...</option>
+            </select>
+          </label>
+          <input id="voice-files" type="file" accept="audio/*" multiple hidden>
+          <label class="speed">Speed
+            <select id="speed">
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1x</option>
+              <option value="2">2x</option>
+            </select>
+          </label>
+        </div>
+        <input id="scrub" type="range" min="0" max="1" step="0.01" value="0" aria-label="Presentation time">
+        <div id="beats" class="beats" role="list" aria-label="Beats"></div>
+      </div>
+
+      <div id="interactive-bar" class="transport" hidden>
+        <div class="transport-row">
+          <button id="undo" type="button">Undo</button>
+          <button id="redo" type="button">Redo</button>
+          <span class="hint">Drag the handles, or focus one and use the arrow keys. Esc cancels a drag.</span>
+        </div>
+      </div>
+
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <aside class="side">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="source">Source</button>
+        <button role="tab" aria-selected="false" data-tab="observe">Observations</button>
+        <button role="tab" aria-selected="false" data-tab="cases">Cases</button>
+        <button role="tab" aria-selected="false" data-tab="describe">Description</button>
+      </div>
+
+      <section class="tab" id="tab-source" role="tabpanel">
+        <textarea id="source" spellcheck="false" aria-label="Program source"></textarea>
+        <div class="row">
+          <button id="compile" type="button" class="accent">Compile and open</button>
+          <button id="format" type="button" title="Print the program in the canonical form">Format</button>
+          <span class="hint">Ctrl+Enter</span>
+        </div>
+        <ul id="diagnostics" class="diagnostics"></ul>
+      </section>
+
+      <section class="tab" id="tab-observe" role="tabpanel" hidden>
+        <dl id="observations" class="observations"></dl>
+      </section>
+
+      <section class="tab" id="tab-cases" role="tabpanel" hidden>
+        <div class="row">
+          <button id="run-cases" type="button" class="accent">Run cases</button>
+          <span id="cases-summary" class="hint"></span>
+        </div>
+        <div id="cases"></div>
+      </section>
+
+      <section class="tab" id="tab-describe" role="tabpanel" hidden>
+        <p class="hint">Text alternatives of the frame shown, generated from the bindings (PK-11.1).</p>
+        <ul id="description" class="description"></ul>
+      </section>
+    </aside>
+  </main>
+
+  <div id="announcer" class="sr-only" aria-live="polite"></div>
+  <noscript>The player needs JavaScript and WebAssembly.</noscript>
+  <script type="module" src="player.js"></script>
+</body>
+</html>

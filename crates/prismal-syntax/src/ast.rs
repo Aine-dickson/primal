@@ -1,0 +1,493 @@
+//! Syntax tree of the working syntax. It records what was written, including forms the IR
+//! does not distinguish (IR-1.1); lowering (`lower.rs`) turns it into the IR.
+
+use crate::Span;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Name {
+    pub text: String,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct File {
+    pub items: Vec<Item>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Item {
+    Space(SpaceDecl),
+    Model(ModelDecl),
+    Presentation(PresentationDecl),
+    Run(RunDecl),
+}
+
+// ---------------------------------------------------------------- models
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpaceDecl {
+    pub name: Name,
+    pub kind: Name,
+    pub args: Vec<Arg>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ModelDecl {
+    pub name: Name,
+    pub space: Option<Name>,
+    pub members: Vec<Member>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Member {
+    Decl(Decl),
+    Fn(FnDecl),
+    Enum(EnumDecl),
+    Flow(FlowStmt),
+    Process(ProcessDecl),
+    Event(EventDecl),
+    Equation(EquationDecl),
+    Constraint(ConstraintDecl),
+    /// `object Name { ... }`: an object type (MK section 7, D-055).
+    Object(ObjectDecl),
+    /// `parts { ball: Ball { ... }  row: Ball[3] { ... } }` (D-055).
+    Parts(Vec<PartDecl>),
+}
+
+/// An object type: the body of a model, declared in one (D-055).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ObjectDecl {
+    pub name: Name,
+    pub members: Vec<Member>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+/// A contained object (`ball: Ball`) or a collection of `count` members (`row: Ball[3]`),
+/// with overrides of its members' bindings (D-055).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartDecl {
+    pub name: Name,
+    pub object: Name,
+    pub count: Option<u32>,
+    pub overrides: Vec<(Name, Expr)>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoleWord {
+    Const,
+    Param,
+    Input,
+    State,
+    Discrete,
+    Derived,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Decl {
+    pub role: RoleWord,
+    pub name: Name,
+    /// Parameters of a derived function value: `f(x: Real): Real = e` (MK-10.7).
+    pub params: Option<Vec<(Name, TypeExpr)>>,
+    pub ty: TypeExpr,
+    pub value: Option<Expr>,
+    pub range: Option<Range>,
+    pub modifiers: Vec<Modifier>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FnDecl {
+    pub name: Name,
+    pub params: Vec<(Name, TypeExpr)>,
+    pub result: TypeExpr,
+    pub body: Expr,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+/// `enum Phase { rising, falling, resting }` (MK-2.2, D-049).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnumDecl {
+    pub name: Name,
+    pub cases: Vec<Name>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Range {
+    In(Interval),
+    Where(Expr),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Modifier {
+    Intervenable,
+    Private,
+    Symbol(String),
+    Unit(UnitExpr),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlowStmt {
+    pub target: Name,
+    /// The member whose binding `target` is: `b`, `ball`, `row[2]` in `der(b.vel)` (D-055).
+    pub member: Option<Expr>,
+    /// `for b in row { ... }`: the loop variable and the collection.
+    pub each: Option<(Name, Name)>,
+    pub contribute: bool,
+    pub expr: Expr,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProcessDecl {
+    pub name: Name,
+    pub flows: Vec<FlowStmt>,
+    pub events: Vec<EventDecl>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EventDecl {
+    pub name: Name,
+    pub trigger: TriggerExpr,
+    pub enable: Option<Expr>,
+    pub handler: Vec<OpStmt>,
+    pub zeno: Option<ZenoClause>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TriggerExpr {
+    Rising(Expr),
+    Falling(Expr),
+    Crossing(Expr),
+    At(Expr),
+    Every(Expr, Option<Expr>),
+    Start,
+    Input(Name),
+    Request(Option<(Name, TypeExpr)>),
+    /// `on E` or `on E(p: T)`, receiving `E`'s payload as `p` (D-050).
+    On(Name, Option<(Name, TypeExpr)>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ZenoClause {
+    Stop,
+    Settle(Vec<OpStmt>),
+}
+
+/// A binding, or one component of it (`set vel.y = 0 m/s`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Path {
+    pub name: Name,
+    pub component: Option<Name>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpStmt {
+    Set { target: Path, value: Expr, span: Span },
+    Contribute { target: Path, value: Expr, span: Span },
+    Emit { event: Name, payload: Option<Expr>, span: Span },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EquationDecl {
+    pub name: Name,
+    pub lhs: Expr,
+    pub rhs: Expr,
+    pub checked: Option<Expr>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConstraintDecl {
+    pub name: Option<Name>,
+    pub cond: Expr,
+    pub within: Option<Expr>,
+    pub policy: Option<Name>,
+    pub span: Span,
+}
+
+// ---------------------------------------------------------------- types, units, expressions
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TypeExpr {
+    /// `Real`, `Velocity`, `Point`, `Quantity<1/L>`, `Vector<Plane, L/T>`.
+    Named { name: Name, args: Vec<DimExpr>, span: Span },
+    Tuple { items: Vec<TypeExpr>, span: Span },
+}
+
+/// A dimension expression inside `<...>`: `M L^2 T^-2`, `1/L`, `Velocity`, or a space name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DimExpr {
+    pub factors: Vec<DimFactor>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DimFactor {
+    pub name: Name,
+    /// Exponent as a reduced fraction, including the sign from a preceding `/`.
+    pub num: i32,
+    pub den: i32,
+}
+
+/// A unit as written, without spaces: `m/s^2`, `/m`, `N/m`, `deg`, `px`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UnitExpr {
+    pub text: String,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Bound {
+    Inf,
+    Value(Box<Expr>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Interval {
+    pub lo: Bound,
+    pub lo_closed: bool,
+    pub hi: Bound,
+    pub hi_closed: bool,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Pow,
+    And,
+    Or,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Arg {
+    pub name: Option<Name>,
+    pub value: Expr,
+    /// `pos every 0.02 s`: a representation source sampled over the run (PK-6.3).
+    pub every: Option<Expr>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExprKind {
+    Num(f64, Option<UnitExpr>),
+    Bool(bool),
+    Str(String),
+    Name(String),
+    Neg(Box<Expr>),
+    Not(Box<Expr>),
+    Norm(Box<Expr>),
+    Binary(BinOp, Box<Expr>, Box<Expr>),
+    /// `a < b <= c`: one or more comparisons, chained.
+    Compare(Box<Expr>, Vec<(CmpOp, Expr)>),
+    In(Box<Expr>, Interval),
+    If(Box<Expr>, Box<Expr>, Box<Expr>),
+    Otherwise(Box<Expr>, Box<Expr>),
+    Call(Box<Expr>, Vec<Arg>),
+    Field(Box<Expr>, Name),
+    Index(Box<Expr>, Box<Expr>),
+    Tuple(Vec<Expr>),
+    List(Vec<Expr>),
+    /// `1 m -> 40 px` (presentation scales).
+    Map(Box<Expr>, Box<Expr>),
+    /// `(pos on landed)` and `(vel on landed microstep 0)` (expectations, PK-3.4).
+    On(Box<Expr>, Name, Option<u32>),
+    /// `sum(b.m for b in row if b.on)`: an aggregate over a collection (D-055).
+    Aggregate { agg: Name, body: Box<Expr>, var: Name, over: Name, filter: Option<Box<Expr>> },
+    /// `start of b3`, `end of b8` (timeline expectations).
+    BeatTime { start: bool, beat: Name },
+    /// `match e { case => value, ... }` (MK-10.2, D-049).
+    Match(Box<Expr>, Vec<(Name, Expr)>),
+}
+
+// ---------------------------------------------------------------- presentations
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PresentationDecl {
+    pub name: Name,
+    pub model: Name,
+    pub items: Vec<PresItem>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PresItem {
+    Observe(Vec<Observation>),
+    View(ViewDecl),
+    Permit { who: Name, items: Vec<Name> },
+    Timeline(Vec<SceneDecl>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Observation {
+    pub name: Name,
+    pub expr: Expr,
+    /// `event_log of bounce`, `diagnostics of conservation`.
+    pub of: Option<Name>,
+    /// `where zeno_applied`.
+    pub filter: Option<Expr>,
+    pub schedule: Option<Schedule>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Schedule {
+    Live,
+    Every(Expr),
+    At(Expr),
+    On(Name, Option<u32>),
+    Over(Interval),
+}
+
+/// `view name: kind(args) { reps }`, or `panel name { reps }` (kind `panel`, no arguments).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ViewDecl {
+    pub name: Name,
+    pub kind: Name,
+    pub args: Vec<Arg>,
+    pub reps: Vec<Rep>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rep {
+    /// `for b in row { ... }`: repeated for each member (D-055).
+    pub each: Option<(Name, Name)>,
+    pub kind: Name,
+    pub args: Vec<Arg>,
+    pub alias: Option<Name>,
+    pub interactions: Vec<Interaction>,
+    /// The members of a `group` (D-043).
+    pub members: Vec<Rep>,
+    pub span: Span,
+}
+
+/// `on drag [part] as p { propose x = e }` (PK-5.6).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Interaction {
+    pub gesture: Name,
+    pub part: Option<Name>,
+    pub bind: Name,
+    pub proposals: Vec<(Name, Expr)>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SceneDecl {
+    pub name: Name,
+    pub beats: Vec<BeatDecl>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BeatDecl {
+    pub name: Name,
+    pub actions: Vec<Action>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Action {
+    In { view: Name, reps: Vec<Rep> },
+    Narrate { text: String, duration: Option<Expr> },
+    /// `run rate r [until E]`; with `until` it is two actions, `run rate r` and `wait until E`.
+    Run { rate: Expr, until: Option<Name> },
+    Hold,
+    Highlight(Name),
+    Hide(Name, Option<Expr>),
+    /// `reveal fade|draw [for d] [in view] { reps }`
+    Reveal { style: Name, duration: Option<Expr>, view: Option<Name>, reps: Vec<Rep> },
+    /// `camera view [to P] [zoom z] [for d]`
+    Camera { view: Name, center: Option<Expr>, zoom: Option<Expr>, duration: Option<Expr> },
+    Seek(Expr),
+    Show(Rep),
+    Explore { limit: Option<Expr>, keep: Vec<Name>, reps: Vec<Rep>, fallback: Vec<Action> },
+    Sequence(Vec<Action>),
+    Intervene(Vec<OpStmt>),
+    Wait(Expr),
+    WaitUntil(Name),
+    /// `request E` or `request E(value)` (D-050).
+    Request(Name, Option<Expr>),
+    Reset,
+    Branch,
+}
+
+// ---------------------------------------------------------------- runs
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunDecl {
+    pub name: Name,
+    pub model: Name,
+    pub presentation: Option<Name>,
+    pub params: Vec<(Name, Expr)>,
+    /// `input { x = v }`, `input { x = v at τ }` (D-051).
+    pub inputs: Vec<(Name, Expr, Option<Expr>)>,
+    pub config: Vec<(Name, Expr)>,
+    pub until: Option<Expr>,
+    pub learner: Vec<LearnerStep>,
+    pub expects: Vec<Expect>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LearnerStep {
+    pub at: Expr,
+    pub action: LearnerAction,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LearnerAction {
+    Continue,
+    /// `set slider angle = 60 deg`: the control words, then the value.
+    Set { control: Vec<Name>, value: Expr },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Tolerance {
+    None,
+    Abs(Expr),
+    Rel(Expr),
+    Exact,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Expect {
+    Compare { lhs: Expr, rhs: Expr, tol: Tolerance, span: Span },
+    In { expr: Expr, interval: Interval, span: Span },
+    /// `initialization fails`, `configuration rejected`.
+    Outcome { words: Vec<Name>, span: Span },
+}

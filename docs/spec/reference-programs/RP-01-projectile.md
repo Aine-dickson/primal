@@ -8,36 +8,42 @@ The model is shared with RP-02 (drag) and RP-08 (narrated lesson).
 
 ## Model
 
-**sketch (non-binding, D-006)**
+**working syntax (D-028, non-binding)**
 
 ```text
-space Plane : Euclidean 2
+space Plane = euclidean(2)
 
-object Projectile {
-  param g      : Acceleration  = 9.81 m/s^2
-  param k      : Quantity<1/L> = 0              // quadratic drag coefficient
-  param speed  : Quantity<L/T> = 20 m/s
-  param angle  : Real          = 45 deg          // dimensionless (D-021)
-  constraint speed > 0 m/s : reject
-  constraint 0 deg < angle and angle < 90 deg : reject
-  constraint k >= 0 : reject
+model Projectile in Plane {
+  param {
+    g:     Acceleration  = 9.81 m/s^2
+    k:     Quantity<1/L> = 0        where k >= 0                     // quadratic drag coefficient
+    speed: Velocity      = 20 m/s   where speed > 0 m/s   symbol "v"
+    angle: Angle         = 45 deg   in (0 deg, 90 deg)    symbol "θ"  unit deg  // dimensionless (D-021)
+  }
+  state {
+    pos: Point            = origin
+    vel: Vector<Velocity> = speed * (cos(angle), sin(angle))
+  }
+  discrete {
+    flying: Boolean = true                                           // the mode
+  }
 
-  state pos    : Point<Plane>       = origin
-  state vel    : Vector<Plane, L/T> = speed * (cos(angle), sin(angle))
-  state flying : Boolean            = true       // discrete state: the mode
+  flow {
+    der(pos) = if flying then vel else 0
+  }
+  process gravity { flow der(vel) += if flying then (0, -g) else 0 }
+  process drag    { flow der(vel) += -k * |vel| * vel }
 
-  flow der(pos)  = vel if flying else (0 m/s, 0 m/s)
-  flow der(vel) += (0 m/s^2, -g) if flying else (0 m/s^2, 0 m/s^2)   // gravity
-  flow der(vel) += -k * |vel| * vel                                   // drag
-
-  event apex   on falling(vel.y) { }
-  event landed on falling(pos.y) { set flying = false; set vel = (0 m/s, 0 m/s) }
+  event apex   on falling(vel.y)
+  event landed on falling(pos.y) { set flying = false; set vel = 0 }
 }
 ```
 
 Notes:
 
-- `speed` and `angle` are parameters, so a lesson or learner can change the launch (D-023); the initial velocity is computed from them (MK-6.7).
+- `speed` and `angle` are parameters, so a lesson or learner can change the launch (D-023); the initial velocity is computed from them (MK-6.7). Their display symbols `v` and `θ` are used by formulas (D-034, RP-08); `angle` is shown in degrees (MK-3.12).
+- Gravity and drag are named processes (MK-14.1), so each contribution can be observed or highlighted on its own. The processes do not change the combination: both contribute to `der(vel)` by the default sum.
+- `0` stands for the zero vector of the required type (D-030); the tuple `(0, -g)` is a vector because the flow target expects one (D-032).
 - `apex` has no operations; it exists so that the apex can be observed (PK-3.1 `on(E)`).
 - At launch `pos.y = 0` and rising. That is not a falling crossing (RC-7.3), so `landed` does not occur at `t0`.
 - After landing, `flying = false`: both flows are zero and the ball stays at the landing point. The drag contribution is zero because `vel` was reset to zero.
@@ -46,13 +52,38 @@ Notes:
 
 ```text
 presentation ProjectileChecks for Projectile {
-  observe t_apex  = elapsed on(apex)
-  observe h_apex  = pos.y   on(apex)
-  observe t_land  = elapsed on(landed)
-  observe range   = pos.x   on(landed)
-  observe y_land  = pos.y   on(landed)
-  observe at_rest = pos     at(t0 + 5 s)
-  observe events  = event log over(t0, t0 + 5 s)
+  observe {
+    t_apex  = elapsed   on apex
+    h_apex  = pos.y     on apex
+    t_land  = elapsed   on landed
+    range   = pos.x     on landed
+    y_land  = pos.y     on landed
+    at_rest = pos       at t0 + 5 s
+    events  = event_log over [t0, t0 + 5 s]
+  }
+}
+```
+
+## Lab
+
+An interactive presentation for the web player (D-018). It is not used by the cases. The learner plays the run and changes gravity or drag while the ball flies; a change takes effect at the instant on display and the rest of the flight is recomputed (RC-11.2). `speed` and `angle` have no sliders here: they set the launch velocity at `t0` only (RP-08 relaunches for that).
+
+```text
+presentation ProjectileLab for Projectile {
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    axes
+    marker(pos) as ball
+    arrow(vel, from: pos, scale: 1 m/s -> 2 px)
+    trace(pos every 0.05 s)
+  }
+  view height: plot(x: [0 s, 3 s], y: [0 m, 12 m]) {
+    series_plot(pos.y every 0.02 s)
+  }
+  panel controls {
+    slider(g, range: [1 m/s^2, 20 m/s^2])
+    slider(k, range: [0 /m, 0.05 /m])
+    label(pos.x)
+  }
 }
 ```
 
@@ -96,10 +127,10 @@ Each variant changes one line of the model. Each MUST be rejected before executi
 
 | ID | Change | Expected diagnostic |
 |---|---|---|
-| RP-01.D1 | `event landed on pos.y <= 0 m { ... }` written as a continuous trigger and stored as a level condition (no lowering) | MK-E13 (level condition as continuous trigger) |
-| RP-01.D2 | `flow der(vel) += (1, -g)` | MK-E03 (bare non-zero literal with a dimensioned quantity) |
-| RP-01.D3 | add `flow der(vel) = (0 m/s^2, -g)` alongside the contributions | MK-E10 (target both defined and contributed to) |
-| RP-01.D4 | `flow der(pos) = vel if pos.y > 0 m else (0 m/s, 0 m/s)` | MK-E12 (flow condition depends on continuous state) |
+| RP-01.D1 | the trigger of `landed` stored in the IR as the level condition `pos.y <= 0 m` instead of a crossing (the working syntax has no level-style trigger, so this variant is written in IR form) | MK-E13 (level condition as continuous trigger) |
+| RP-01.D2 | `flow der(vel) += (1, -g)` (the tuple is expected to be an acceleration vector, D-032) | MK-E03 (bare non-zero literal with a dimensioned quantity) |
+| RP-01.D3 | add `flow der(vel) = (0, -g)` alongside the contributions | MK-E10 (target both defined and contributed to) |
+| RP-01.D4 | `flow der(pos) = if pos.y > 0 m then vel else 0` | MK-E12 (flow condition depends on continuous state) |
 | RP-01.D5 | handler `landed` also does `set g = 0 m/s^2` | MK-E08 (handler sets a parameter) |
 
 D1 applies to the IR: a surface syntax may lower `y <= 0` to `falling(y)` (MK-15.6), in which case the variant is written directly in IR form.
@@ -107,3 +138,6 @@ D1 applies to the IR: a surface syntax may lower `y <= 0` to `falling(y)` (MK-15
 ## History
 
 - 2026-09-29 written.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied (display symbols, named processes, zero vectors).
+- 2026-09-30 `angle` declares its display unit `deg` (MK-3.12), found by the web player: RP-08 narrates and ranges the angle in degrees, and its explore slider showed radians.
+- 2026-09-30 lab presentation added for the web player (not used by the cases).

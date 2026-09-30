@@ -6,28 +6,37 @@ A ball dropped from 1 m bounces with restitution `e = 0.8`. Bounce times form a 
 
 ## Model
 
-**sketch (non-binding, D-006)**
+**working syntax (D-028, non-binding)**
 
 ```text
-object BouncingBall {
-  param g  : Acceleration = 9.81 m/s^2
-  param h0 : Length       = 1 m
-  param e  : Real         = 0.8               // restitution
-  constraint 0 <= e and e < 1 : reject
-  constraint h0 > 0 m : reject
+model BouncingBall {
+  param {
+    g:  Acceleration = 9.81 m/s^2
+    h0: Length       = 1 m      where h0 > 0 m
+    e:  Real         = 0.8      in [0, 1)                 // restitution
+  }
+  state {
+    y: Length   = h0
+    v: Velocity = 0
+  }
+  discrete {
+    resting: Boolean = false                              // the mode
+  }
 
-  state y       : Length        = h0
-  state v       : Quantity<L/T> = 0
-  state resting : Boolean       = false      // discrete state: the mode
-
-  flow der(y) = v
-  flow der(v) = -g if not resting else 0 m/s^2
+  flow {
+    der(y) = v
+    der(v) = if resting then 0 else -g
+  }
 
   event bounce on falling(y) {
     set v = -e * v
-  } zeno settle { set y = 0 m; set v = 0 m/s; set resting = true }
+  } zeno settle {
+    set y = 0 m
+    set v = 0 m/s
+    set resting = true
+  }
 
-  event top on falling(v) { }                  // apex of each flight, for observation
+  event top on falling(v)                                 // apex of each flight, for observation
 }
 ```
 
@@ -41,20 +50,49 @@ Notes:
 
 ```text
 presentation BounceChecks for BouncingBall {
-  observe bounce_times = elapsed on(bounce)
-  observe top_heights  = y       on(top)
-  observe zeno         = event log entries of bounce with zeno applied
-  observe final        = (y, v, resting) at(t0 + 6 s)
-  observe late_events  = event log over(t0 + 4.1 s, t0 + 6 s)
+  observe {
+    bounce_times = elapsed on bounce
+    top_heights  = y       on top
+    zeno         = event_log of bounce where zeno_applied
+    final        = (y, v, resting) at t0 + 6 s
+    late_events  = event_log over [t0 + 4.1 s, t0 + 6 s]
+  }
 }
 ```
+
+## Lab
+
+An interactive presentation for the web player (D-018), not used by the cases. The model has no space, so the ball is a marker in a plot whose vertical axis is a length: `(0, y)` pairs a bare number with a length, matching the axes `[-1, 1]` and `[0 m, 1.1 m]` (PK-7.3).
+
+```text
+presentation BounceLab for BouncingBall {
+  view ball: plot(x: [-1, 1], y: [0 m, 1.1 m]) {
+    marker(at: (0, y)) as ball
+  }
+  view height: plot(x: [0 s, 6 s], y: [0 m, 1.1 m]) {
+    series_plot(y every 0.01 s)
+  }
+  panel controls {
+    slider(e, range: [0, 0.95], step: 0.05)
+    label(v)
+  }
+}
+```
+
+## Model variants
+
+Structural changes used by cases (D-031). Each changes named elements of the model; nothing else differs.
+
+| ID | Change |
+|---|---|
+| RP-03.V1 | `bounce` declares `zeno stop` instead of the `settle` clause |
 
 ## Cases
 
 | Case | Overrides | End |
 |---|---|---|
 | `A-settle` | none | `t_end = t0 + 6 s` |
-| `B-stop` | `bounce` declared with `zeno stop` instead of `settle`; failure policy `stop` | `t_end = t0 + 6 s` |
+| `B-stop` | model variant `RP-03.V1`; failure policy `stop` | `t_end = t0 + 6 s` |
 | `C-invalid-e` | `e = 1.2` | - |
 
 ## Expected results
@@ -80,8 +118,8 @@ Exact values, with `t1 = sqrt(2 h0 / g)` (first impact) and `v1 = sqrt(2 g h0)` 
 | RP-03.E6 | `bounce_times[10]` | 3.57889295102044 s | abs 1e-8 s | analytic | fixed |
 | RP-03.E7 | `top_heights[1..3]` | 0.64 m, 0.4096 m, 0.262144 m | abs 1e-8 m | analytic | fixed |
 | RP-03.E8 | no `top` at `t0` | the first `top` is after `bounce_times[1]` | exact | behavior | fixed |
-| RP-03.E9 | `zeno` | exactly one entry, at bounce number 61 to 65 | - | behavior | provisional |
-| RP-03.E10 | time of the `zeno` entry | before `t_∞` and within `1e-4 s` of it | - | bound | provisional |
+| RP-03.E9 | `zeno` | exactly one entry, at bounce number 61 to 65 | - | behavior | fixed |
+| RP-03.E10 | time of the `zeno` entry | before `t_∞` and within `1e-4 s` of it | - | bound | fixed |
 | RP-03.E11 | `final` | `(0 m, 0 m/s, true)` exactly | exact | behavior | fixed |
 | RP-03.E12 | `late_events` | empty: no event after the settle | exact | behavior | fixed |
 
@@ -107,9 +145,12 @@ E9 and E10 are provisional because detection depends on the location error of th
 | ID | Change | Expected diagnostic |
 |---|---|---|
 | RP-03.D1 | remove the `zeno settle { ... }` clause | MK-E16 (self-retriggering crossing event without a Zeno policy) |
-| RP-03.D2 | `flow der(v) = -g if y > 0 m else 0 m/s^2` | MK-E12 (flow condition on continuous state) |
-| RP-03.D3 | handler `bounce` does `set v = -e * v; set v = 0 m/s` | MK-E19 (two sets on one target in one handler) |
+| RP-03.D2 | `flow der(v) = if y > 0 m then -g else 0` | MK-E12 (flow condition on continuous state) |
+| RP-03.D3 | handler `bounce` does `set v = -e * v` and `set v = 0 m/s` | MK-E19 (two sets on one target in one handler) |
 
 ## History
 
 - 2026-09-29 written.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied; case `B-stop` now runs the declared model variant `RP-03.V1` (D-031).
+- 2026-09-30 E9 and E10 confirmed by the Rust prototype and made fixed: Zeno accumulation detected at bounce 63, `t = 4.06370922186394 s` (predicted bounce 63 at 4.06370922604679 s), 3.5e-6 s before `t_inf`. Bounce 10 located within 3.5e-11 s.
+- 2026-09-30 lab presentation added for the web player (not used by the cases).

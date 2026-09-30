@@ -26,8 +26,9 @@ Programs are never removed silently. A change to an expected value, a tolerance,
 Each file has these parts:
 
 - **Purpose:** what the program tests and which rules it exercises (by rule ID).
-- **Model, presentation, timeline:** in the sketch notation. **sketch (non-binding, D-006)**. The meaning is fixed by the specification, not by the notation.
-- **Cases:** named run configurations. A case lists parameter overrides and configuration settings that differ from the defaults (RC section 16). Where an expectation only holds under some parameter values (the analytic range holds only without drag), it belongs to the case with those values. This is how the suite expresses conditional expectations (PK section 15).
+- **Model, presentation, timeline:** in the working syntax (D-028, `docs/syntax-study/working-syntax.md`), non-binding until the syntax is frozen. The meaning is fixed by the specification, not by the notation.
+- **Model variants** (optional, D-031): named structural changes of the model (`RP-03.V1`), each stating which named elements change. A case may run a variant.
+- **Cases:** named run configurations. A case lists parameter overrides and configuration settings that differ from the defaults (RC section 16), and optionally the model variant it runs (D-031). Where an expectation only holds under some parameter values (the analytic range holds only without drag), it belongs to the case with those values. This is how the suite expresses conditional expectations (PK section 15).
 - **Expectations:** each has an ID (`RP-01.E3`), an observation (PK section 3), an expected value, a tolerance, and a kind:
   - `analytic`: the expected value is exact mathematics. The tolerance allows for event location (`ε_t`), solver error and rounding, and is justified in the file.
   - `reference`: the expected value comes from a high-precision computation outside Prismal (`tools/refvals.py`). The tolerance allows for the solver.
@@ -57,3 +58,4 @@ Each file has these parts:
 ## History
 
 - 2026-09-29 first-slice suite written (RP-01 to RP-08).
+- 2026-09-30 programs moved to the working syntax (D-028); model variants added to the format (D-031).

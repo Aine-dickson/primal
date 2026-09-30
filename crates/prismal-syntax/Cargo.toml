@@ -1,0 +1,11 @@
+[package]
+name = "prismal-syntax"
+description = "Prismal working syntax (D-028): lexer, parser and lowering to the semantic IR"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+prismal-ir = { path = "../prismal-ir" }
+prismal-kernel = { path = "../prismal-kernel" }
+serde_json.workspace = true

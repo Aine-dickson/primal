@@ -6,13 +6,12 @@ The graph of `f(x) = a x^2`, where the learner changes `a` with a slider, by dra
 
 ## Model
 
-**sketch (non-binding, D-006)**
+**working syntax (D-028, non-binding)**
 
 ```text
-object QuadraticDemo {
-  param a : Real = 1
-  constraint -5 <= a and a <= 5 : reject
-  derived f : Real -> Real = fn(x) => a * x^2
+model QuadraticDemo {
+  param   { a: Real = 1  in [-5, 5] }
+  derived { f(x: Real): Real = a * x^2 }        // derived function value (MK-10.7, D-029)
 }
 ```
 
@@ -20,15 +19,21 @@ object QuadraticDemo {
 
 ```text
 presentation QuadraticPlot for QuadraticDemo {
-  view plot : plot(x in [-3, 3], y in [-5, 20])
-  show function_graph(f) in plot
-  show slider(a, range -5 .. 5, step 0.1)
-  show equation("y = a x^2", live values)
-  show marker(point (1, f(1))) in plot
-       draggable inverse (px, py) -> a = py / 1^2      // x fixed at 1
-  observe a_now  = a live
-  observe f2     = f(2) live
-  observe log    = intervention log
+  view plot: plot(x: [-3, 3], y: [-5, 20]) {
+    function_graph(f)
+    marker(at: (1, f(1))) as handle {
+      on drag as p { propose a = p.y / 1^2 }   // x fixed at 1
+    }
+  }
+  panel controls {
+    slider(a, range: [-5, 5], step: 0.1)
+    formula(f, live: true)                     // shows f(x) = a x² (D-034)
+  }
+  observe {
+    a_now = a    live
+    f2    = f(2) live
+    log   = intervention_log
+  }
 }
 ```
 
@@ -74,3 +79,5 @@ E6 to E8 use `within 1e-12` because `4 + 0.1 + 0.1` is not exactly `4.2` in bina
 ## History
 
 - 2026-09-29 written.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied: `f` is a derived function value (D-029); the displayed equation is `formula(f)`, typeset from the IR, not a string (D-034).
+- 2026-09-30 E1 to E14 confirmed through the presentation prototype. The marker declares no keyboard step, so E13 uses the default of PK-11.2a (1/100 of the `y` axis span, `0.25`).

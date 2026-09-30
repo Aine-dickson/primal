@@ -6,30 +6,36 @@ A simple pendulum of length 1 m released from 10 degrees. It checks angles as di
 
 ## Model
 
-**sketch (non-binding, D-006)**
+**working syntax (D-028, non-binding)**
 
 ```text
-object Pendulum {
-  param g     : Acceleration = 9.81 m/s^2
-  param L     : Length       = 1 m
-  param m     : Mass         = 1 kg
-  param pivot : Point<Plane> = origin
-  param θ0    : Real         = 10 deg
-  constraint L > 0 m : reject
-  constraint m > 0 kg : reject
+space Plane = euclidean(2)
 
-  state θ : Real          = θ0               // angle from the downward vertical
-  state ω : Quantity<1/T> = 0
+model Pendulum in Plane {
+  param {
+    g:     Acceleration = 9.81 m/s^2
+    L:     Length       = 1 m      where L > 0 m
+    m:     Mass         = 1 kg     where m > 0 kg
+    pivot: Point        = origin
+    θ0:    Angle        = 10 deg
+  }
+  state {
+    θ: Angle         = θ0                 // angle from the downward vertical
+    ω: Quantity<1/T> = 0
+  }
+  derived {
+    bob:    Point  = pivot + L * (sin(θ), -cos(θ))
+    energy: Energy = 0.5 * m * (L * ω)^2 + m * g * L * (1 - cos(θ))
+  }
 
-  flow der(θ) = ω
-  flow der(ω) = -(g / L) * sin(θ)
+  flow {
+    der(θ) = ω
+    der(ω) = -(g / L) * sin(θ)
+  }
 
-  derived bob    : Point<Plane> = pivot + L * (sin(θ), -cos(θ))
-  derived energy : Energy       = 0.5 * m * (L * ω)^2 + m * g * L * (1 - cos(θ))
+  constraint rod: |bob - pivot| == L within 1e-9 m policy report
 
-  constraint |bob - pivot| = L within 1e-9 m : report
-
-  event upswing on rising(θ) { }              // once per period, moving toward positive θ
+  event upswing on rising(θ)              // once per period, moving toward positive θ
 }
 ```
 
@@ -37,10 +43,38 @@ object Pendulum {
 
 ```text
 presentation PendulumChecks for Pendulum {
-  observe theta_start = θ at(t0)
-  observe upswings    = elapsed on(upswing)
-  observe energy      = energy every(0.01 s)
-  observe diagnostics = diagnostics over(t0, t_end)
+  observe {
+    theta_start = θ           at t0
+    upswings    = elapsed     on upswing
+    energy      = energy      every 0.01 s
+    diagnostics = diagnostics over [t0, t_end]
+  }
+}
+```
+
+## Lab
+
+An interactive presentation for the web player (D-018), not used by the cases. Changing `g` or `L` during the swing changes the period from that instant on; the energy formula shows the jump, since energy is conserved only while the parameters are constant.
+
+```text
+presentation PendulumLab for Pendulum {
+  view scene: spatial(Plane, scale: 1 m -> 150 px, y: up) {
+    segment(pivot, bob)
+    marker(pivot)
+    marker(bob) as bob
+    trace(bob every 0.02 s)
+  }
+  view angle: plot(x: [0 s, 10 s], y: [-0.2, 0.2]) {
+    series_plot(θ every 0.01 s)
+  }
+  view energy_plot: plot(x: [0 s, 10 s], y: [0 J, 0.2 J]) {
+    series_plot(energy every 0.02 s)
+  }
+  panel controls {
+    slider(g, range: [1 m/s^2, 25 m/s^2])
+    slider(L, range: [0.25 m, 2 m])
+    formula(energy, live: true)
+  }
 }
 ```
 
@@ -64,10 +98,10 @@ presentation PendulumChecks for Pendulum {
 | ID | Observation | Expected | Tolerance | Kind | Status |
 |---|---|---|---|---|---|
 | RP-04.E1 | `theta_start` | 0.174532925199433 (= 10 π/180) | exact in binary64 | analytic | fixed |
-| RP-04.E2 | `upswings[1]` | 1.50741947047395 s | rel 1e-5 | analytic | provisional |
-| RP-04.E3 | `upswings[k+1] - upswings[k]`, every `k` in the run | 2.00989262729860 s | rel 1e-5 | analytic | provisional |
+| RP-04.E2 | `upswings[1]` | 1.50741947047395 s | rel 1e-5 | analytic | fixed |
+| RP-04.E3 | `upswings[k+1] - upswings[k]`, every `k` in the run | 2.00989262729860 s | rel 1e-5 | analytic | fixed |
 | RP-04.E4 | measured period against `T0` | `period / T0 - 1` in `[1.85e-3, 1.96e-3]` | - | bound | fixed |
-| RP-04.E5 | `energy` | max relative deviation from its initial value below `1e-3` | - | bound | provisional |
+| RP-04.E5 | `energy` | max relative deviation from its initial value below `1e-3` | - | bound | fixed |
 | RP-04.E6 | `diagnostics` | none: the rod constraint never reports | exact | behavior | fixed |
 | RP-04.E7 | number of upswings | 50 (`floor((100 s - 3T/4) / T) + 1`; the last at 99.992 s) | exact | behavior | fixed |
 
@@ -75,9 +109,9 @@ presentation PendulumChecks for Pendulum {
 
 | ID | Observation | Expected | Tolerance | Kind | Status |
 |---|---|---|---|---|---|
-| RP-04.E8 | `upswings[k+1] - upswings[k]` | 2.00989262729860 s | rel 1e-6 | analytic | provisional |
-| RP-04.E9 | `energy` | max relative deviation below `1e-6` | - | bound | provisional |
-| RP-04.E10 | `energy` compared with case A | case B's max deviation is smaller than case A's | - | behavior | provisional |
+| RP-04.E8 | `upswings[k+1] - upswings[k]` | 2.00989262729860 s | rel 1e-6 | analytic | fixed |
+| RP-04.E9 | `energy` | max relative deviation below `1e-6` | - | bound | fixed |
+| RP-04.E10 | `energy` compared with case A | case B's max deviation is smaller than case A's | - | behavior | fixed |
 
 E10 records the teaching point of the per-solver drift in D-012: the choice of solver visibly changes how well energy is conserved, and the author can see it (MK-1.2, RC-16.1).
 
@@ -91,9 +125,12 @@ E10 records the teaching point of the per-solver drift in D-012: the choice of s
 
 | ID | Change | Expected diagnostic |
 |---|---|---|
-| RP-04.D1 | `state θ : Length = 10 cm` | MK-E02 (dimensioned argument to `sin`) |
-| RP-04.D2 | `derived bob = pivot + (sin(θ), -cos(θ))` (no `L`) | MK-E04 (point plus a vector whose dimension is not length) |
+| RP-04.D1 | `θ: Length = 10 cm` in the `state` block | MK-E02 (dimensioned argument to `sin`) |
+| RP-04.D2 | `bob: Point = pivot + (sin(θ), -cos(θ))` (no `L`) | MK-E01 (the tuple is expected to be a displacement, D-032, but its components are dimensionless) |
 
 ## History
 
 - 2026-09-29 written.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied (`Plane` declared; `Plane` is the default space). RP-04.D2 now expects MK-E01 instead of MK-E04: under D-032 the tuple takes the expected type `Vector<Plane, L>`, so the error is found in its components.
+- 2026-09-30 provisional tolerances confirmed by the Rust prototype and made fixed. Measured: `dopri5` first upswing rel error 5.4e-8, worst period 2.0e-7, energy drift 7.7e-5 (1645 steps); `rk4` 8.0e-9, 7.9e-9, 1.35e-7.
+- 2026-09-30 lab presentation added for the web player (not used by the cases).

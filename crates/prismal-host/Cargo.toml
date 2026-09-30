@@ -1,0 +1,15 @@
+[package]
+name = "prismal-host"
+description = "Prismal host interface: an engine any system embeds to load, edit, run and render Prismal programs (D-044, D-045)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+prismal-ir = { path = "../prismal-ir" }
+prismal-kernel = { path = "../prismal-kernel" }
+prismal-runtime = { path = "../prismal-runtime" }
+prismal-syntax = { path = "../prismal-syntax" }
+prismal-present = { path = "../prismal-present" }
+serde.workspace = true
+serde_json.workspace = true

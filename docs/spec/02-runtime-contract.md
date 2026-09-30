@@ -144,6 +144,7 @@ produce the trajectory S (committed states), the event log E and diagnostics D
 
 - **RC-7.1** Each crossing trigger (`rising(g)`, `falling(g)`, `crossing(g)`) has a **guard function** `g`, evaluated on the state and on the dense output.
 - **RC-7.2** Each guard keeps a **sign reference**: the sign of `g` at the last point where it was non-zero. A zero value does not change the reference.
+- **RC-7.2a** (D-056) After a transition, a crossing guard within the event time tolerance of zero takes as its reference the sign it is heading to: when the guard changes sign within `4 ε_t` under the flows of the committed state, its reference is that new sign. A located crossing leaves its guard on the far side by at most about `|ġ| ε_t` (RC-7.6); a handler that reverses the motion (a bounce) would otherwise leave a reference that makes the next crossing, if it falls inside one step, two sign changes that RC-7.4 allows to be missed. With this rule, bounces on a floor at any height accumulate until the Zeno policy applies.
 - **RC-7.3** A crossing is **detected** in an accepted step when the sign of `g` at the step's end, or at any interior point the runtime samples, is non-zero and opposite to the reference, in the trigger's direction: from `+` to `-` for `falling`, from `-` to `+` for `rising`, either for `crossing`. A guard that reaches zero and returns to its previous sign is not a crossing (MK-15.4).
 - **RC-7.4** Detection is guaranteed for a crossing when `g` has one sign change in the step. Two sign changes inside one step (a graze in and out) may be missed. A runtime SHOULD sample each guard at interior points of the dense output; the author controls the risk with `h_max` (section 16). This limitation is standard for zero-crossing methods and is stated so that reference programs can test within it.
 
@@ -170,7 +171,7 @@ produce the trajectory S (committed states), the event log E and diagnostics D
 
 At an event time `t`, starting from `(t, 0)`:
 
-1. Collect every event **due** at the current microstep `(t, n)`: located crossings (at `n = 0`), time events (at `n = 0`), `on start` (at `(t0, 0)`), `on(E)` for each `E` emitted at `n - 1`, crossings caused by jumps at `n - 1` (RC-8.5), and `on input(i)` for inputs changed at this instant.
+1. Collect every event **due** at the current microstep `(t, n)`: located crossings (at `n = 0`), time events (at `n = 0`), `on start` (at `(t0, 0)`), `on(E)` for each `E` that occurred or was emitted at `n - 1` (D-041), crossings caused by jumps at `n - 1` (RC-8.5), and `on input(i)` for inputs changed at this instant.
 2. Discard events whose enabling condition is false on the state at `(t, n)`.
 3. If none remain, the iteration ends. The final state is `(t, n)`.
 4. Otherwise, form **one transition** from the operations of all remaining handlers (MK-16.3). Every handler reads the state at `(t, n)` (MK-15.7).
@@ -250,6 +251,8 @@ At an event time `t`, starting from `(t, 0)`:
 ### 11.2 Inputs
 
 - **RC-11.6** An input binding holds the last value supplied, or `unavailable` or `pending` (MK-17.3). In v0 an input is piecewise constant: it changes only at logged instants, and each change is an event instant where `on input(i)` triggers are due.
+- **RC-11.6a** An input starts at the value the run configuration supplies, else at its declared default (MK-6.7a). The starting value is not a change: `on input(i)` is due only for values supplied at later instants. Every value supplied is a change, even one equal to the current value. A value is evaluated against the input's type, reading only constants; a value of another type, or for a binding that is not an input, is rejected and logged as an intervention is (D-051).
+- **RC-11.6b** A requested event obeys its enabling condition (MK-15.5), and a request supplies the payload the event declares (MK-15.1a); a request without it, or with one the event does not declare, is rejected.
 - **RC-11.7** Every input change is logged with its simulation instant and value, so that a replay reproduces the run without the external source.
 
 ---

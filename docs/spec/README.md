@@ -12,6 +12,8 @@ This directory holds the normative specification of Prismal's core semantics. It
 | `01-model-kernel.md` | Model kernel: values, types, bindings, identity, objects, relations, collections, domains, expressions, functions, equations, constraints, state, processes, events, operations | v0 draft |
 | `02-runtime-contract.md` | Runtime contract: clocks, steps, commit, event instants, randomness, snapshots, replay | v0 draft |
 | `03-presentation-kernel.md` | Presentation kernel: observation and data, projection, representation, view, explanation timeline, interaction | v0 draft |
+| `04-ir.md` | Semantic IR: serializable form of the model (full) and of presentations and runs (outline) | v0 draft |
+| `05-host-interface.md` | Host interface: how any system embeds Prismal (engine, documents, instances, frames, JSON protocol, bindings), D-044, D-045 | v0 draft |
 | `reference-programs/` | Acceptance suite with expected results (D-012): RP-01 to RP-08 | v0 draft |
 
 ## Conventions
@@ -22,6 +24,6 @@ This directory holds the normative specification of Prismal's core semantics. It
   - `Restates:` carried-forward resolutions (`R-##`, see `docs/decisions/carried-forward.md`).
   - `Decisions:` register entries (`D-###`, see `docs/decisions/divergence-register.md`).
   - `Prior art:` external systems or theory the section follows or departs from, with the reason.
-- **Sketch syntax.** Examples use a provisional notation. It is non-binding, gets no preference in the syntax study, and is always introduced by the marker `sketch (non-binding, D-006)`. The normative content is the semantics, not the notation.
+- **Example syntax.** Examples use the working syntax chosen by the syntax study (D-028, `docs/syntax-study/working-syntax.md`). It is non-binding until the syntax is frozen. The normative content is the semantics, not the notation. Examples not yet converted are marked `sketch (non-binding, D-006)`.
 - **Precedence.** Divergence register, then this specification, then the carried-forward record, then the exploration record (`docs/design/`). A conflict between this specification and an accepted register entry is a defect in the specification.
 - **Serializable form.** Every construct defined here has a representation in the semantic IR required by D-019 and R-47. The IR format is specified separately; this specification defines the content it must carry.

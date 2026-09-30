@@ -1,0 +1,23 @@
+[package]
+name = "prismal-web"
+description = "Prismal web player: the presentation kernel driven from a browser (D-018), compiled to WASM"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+prismal-ir = { path = "../prismal-ir" }
+prismal-kernel = { path = "../prismal-kernel" }
+prismal-runtime = { path = "../prismal-runtime" }
+prismal-syntax = { path = "../prismal-syntax" }
+prismal-present = { path = "../prismal-present" }
+prismal-host = { path = "../prismal-host" }
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Pinned to the version of the `wasm-bindgen` command that generates the JavaScript glue.
+wasm-bindgen = "=0.2.126"

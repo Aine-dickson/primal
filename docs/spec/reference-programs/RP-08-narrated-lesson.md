@@ -20,36 +20,54 @@ The RP-01 model with one addition (D-027):
 
 ## Presentation and timeline
 
-**sketch (non-binding, D-006)**
+**working syntax (D-028, non-binding)**
 
 ```text
 presentation ProjectileLesson for Projectile {
-  view scene : spatial(Plane) { scale 1 m -> 10 px; y up }
-  show axes in scene
-  permit learner: runtime controls on timeline; view zoom, pan
-  observe landings = (elapsed, pos.x) on(landed)
-  observe log      = event log
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    axes
+  }
+  permit learner { timeline_controls; zoom; pan }
+  observe {
+    landings = (elapsed, pos.x) on landed
+    log      = event_log
+  }
 
   timeline {
     scene launch {
-      beat b1 { show marker(pos), arrow(vel, at pos); narrate("A ball is launched at 45 degrees.", 4 s) }
-      beat b2 { run(rate 1); wait_until(landed) }
-      beat b3 { hold; highlight(marker); narrate("It lands here. Why this distance?", 3 s) }
-      beat b4 { seek(t0); show equation(R = v^2 sin(2θ) / g, live values); narrate("Watch the horizontal speed.", 3 s) }
-      beat b5 { run(rate 0.5); show arrow(vel.x, at pos); wait_until(landed) }
+      beat b1 {
+        in scene { marker(pos) as ball; arrow(vel, from: pos, scale: 1 m/s -> 2 px) }
+        narrate "A ball is launched at 45 degrees." for 4 s
+      }
+      beat b2 { run rate 1 until landed }
+      beat b3 { hold; highlight ball; narrate "It lands here. Why this distance?" for 3 s }
+      beat b4 {
+        seek t0                                  // applies first (PK-9.2a, D-033)
+        show formula("R", speed^2 * sin(2 * angle) / g, live: true)
+        narrate "Watch the horizontal speed." for 3 s
+      }
+      beat b5 {
+        in scene { arrow((vel.x, 0), from: pos, scale: 1 m/s -> 2 px) }  // horizontal component as a vector
+        run rate 0.5 until landed
+      }
     }
     scene try_it {
-      beat b6 { hold; narrate("Choose your own angle.", 3 s) }
-      beat b7 { explore(controls: slider(angle, range 10 deg .. 80 deg), limit 60 s) keep(angle)
-                fallback demonstrate { intervene(set angle = 60 deg); wait(3 s) } }
-      beat b8 { request(relaunch); run(rate 1); wait_until(landed) }
-      beat b9 { narrate("Compare the distance with the first launch.", 3 s) }
+      beat b6 { hold; narrate "Choose your own angle." for 3 s }
+      beat b7 {
+        explore limit 60 s keep angle {
+          slider(angle, range: [10 deg, 80 deg])
+        } fallback {
+          sequence { intervene { set angle = 60 deg }; wait 3 s }
+        }
+      }
+      beat b8 { request relaunch; run rate 1 until landed }
+      beat b9 { narrate "Compare the distance with the first launch." for 3 s }
     }
   }
 }
 ```
 
-Narration durations are given explicitly so that timing is checkable. In a real lesson they come from audio or reading time.
+Narration durations are given explicitly so that timing is checkable. Without one, a narration lasts its reading time (PK-9.2b); a recording of it must fit that time, and one that does not is reported (PK-9.2d).
 
 ## Cases
 
@@ -105,3 +123,6 @@ Exact values used: flight time at 45 degrees `T45 = 2.88320807823261 s`, at 60 d
 ## History
 
 - 2026-09-29 written. D-027 accepted the same day.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied: `b5` shows the horizontal velocity as the vector `(vel.x, 0)` (an arrow needs a vector, PK-6.3); `b4` shows a `formula` with display symbols (D-034); the order of `seek` and `request` within a beat follows D-033; representation names (`ball`) per PK-6.1.
+- 2026-09-30 the velocity arrows of `b1` and `b5` declare their scale (`scale: 1 m/s -> 2 px`), which PK-5.5 requires for a vector that is not a length; found by the presentation prototype.
+- 2026-09-30 E1 to E16 confirmed by the presentation prototype (cases A to D).

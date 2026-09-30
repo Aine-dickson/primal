@@ -1,10 +1,10 @@
 # 03 Presentation Kernel
 
-- **Version:** v0 (draft), 2026-09-29
+- **Version:** v0 (draft), 2026-09-29, revised 2026-09-30 (with the presentation prototype, `crates/prismal-present`)
 - **Part:** presentation kernel (D-011). It reads the model through the model kernel's interface (MK section 17) and the runtime's observer output (RC section 15), and directs runs through execution control (RC section 12).
 - **Scope:** how a model is observed, projected into representations, arranged in views, narrated over time, and manipulated by a learner or author. How pixels, audio or video frames are produced is a renderer concern outside this specification.
 
-Every section follows accepted decisions (including D-025 and D-026, raised by this document) or carried-forward resolutions.
+Every section follows accepted decisions (including D-025 and D-026, raised by this document, and D-033 and D-034, raised by the syntax study) or carried-forward resolutions.
 
 ## Contents
 
@@ -23,6 +23,7 @@ Every section follows accepted decisions (including D-025 and D-026, raised by t
 13. Check against the first-slice reference programs
 14. New positions taken in this document
 15. Deferred
+16. Static diagnostics
 
 ---
 
@@ -125,10 +126,10 @@ The presentation kernel has these concepts:
 ## 6. Representation
 
 - **Restates:** R-37, R-59.
-- **Decisions:** D-018.
+- **Decisions:** D-018, D-034.
 - **Prior art:** follows SVG and the Manim object model for geometric primitives and grouping. Follows MathML and TeX for equation layout from a symbolic tree.
 
-- **PK-6.1** A **representation** is a presentation element with identity, a kind, properties, and the sources its properties are bound to. It is not pixels (R-37 invariant 2); a renderer turns it into output.
+- **PK-6.1** A **representation** is a presentation element with identity, a kind, properties, and the sources its properties are bound to. It is not pixels (R-37 invariant 2); a renderer turns it into output. A representation MAY carry an author name, unique within its presentation, by which timeline actions and interactions refer to it; the name is not its identity (MK-6.2).
 - **PK-6.2** Each representation property is either **bound** (computed by a projection from sources), **set** (a constant in the presentation configuration), or **animated** (driven by presentation time, section 8). A property has exactly one of these at a time.
 - **PK-6.3** The **first-slice representation set**:
 
@@ -137,18 +138,24 @@ The presentation kernel has these concepts:
 | `marker` | a point (dot, circle, custom glyph) | `Point<S>` |
 | `arrow` | a vector drawn from a point | `Vector<S, D>` with an anchor point |
 | `segment`, `polyline`, `polygon` | straight geometry | points |
+| `circle`, `ellipse`, `arc` | round geometry (PK-6.3c) | a centre point, lengths, angles |
 | `trace` | the path of a point over time | observation `over` or `every` of a point |
 | `function_graph` | the graph of `f : Real -> Real` or of a quantity function over a domain | function binding |
 | `series_plot` | data against an axis (for example `x(t)`) | data |
 | `axes`, `grid` | coordinate reference | view coordinate mapping |
 | `label` | text, optionally with a value readout | text, any binding |
-| `equation` | a typeset equation or expression, with symbols linked to bindings | equation, expression |
+| `equation` | a typeset model equation, with symbols linked to bindings | equation (MK section 11) |
+| `formula` | a typeset expression, a definition, or a labeled expression (`R = ...`), with symbols linked to bindings | expression, derived binding, derived function value (D-034) |
 | `table` | rows of values | data |
 | `slider`, `number_input`, `toggle`, `button` | a control | intervenable binding; for `button`, a requestable event (D-027) or a runtime control |
 | `group` | a set of representations with a shared transform | representations |
 
+- **PK-6.3a** A `trace` or `series_plot` takes a **sampled source**, `expr every Δ` with `Δ` a positive duration: the source is evaluated at `t0`, `t0 + Δ`, `t0 + 2Δ`, ... up to the instant shown, and at that instant, so the drawing ends where the other representations are (PK-7.5). A `trace` samples a point of the view's space and draws its path. A `series_plot` samples a number or quantity and draws it against elapsed time in a plot view whose `x` axis is a time range. A source that is not sampled, an interval that is not a duration, or a series whose dimension differs from the plot's `y` axis is a static error (PK-E04, PK-E05).
+- **PK-6.3b** (D-043) A `group` has a placement `at` (a point of its view's space), a rotation `rotate` (an angle) and a scale `scale` (a positive number), and members written in its own frame. Before projection, a member's points `p` become `at + scale R(rotate) (p - origin)` and its vectors `v` become `scale R(rotate) v`; a group inside a group is placed in its parent's frame. A group belongs in a spatial view and holds markers, arrows, segments, polylines, polygons, circles, ellipses, arcs and groups; any other member, a group outside a spatial view, or a `rotate` or `scale` that is not a number is a static error (PK-E04, PK-E05). A group's members may be named and are targets of timeline actions; showing, hiding or highlighting a group applies to all its members. Its text alternative lists its members' (PK-11.1).
+- **PK-6.3c** (D-054) `circle(P, r)`, `ellipse(P, a, b, rotate: θ)` and `arc(P, r, from: θ1, to: θ2)` belong in a spatial view. `P` is a point of the view's space, radii are lengths in the model's units (so the shape scales with the view, cameras and groups, unlike a `marker`), and angles are measured counterclockwise from the space's `x` axis, as a group's `rotate` is. A radius that is not a length, an angle that is not an angle, an arc without both ends, or a property the kind does not take is a static error (PK-E04, PK-E05); a negative radius at an instant is a status. A frame carries each as an exact elliptical arc in view coordinates (centre, radii, rotation, start, sweep, closed), with the view's orientation and any group's transform applied, so a renderer needs no model geometry; `reveal draw` draws it along its perimeter. Text alternatives give the centre, radii and angles.
 - **PK-6.4** Controls are representations of bindings with a declared inverse (PK-5.6): a slider shows a parameter's value and, when moved, proposes a new one. A control can only target an intervenable binding (D-023).
-- **PK-6.5** An `equation` representation is typeset from the equation's symbolic form in the IR (MK-10.6). Each symbol that refers to a binding carries that binding's identity, so views can highlight a symbol with the value it stands for, and a label can show live values substituted into the equation.
+- **PK-6.5** `equation` and `formula` representations are typeset from symbolic forms in the IR (MK-10.6), never from strings. A `formula` of a derived binding or derived function value shows its definition (`f(x) = a x²`); a `formula` with a label shows `label = expression`, where the label is presentation text and not a binding (D-034). Each symbol that refers to a binding carries that binding's identity, so views can highlight a symbol with the value it stands for, and a label can show live values substituted into the equation.
+- **PK-6.5a** (D-046) A formula or equation is typeset for every medium. Its **math box tree** (rows, identifiers, numbers, operators, fractions, powers, subscripts, roots, fences, cases) is built from the IR with the precedences and display symbols of the text form; its **layout** places the tree as text runs, rules and stroked paths in em units of the formula's font size, `y` down from the baseline, each text run with the width it was given and, for a symbol, its binding's identity. A medium with its own math engine MAY typeset the box tree instead (MathML in a browser); any other medium draws the layout, which needs only text and lines.
 - **PK-6.6** A representation may exist without a model source (a title, an annotation) (R-37 invariant 19). A line between two objects is not a relation unless the model declares one (R-59).
 - **PK-6.7** Libraries MAY add representation kinds. A new kind declares its properties, the source types it accepts, and a description of how a renderer draws it in each supported medium (section 12).
 
@@ -163,6 +170,7 @@ The presentation kernel has these concepts:
 - **PK-7.1** A **view** is a region of the presentation with its own coordinate system, a set of representations, and presentation state: camera, visibility, selection, and zoom.
 - **PK-7.2** A **spatial view** shows one model space (D-022). Its **coordinate mapping** takes model coordinates in a chosen frame of that space to view coordinates: origin, scale (for example `1 m -> 100 px`), rotation and orientation (for example `y` up). Camera movement changes the mapping, never model values (R-07: model space is not render space).
 - **PK-7.3** A **plot view** has axes, each bound to a dimension and a display unit, with a range that is fixed, follows the data, or is controlled by the camera.
+- **PK-7.3a** In v0 a plot axis range is fixed: two numbers or two quantities of one dimension (`x: [0 s, 5 s]`, `y: [0 m, 1.1 m]`), which gives the axis its dimension; it is shown in coherent SI units. A marker in a plot view is at a pair whose components have the axes' dimensions (`(0, y)` with `y` a length on a length axis), and a drag in a plot view gives a pair of quantities in those dimensions (PK-5.6).
 - **PK-7.4** **Layout** places views in the presentation and adapts them to the output's size and orientation. Layout never changes what a view shows, only where and how large.
 - **PK-7.5** **Consistency across views**: every view in one presented frame shows the same simulation instant (and the same microstep when one is selected), and the same committed state or dense-output value. A view never shows a newer state than another view of the same frame (07 section 96).
 
@@ -176,6 +184,7 @@ The presentation kernel has these concepts:
 
 - **PK-8.1** **Presentation time** is the clock of a playback or export (RC-2.1). Every presented frame is taken at a presentation instant.
 - **PK-8.2** The **time mapping** relates presentation time to simulation time: at each presentation instant the presentation shows one simulation instant. The mapping is piecewise: playing at a rate (simulation seconds per presentation second, `1` for real time), holding (the simulation paused while presentation time runs, for narration), or jumping (a seek). Rates are presentation configuration and never change results (RC-2.3).
+- **PK-8.2a** A lesson starts holding at `t0`. A `run` or `hold` sets the mapping until the next `run`, `hold`, `seek` or `reset`, across beat boundaries: after `run rate 1 until landed` the simulation keeps running into the next beat unless that beat holds.
 - **PK-8.3** Between committed instants, the displayed state is the runtime's dense output at the mapped simulation instant (RC-15.1). A presentation MUST NOT add solver steps to get smoother frames (RC-6.6).
 - **PK-8.4** An **animation** changes an animated property (PK-6.2) over an interval of presentation time: from a value, to a value, with a duration and an easing function. Typical uses: reveal (fade, draw), transform (move, morph one shape into another), emphasis (highlight, pulse), camera moves.
 - **PK-8.5** An animation cannot drive a bound property. To animate the appearance of a model-bound element, the presentation animates a separate property (opacity, style, a presentation offset) or temporarily replaces the binding by an explicit handover (section 9, `release` and `bind`).
@@ -187,7 +196,7 @@ The presentation kernel has these concepts:
 ## 9. Explanation timeline
 
 - **Restates:** R-22, R-23, R-32.
-- **Decisions:** D-009, D-017, D-018, D-025.
+- **Decisions:** D-009, D-017, D-018, D-025, D-027, D-033.
 - **Prior art:** follows Manim scenes and Motion Canvas generator timelines (author-sequenced animation with waits). Follows interactive-video and slide tools for learner-paced continue points. Departs from both by synchronizing with a live simulation through events rather than fixed times.
 
 The explanation timeline is a peer of the model (D-009): it observes the model and directs its runs; the model never depends on it.
@@ -215,12 +224,19 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 | `explore` | open a learner exploration period (section 9.3) |
 | `bind`, `release` | hand a representation property between a projection and an animation (PK-8.5) |
 
+- **PK-9.2a** **Order at a beat's start** (D-033). A beat's run-directing actions (`seek`, `reset`, `branch`, `intervene`, `request`, `run`, `hold`) take effect in the order written, at the beat's start and before any presentation time passes. The beat's other actions then start together and see the resulting state. `sequence` orders actions that take time; it is not needed for run-directing actions.
+- **PK-9.2b** A `narrate` without a duration lasts its reading time: 0.4 s per word, at least 2 s. A `highlight` lasts until the end of its beat. Representations a beat shows stay shown to the end of the lesson; the controls of an `explore` beat are shown only during it.
+- **PK-9.2c** (D-042) In v0 animations are named effects. `reveal fade` raises a representation's opacity from 0 to 1 and `reveal draw` draws its lines from start to end (points and text fade); `hide ... for d` lowers opacity to 0 and then stops showing it; `camera` moves a spatial view's centre to a point, evaluated at every frame, and its zoom. Each lasts its duration (1 s by default for `reveal` and `camera`, none for `hide` without `for`) with the easing `3k² - 2k³`, and a move starts from where the previous one left the camera. They change presentation properties only (PK-8.5): the model and its runs are unaffected, and frames stay deterministic (PK-8.7).
+- **PK-9.2d** (D-053) Narration sound is not part of a program: `narrate` carries text, and its duration is its `for d` or its reading time (PK-9.2b), never the length of a recording. Hosts may voice each caption cue, identified by a name the engine gives it (its beat's name, then `beat.2`, `beat.3` ... for later narrations in the same beat), with a recording named after the cue or with synthesized speech. A recording longer than its cue is reported.
 - **PK-9.3** `wait_until(E)` with the simulation running makes presentation duration depend on the model: the beat lasts exactly as long as the simulation takes to reach `E` at the current rate. Because runs are deterministic (RC-14.5), this duration is known before playback and is identical in export.
+- **PK-9.3a** A beat ended by `wait_until(E)` shows, at its end, exactly the simulation instant at which `E` was located, not the value the time mapping gives by arithmetic (which may round to just before it). Actions of the next beat (a branch, a request) therefore apply at `E`'s instant, after `E`.
 - **PK-9.4** If a `wait_until` can never be satisfied (the run ends or stops first), the timeline reports it at the moment the run ends, continues with the next beat, and records a diagnostic. It never hangs.
+- **PK-9.4a** A `wait_until` while the simulation holds cannot be satisfied: it is reported at once and takes no time.
 
 ### 9.2 The lesson's run
 
 - **PK-9.5** A timeline directs one **lesson run** of its model. Timeline actions act on that run. The lesson run's configuration is part of the presentation.
+- **PK-9.5a** A lesson run whose configuration gives no end is computed to `t0 + 60 s`. An intervention or request makes a new version of the run, recomputed from its start with the action in its log (RC-11.1); the time mapping keeps referring to the version it showed, so earlier frames never change.
 - **PK-9.6** The timeline reads the model only through observation and events (MK-17.1) and changes it only through interventions (MK-17.2). The model runs unchanged with the timeline removed (D-009, MK-17.5).
 
 ### 9.3 Learner control
@@ -230,6 +246,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
   - branches the lesson run at the current instant (RC-12.3); the learner's interventions and run controls act on the branch;
   - declares which controls and intervenable bindings are available, a subset of the presentation's permissions;
   - ends when the learner continues, or after a declared time limit.
+- **PK-9.8a** A learner's model action outside an `explore` beat, or through a control the beat does not declare, is refused by the presentation and recorded; it never reaches the model. A learner script's inputs are processed in time order.
 - **PK-9.9** When an `explore` beat ends, the timeline returns to the lesson run at the instant where the branch was made, unless the beat declares `keep`, in which case the lesson continues on the learner's branch. A `keep` beat declares which bindings the learner sets; later narration can refer to them (for example "you chose `θ = 50°`").
 - **PK-9.10** In linear media (video), `explore` beats and `wait_for_learner` are replaced by their declared fallback: a fixed-duration pause, a scripted intervention demonstrating the exploration, or omission (section 12).
 
@@ -257,6 +274,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 | observation | probe, measure, read out | observation (section 3) |
 
 - **PK-10.2** **Targeting** resolves input to a representation (hit testing in view coordinates), then to the representation's source through its binding. A model action names its semantic target, never a visual one (R-40 invariant 5).
+- **PK-10.2a** Targeting is done by the kernel from the frame description, the same for every medium (D-047): a pointer targets the topmost visible draggable representation whose grabbed part lies within its drawn radius (a marker 8 px, an arrow's head 7 px, a stroked body 3 px) plus a reach that depends on the pointer (mouse 4 px, pen 8 px, touch 16 px). Draggable representations are drawn over the others, later ones on top. A press that targets nothing may pan the view, if the presentation permits it.
 - **PK-10.3** When a target is ambiguous (overlapping representations), resolution uses a declared order (topmost, then nearest), and the interaction MAY offer a choice. It never picks by internal order.
 
 ### 10.2 Permissions
@@ -286,7 +304,10 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 
 - **PK-11.1** Every representation that conveys model information has a **text alternative**, generated by default from its sources: the binding's label, value and display unit, or for a group, a summary of its members. Authors MAY override it.
 - **PK-11.2** Every model action and runtime control a presentation offers is available without a pointer (keyboard or equivalent), including dragging: a draggable marker is movable by steps along its inverse (PK-5.6).
+- **PK-11.2a** A keyboard step moves a draggable representation by its `step` property, in view units; without one, by 1/100 of each axis span in a plot view, or 10 px in a spatial view. A slider without `step` moves by 1/100 of its range. Each step is one committed intervention, as a pointer drag.
+- **PK-11.2b** Keyboard focus moves through the representations that take it, in order: in each view in turn, the draggable ones, controls and buttons in the order the presentation declares them, then those over the presentation (D-047). A representation grabbed by a pointer takes focus, so that the keyboard continues where the pointer left off.
 - **PK-11.3** Narration has captions (text is required; audio is optional). Timeline beats and event occurrences can be announced to assistive technology.
+- **PK-11.3a** Playback announces every model event occurrence it passes while the simulation runs, at the presentation instant it is shown, and every occurrence an action causes at a held instant (a requested event).
 - **PK-11.4** Color is never the only encoding of a value: a color encoding is paired with a value readout on demand, a legend, or another channel.
 
 ---
@@ -298,6 +319,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 - **Prior art:** follows the display-list separation between scene description and renderer (SVG, PDF, Vello scenes), and export pipelines that render a deterministic timeline frame by frame (Manim, Motion Canvas).
 
 - **PK-12.1** The presentation produces, for each presentation instant, a **frame description**: the visible representations with their resolved properties, in view coordinates, plus captions, text alternatives and pending announcements. It is medium-independent.
+- **PK-12.1a** In the prototype's frame description, view coordinates are pixels with the model origin at `(0, 0)` and `y` down on screen in a spatial view (a view with `y: up` negates model `y`), and the plot's own coordinates in a plot view. A formula carries its symbolic form from the IR, its layout (PK-6.5a) and, for each symbol, the binding's identity and, when live, its value (PK-6.5). A representation carries its label (markers, arrows, graphs) and, when it declares an inverse, the part it is dragged by; a control carries its binding's display symbol and display unit. Frame descriptions contain nothing specific to one medium.
 - **PK-12.2** A **renderer** turns frame descriptions into a medium: interactive web player (first target, D-018), later still image, video, vector document, data export. A renderer MUST NOT define representation semantics (R-37 invariant 14).
 - **PK-12.3** Each medium declares what it supports: interaction, audio, time. A presentation element that a medium cannot support uses its declared fallback (PK-9.10); an element with no fallback is reported, not silently dropped.
 - **PK-12.4** Which forms and media a piece of content uses follows the content and the author's intent (D-018, R-39); the specification makes every medium one target among several.
@@ -306,25 +328,31 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 
 ## 13. Check against the first-slice reference programs
 
-Each program (D-012) is checked for expressibility in the presentation kernel. **sketch (non-binding, D-006)**
+Each program (D-012) is checked for expressibility in the presentation kernel. Examples are in the working syntax (D-028), non-binding; the complete programs are in `reference-programs/`.
 
 ### 13.1 Projectile, with and without drag
 
 ```text
 presentation ProjectileLab for Projectile {
-  view scene : spatial(Plane) { scale 1 m -> 10 px; y up }
-  view graph : plot(x = t, y = pos.y)
-  show marker(pos) in scene
-  show arrow(vel, at pos, scale 1 m/s -> 4 px) in scene
-  show trace(pos every 0.02 s) in scene
-  show series_plot(pos.y every 0.02 s) in graph
-  observe range = pos.x on(landed)
-  expect range == 2 * v0.x * v0.y / g within rel 1e-6 when k = 0 m^-1
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    marker(pos)
+    arrow(vel, from: pos, scale: 1 m/s -> 4 px)
+    trace(pos every 0.02 s)
+  }
+  view graph: plot(x: elapsed, y: pos.y) {
+    series_plot(pos.y every 0.02 s)
+  }
+  observe { range = pos.x on landed }
+}
+
+run no_drag of Projectile with ProjectileLab {
+  param  { k = 0 }
+  expect { range == speed^2 * sin(2 * angle) / g within rel 1e-6 }
 }
 ```
 
 - The range at landing is an `on(landed)` observation (PK-3.4). The model kernel's gap (MK 19.1) is closed.
-- The reference result is an expectation (PK-4.2). A conditional expectation (`when k = 0`) is needed for the no-drag variant; v0 expresses it as two presentations or two run configurations. Recorded as a minor item in section 15.
+- The reference result is an expectation (PK-4.2). The no-drag result holds only when `k = 0`, so it belongs to a named case with that override, not to a conditional expectation (section 15).
 
 ### 13.2 Bouncing ball, pendulum, spring-mass
 
@@ -334,16 +362,22 @@ Marker, trace and series plot as in 13.1; energy as a `series_plot` of the deriv
 
 ```text
 presentation QuadraticPlot for QuadraticDemo {
-  view plot : plot(x in [-3, 3], y in [-5, 20])
-  show function_graph(f) in plot
-  show slider(a) ; show equation("y = a x^2", live values)
-  show marker(point (1, f(1))) in plot draggable inverse (x, y) -> a = y / x^2 at x = 1
+  view plot: plot(x: [-3, 3], y: [-5, 20]) {
+    function_graph(f)
+    marker(at: (1, f(1))) {
+      on drag as p { propose a = p.y / 1^2 }      // x fixed at 1
+    }
+  }
+  panel controls {
+    slider(a, range: [-5, 5], step: 0.1)
+    formula(f, live: true)                        // f(x) = a x², D-034
+  }
 }
 ```
 
 - The slider and the draggable point both target `a`, the only intervenable binding (D-023). The point's inverse maps a pointer position to a proposed `a` (PK-5.6).
 - The constraint `-5 <= a <= 5` (policy `reject`) stops the drag at the boundary (PK-10.6).
-- All views show the same committed state (PK-7.5); the equation shows the live value of `a` (PK-6.5). Expressible.
+- All views show the same committed state (PK-7.5); the formula shows the live value of `a` (PK-6.5). Expressible.
 
 ### 13.4 Vector addition
 
@@ -352,24 +386,28 @@ Arrows for `u`, `w`, `sum`; draggable arrow heads with inverse `head -> vector =
 ### 13.5 Narrated projectile lesson
 
 ```text
-timeline for ProjectileLab {
+timeline {
   scene launch {
-    beat { show marker(pos); narrate("A ball is launched at 45 degrees.") }
-    beat { run(rate 1); wait_until(landed) }
-    beat { hold; highlight(range); narrate("It lands here. Why this distance?") }
-    beat { seek(t0); show equation(range_formula); narrate("Watch the horizontal speed.") }
-    beat { run(rate 0.5); show arrow(vel.x); wait_until(landed) }
+    beat { in scene { marker(pos) as ball }; narrate "A ball is launched at 45 degrees." for 4 s }
+    beat { run rate 1 until landed }
+    beat { hold; highlight ball; narrate "It lands here. Why this distance?" for 3 s }
+    beat {
+      seek t0                                      // applies before the formula appears (PK-9.2a)
+      show formula("R", speed^2 * sin(2 * angle) / g, live: true)
+      narrate "Watch the horizontal speed." for 3 s
+    }
+    beat { in scene { arrow((vel.x, 0), from: pos, scale: 1 m/s -> 2 px) }; run rate 0.5 until landed }
   }
   scene try_it {
-    beat { explore(controls: slider(v0.angle), limit 60 s) keep(v0) }
-    beat { run(rate 1); wait_until(landed); narrate("Compare with your prediction.") }
+    beat { explore limit 60 s keep angle { slider(angle, range: [10 deg, 80 deg]) } }
+    beat { request relaunch; run rate 1 until landed; narrate "Compare with your prediction." for 3 s }
   }
 }
 ```
 
 - The timeline waits on `landed`, holds, seeks back and replays (PK-9.2, PK-9.3), with the same trajectory both times (RC-12.2).
 - The `explore ... keep` beat lets the learner set the launch angle, then continues the lesson with it (PK-9.9). Without `keep`, the lesson would return to its own run. In video, the explore beat uses its fallback.
-- Gap: `v0.angle` assumes the model exposes the launch angle as a parameter. The model in MK 19.1 exposes `v0` as a vector; the reference program should define `speed` and `angle` parameters and derive `v0`. This is a reference-program authoring point, not a kernel gap.
+- Gap (resolved): an earlier draft of the model exposed the launch velocity as one vector `v0`, which a slider for the angle cannot target. The model now has `speed` and `angle` parameters (MK 19.1, RP-01), and relaunching is a requestable event (D-027).
 
 ### 13.6 Findings
 
@@ -393,6 +431,8 @@ The model kernel's open item (checks at an event instant) is resolved by `on(E)`
 |---|---|---|
 | D-025 | Learner model actions during a narrated lesson happen only in `explore` beats, on a branch; the lesson returns to its own run unless the beat keeps the learner's choice (Accepted) | 9.3 |
 | D-026 | Accessibility baseline in v1: generated text alternatives, keyboard operation of every control and drag, captions, no color-only encoding (Accepted) | 11 |
+| D-033 | Run-directing actions in a beat apply in written order before presentation time passes (Accepted; raised by syntax study S-8) | 9.1 |
+| D-034 | `formula` representation for expressions, definitions and labeled expressions; never strings (Accepted; raised by syntax study S-10) | 6 |
 
 **Elaborations (in this specification only):**
 
@@ -407,6 +447,8 @@ The model kernel's open item (checks at an event instant) is resolved by `on(E)`
 - Drag default `hold` for running simulations; only commits are logged (PK-10.8, PK-10.9).
 - Undo as seek with the intervention removed (PK-10.10).
 - Medium fallbacks declared, never silently dropped (PK-12.3).
+- From the presentation prototype: mapping persistence across beats (PK-8.2a), reading time and highlight duration (PK-9.2b), exact event instants at the end of `wait_until` (PK-9.3a), waits while holding (PK-9.4a), lesson run end and run versions (PK-9.5a), refusal of learner actions (PK-9.8a), keyboard steps (PK-11.2a), announcements (PK-11.3a), view coordinates of frames (PK-12.1a), static diagnostics (section 16).
+- From the web player: sampled sources (PK-6.3a), plot axes with dimensions (PK-7.3a).
 
 ---
 
@@ -421,5 +463,34 @@ The model kernel's open item (checks at an event instant) is resolved by `on(E)`
 | Construction tools (creating points, lines, objects by interaction; 08 sections 43-46) | Slice with dynamic collections and relations |
 | Conditional expectations (`expect ... when k = 0`) (13.1) | Resolved: expectations belong to named cases (run configurations), `reference-programs/README.md` |
 | Video, image and vector renderers | After the web player (D-018) |
-| Frame description format and renderer interface | Implementation specification |
-| Narration audio (recorded or synthesized), language and localization | Later |
+| Frame description format and renderer interface | Implementation specification; the prototype's format is `crates/prismal-present/src/frame.rs` (PK-12.1a) |
+| Narration audio (recorded or synthesized) | Resolved: supplied by hosts by cue name (PK-9.2d, D-053) |
+| Language and localization of narration | Later |
+
+---
+
+## 16. Static diagnostics
+
+A presentation is checked against its model before it is used (PK-2.3). Each diagnostic names the element concerned.
+
+| Code | Condition | Rule |
+|---|---|---|
+| PK-E01 | Broken reference: an element the model or the presentation does not have | PK-2.3 |
+| PK-E02 | An expression does not check in the model's scope (the kernel's diagnostic is quoted) | MK section 18 |
+| PK-E03 | A control, inverse, intervention or `keep` targets a binding that is not intervenable, or a `request` names an event not declared `on request` | PK-6.4, D-023, D-027 |
+| PK-E04 | An encoding without a declared scale of the source's dimension | PK-5.5 |
+| PK-E05 | A representation whose sources do not suit its kind or its view | PK-6.3 |
+| PK-E06 | A representation kind the implementation does not provide (reported, never dropped) | PK-6.7, PK-12.3 |
+
+## History
+
+- 2026-09-29 written; D-025 and D-026 raised.
+- 2026-09-30 revised with the syntax study (D-033, D-034).
+- 2026-09-30 revised with the presentation prototype: elaborations PK-8.2a, PK-9.2b, PK-9.3a, PK-9.4a, PK-9.5a, PK-9.8a, PK-11.2a, PK-11.3a, PK-12.1a; section 16; the velocity arrow of 13.5 declares its scale (PK-5.5).
+- 2026-09-30 revised with the web player: sampled sources for `trace` and `series_plot` (PK-6.3a); plot axes with dimensions (PK-7.3a).
+- 2026-09-30 animations as named effects: PK-9.2c (D-042).
+- 2026-09-30 groups: PK-6.3b (D-043).
+- 2026-09-30 formula layout for every medium: PK-6.5a (D-046); frame contents completed in PK-12.1a.
+- 2026-09-30 targeting and focus order: PK-10.2a, PK-11.2b (D-047).
+- 2026-09-30 narration sound supplied by hosts: PK-9.2d (D-053).
+- 2026-09-30 round geometry: PK-6.3c `circle`, `ellipse`, `arc` (D-054).

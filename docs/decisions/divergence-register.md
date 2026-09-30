@@ -47,6 +47,35 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-025 | Learner exploration during a narrated lesson | Accepted |
 | D-026 | Accessibility baseline in v1 | Accepted |
 | D-027 | Requestable events | Accepted |
+| D-028 | Syntax direction: candidate A amended with author conveniences from B and C | Accepted |
+| D-029 | Function values that read model bindings | Accepted |
+| D-030 | Literal `0` adopts zero vectors | Accepted |
+| D-031 | Model variants in reference-program cases | Accepted |
+| D-032 | Tuple literals as vectors: typing by expected type | Accepted |
+| D-033 | Order of run-directing actions within a beat | Accepted |
+| D-034 | Formula representation for expressions | Accepted |
+| D-035 | Keywords and spelling of the working syntax | Accepted |
+| D-036 | Comments and identities across text and visual editing | Accepted |
+| D-037 | IR serialization: versioned JSON | Accepted |
+| D-038 | Self-retriggering decided through flows, specialized on the handler's discrete values | Accepted |
+| D-039 | Named mathematical constants kept by name in the IR | Accepted |
+| D-040 | Reserved words and contextual keywords | Accepted |
+| D-041 | `on(E)` follows an occurrence of `E` as well as an emission | Accepted |
+| D-042 | Animations in v0: named effects (`reveal`, `hide ... for`, `camera`) | Accepted |
+| D-043 | `group`: members placed by a shared rigid transform with scale, applied in model space | Accepted |
+| D-044 | Prismal is a general embeddable system; Mava Studio is one consumer among others | Accepted |
+| D-045 | Host interface: an engine with handles, a Rust API and one JSON protocol offered by every binding | Accepted |
+| D-046 | Formulas typeset for every medium: a math box tree and its layout in frames; MathML only in the browser binding | Accepted |
+| D-047 | Input: the host captures and forwards, the engine interprets (targeting, viewports, zoom and pan, focus); raw and semantic inputs | Accepted |
+| D-048 | Declared functions in v0: model-level `fn`, closed, non-recursive, in the IR as `functions` and `{"fn": id}` | Accepted |
+| D-049 | Enumerations in v0: model-level `enum`, nominal by identity, cases typed by context, `match` with one arm per case | Accepted |
+| D-050 | Event payloads in v0: declared where they enter (`on request(p: T)`, `on E(p: T)`), supplied by requests and `emit E(v)` | Accepted |
+| D-051 | Inputs in v0: optional defaults, starting values from the run, piecewise-constant changes from runs and hosts (`set_input`) | Accepted |
+| D-052 | Video export: frames from the SVG renderer rasterized in process, encoding by an external encoder through a pipe, one canvas per clip, captions drawn and as a track | Accepted |
+| D-053 | Narration sound belongs to hosts, not programs: cues named after their beats, voiced by recordings named by cue or by synthesized speech; the timeline keeps the timing | Accepted |
+| D-054 | Round geometry: `circle`, `ellipse` and `arc` representations with radii in model units, carried in frames as exact elliptical arcs | Accepted |
+| D-055 | Contained objects and fixed collections in v0: object types in a model, `parts`, member expressions and aggregates, container flows over members, `for` in views; elaborated to a flat model before checking | Accepted |
+| D-056 | After a transition, a crossing guard near zero takes the sign it is heading to as its reference (RC-7.2a) | Accepted |
 
 ---
 
@@ -358,7 +387,9 @@ The exploration documents are frozen. They are not edited to reflect later decis
   - Text and editor should be two views of the same model. Round-tripping between them is a design goal to evaluate in the syntax study (D-006).
   - Kernel APIs should expose what an editor needs: introspection of bindings, types, units, dependencies, diagnostics, and the representations available for a value.
   - The web player (D-018) should be embeddable in Mava Studio (Tauri renders web content).
-- **History:** 2026-09-29 accepted by the owner: "Mava is going to face a redesign soon, and chances are that that's where most non programmers will be reconciled from. This initiative is one of the prerequisites of the redevelopment of Mava Studio."
+- **History:**
+  - 2026-09-29 accepted by the owner: "Mava is going to face a redesign soon, and chances are that that's where most non programmers will be reconciled from. This initiative is one of the prerequisites of the redevelopment of Mava Studio."
+  - 2026-09-30 the redesigned Mava Studio's architecture is not decided (Tauri + Vue above describes the current tool). Integration is designed for any host, Mava Studio being one (D-044).
 
 ## D-020: Constraints checked, not enforced, in v1
 
@@ -493,3 +524,522 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **History:**
   - 2026-09-29 proposed while writing reference program RP-08.
   - 2026-09-29 accepted by the owner.
+
+## D-028: Syntax direction
+
+- **Status:** Accepted (amended)
+- **Original position:** 09.3 enumerates syntax options and names a hybrid direction (R-44) without choosing; 09.10 and 09.11 write examples in inconsistent notations (F-05, R-69).
+- **Raised by:** the syntax study (`docs/syntax-study/`), carried out under D-006.
+- **Builds on:** D-006 (selection by comparison on all reference programs), R-44 (hybrid style), R-46 (distinctions to preserve), R-47 and D-019 (serializable IR edited by Mava Studio), D-002 (programming-literate authors).
+- **Question:** Which of the three candidate syntaxes, each used to write RP-01 to RP-08, becomes the base direction?
+- **Options considered:**
+  1. **A, flat keyword statements:** every statement starts with a keyword naming its kind; behaviors listed flat; braces. Every R-46 distinction is marked on the line; nearly one-to-one with the IR.
+  2. **B, mathematical sections:** roles by section headings, mathematical operators (`x'`, `:=`, `←`, intervals), inferred types, indentation. Closest to the science and 22 % fewer tokens, but `=` has four meanings chosen by section, inferred types move errors from their cause, and many IR elements have two surface forms.
+  3. **C, nested structure:** A's declarations, with behavior grouped in modes and processes, representations nested in views and interactions in representations. Removes repeated mode conditions, but modes hide a discrete state, add an implicit hold rule, and need a new IR construct or pattern recognition to print back.
+- **Recommended position:** option 1, amended with C's presentation structure (view trees, interactions inside representations, explicit `sequence` in beats), C's optional named processes (which map to MK-14.1), and B's default space for a model (`model Name in Space`). Modes, sections, inferred types and Unicode-first spelling are not adopted in v1; each may return as its own proposal with a program that needs it. Scientific notation for learners is carried by typeset equations (PK-6.5), not by the source.
+- **Reason:** A is strongest on local visibility of the R-46 distinctions and on round-tripping with the IR, the two criteria that are checkable properties rather than taste, and it suits the expected first authors (D-002). C's presentation structure is where C was clearly better and it round-trips one to one. The comparison, the diagnostic variants and the round-trip analysis are in `docs/syntax-study/comparison.md`.
+- **Owner amendment:** A is the base, and forms from B and C that improve the author's experience are adopted where they still lower to the same IR and print canonically:
+  1. **Grouped declaration blocks:** `const { }`, `param { }`, `input { }`, `state { }`, `discrete { }`, `derived { }`, each listing its declarations below the keyword. The one-line form (`param g: Acceleration = 9.81 m/s^2`) stays valid; the formatter prints blocks.
+  2. **Grouped flows:** `flow { der(x) = e; der(v) += e }`, so the laws of motion sit together. The one-line `flow` form stays valid.
+  3. **Interval ranges:** `angle: Angle = 45 deg in (0 deg, 90 deg)` as an alternative to `where`; both lower to one `reject` constraint. Intervals are also the one range notation in presentations and runs (plot axes, sliders, observation windows).
+  4. **Timeline shorthand:** `run rate 1 until landed` for the two actions `run rate 1` and `wait until landed`.
+  5. The recommended additions stand: C's view trees, interactions inside representations and explicit `sequence` in beats; C's optional named processes; B's default space (`model Name in Space`).
+  - Not adopted: types inferred from unit literals (keeps errors at their declaration), C's modes, B's sections, indentation and Unicode-first spelling.
+- **Accepted position:** the recommended position with the owner amendment. The working syntax is in `docs/syntax-study/working-syntax.md`.
+- **Consequences:** the combined candidate is written for all eight programs and becomes the working syntax for the prototype parser, still non-binding until frozen; a keyword and spelling pass follows as a separate entry; the study's specification findings S-1 to S-12 are resolved in the specification and reference programs; comments and identities across visual edits are settled with the IR format.
+- **History:**
+  - 2026-09-29 proposed by the syntax study.
+  - 2026-09-29 accepted with amendment by the owner: grouped declaration blocks (one-line form kept, formatter groups), grouped flows, interval ranges, timeline shorthand; type inference from unit literals declined.
+
+## D-029: Function values that read model bindings
+
+- **Status:** Accepted
+- **Original position:** MK-10.3: functions are pure and cannot read bindings other than their parameters and constants; a function that needs model state takes it as an argument. RP-06 defines `derived f : Real -> Real = fn(x) => a * x^2`, which reads the parameter `a`. MK 19.5 calls this expressible without addressing the conflict.
+- **Raised by:** syntax study, finding S-1 (`docs/syntax-study/comparison.md` section 7).
+- **Builds on:** R-13 (derived values are definitions), R-17 (expressions are pure), D-008 (dependency analysis), MK-10.6 (expressions keep their symbolic form).
+- **Question:** May a function value depend on the model's bindings, and if so, where?
+- **Options considered:**
+  1. **Derived function values.** A derived binding may have a function type, and its body may read model bindings (`derived { f(x: Real): Real = a * x^2 }`). It is re-evaluated at every instant like any derived binding, so `f(2)` always uses the current `a`. Its dependencies are the bindings its body reads, as for any derived binding. MK-10.3 keeps applying to declared functions (`fn`), which stay closed. Stored bindings (parameters, state, constants) of function type may hold only closed functions.
+  2. **Strict MK-10.3.** RP-06 becomes `fn f(a: Real, x: Real): Real = a * x^2`, and the presentation passes `a` in (`function_graph(x => f(a, x))`). The model then has no binding for "the function being studied"; the displayed formula is `f(a, x)`, not `f(x) = a x^2`, and lambdas move into presentations.
+  3. **Drop MK-10.3.** Any function may read bindings. Library functions would carry hidden dependencies on the model that calls them, and a function reused in two models would mean different things in each.
+- **Accepted position:** option 1.
+- **Reason:** "the function f with parameter a" is how the mathematics is taught, and the learner's slider acts on `a` while the graph and formula follow; that needs `f` to be a model element that depends on `a`. Keeping it a derived binding reuses existing rules: no stored value, no capture semantics (it is recomputed every instant), dependencies visible to the analysis of MK section 13. Restricting stored function values to closed functions avoids the question of which instant's `a` a stored function would remember.
+- **Consequences:** MK-10.3 is reworded to apply to declared functions; MK section 6 or 10 gains the rule for derived function values and the restriction on stored ones; a new static diagnostic for a stored binding holding a function that reads bindings; MK 19.5 cites this entry. RP-06 is unchanged in meaning.
+- **History:**
+  - 2026-09-29 proposed from syntax study finding S-1.
+  - 2026-09-29 accepted by the owner. Applied to the model kernel (MK-10.3, MK-10.7, MK-E20, MK 19.5).
+
+## D-030: Literal `0` adopts zero vectors
+
+- **Status:** Accepted
+- **Original position:** MK-3.8 (D-014): the bare literal `0` adopts whatever dimension its context requires. It does not say whether `0` may stand for a vector.
+- **Raised by:** syntax study, finding S-3. Every candidate had to write `(0, 0)` or `(0 m/s, 0 m/s)` for a zero velocity or rate.
+- **Builds on:** D-014, MK-4.4.
+- **Question:** May the literal `0` stand for the zero of a vector type?
+- **Options considered:**
+  1. `0` adopts the zero of any required `Quantity<D>` or `Vector<S, D>`. It never stands for a `Point` or an `Instant`, which have no zero (their counterparts are `origin` and `t0`).
+  2. Keep `0` scalar-only; vectors are written `(0, 0)`.
+- **Accepted position:** option 1.
+- **Reason:** the zero vector is as unambiguous as the zero quantity: it is the additive identity whatever the space and dimension, which the expected type supplies. `if flying then vel else 0` reads as the physics does. Points and instants are excluded because a zero there would silently mean "the origin", which D-014 and D-022 require to be explicit.
+- **Consequences:** MK-3.8 extended; the reference programs and working syntax write `0` for zero vectors.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-3 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-031: Model variants in reference-program cases
+
+- **Status:** Accepted
+- **Original position:** reference-program README: a case lists parameter overrides and configuration settings. RP-03 case `B-stop` changes the event's Zeno policy, which is neither.
+- **Raised by:** syntax study, finding S-4.
+- **Builds on:** D-012, R-53 (no implied inheritance), RC section 16.
+- **Question:** How does a reference program test a model that differs from its main model in structure?
+- **Options considered:**
+  1. **Named model variants in the reference-program format.** A program may list model variants, each with an ID and a stated change of named elements (like its diagnostic variants). A case names the variant it runs. Nothing is added to the language.
+  2. **A language construct for variants** (a model defined as another model with replacements). This is a form of inheritance, which R-53 limits, and no first-slice program needs it outside testing.
+  3. **Make the Zeno policy run configuration.** It is model meaning (what happens at accumulation), and RC-16.1 keeps configuration to settings that change accuracy or execution, not behavior.
+- **Accepted position:** option 1.
+- **Reason:** the need is a testing need, and the diagnostic variants already establish the pattern. A language construct can be proposed later if authors need model variants for teaching (comparing two models side by side).
+- **Consequences:** the reference-program README gains a "Model variants" part; RP-03 declares variant `V1` (Zeno policy `stop`) and case `B-stop` runs it.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-4 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-032: Tuple literals as vectors: typing by expected type
+
+- **Status:** Accepted
+- **Original position:** MK section 4 defines points and vectors but not how a vector is written. The sketches use tuples, typed by a declaration (`param u : Vector<Plane, Length> = (3 m, 0 m)`) or by nothing visible (`pivot + L * (sin(θ), -cos(θ))`).
+- **Raised by:** syntax study, finding S-5.
+- **Builds on:** D-014, D-022 (explicit spaces), MK-4.5.
+- **Question:** How does a tuple literal get its space and dimension?
+- **Options considered:**
+  1. **Expected type.** A tuple literal is a `Tuple` unless its context expects a vector, in which case it is that vector. The expected type comes from a declaration, a parameter of a called function, a flow target, or the other operand of `+`, `-` or a comparison, and propagates through scaling (the tuple in `L * (sin(θ), -cos(θ))` added to a `Point<Plane>` is expected to be `Vector<Plane, 1>`). Combining a `Tuple` with a vector where no expected type made it a vector is a static error.
+  2. **Explicit constructors** (`Plane.vec(1 m, 2 m)`). Unambiguous, but noisy in every formula.
+  3. **The model's default space** (D-028, `model Name in Space`) for every tuple. Fails silently in models with two spaces.
+- **Accepted position:** option 1, with an explicit constructor available where no context supplies the type.
+- **Reason:** the expected type is present wherever a physicist writes a vector (a declaration, a flow, an addition to a point), so the literal can stay mathematical while D-022's rule against implicit cross-space values still holds: the space always comes from a typed operand, never from a default.
+- **Consequences:** MK section 4 gains the rule; new static diagnostic MK-E21 (tuple used as a vector with no expected vector type); MK 19.3 cites it.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-5 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-033: Order of run-directing actions within a beat
+
+- **Status:** Accepted
+- **Original position:** PK-9.1: a beat's actions start together. RP-08 has `seek(t0)` with a live formula in one beat, and `request(relaunch)` with `run(rate 1)` in another; the order in which they take effect is not specified.
+- **Raised by:** syntax study, finding S-8.
+- **Builds on:** D-009, D-027, RC section 12, PK-8.7.
+- **Question:** When a beat starts, in what order do its actions that act on the lesson run take effect, and what do the other actions see?
+- **Options considered:**
+  1. **Written order for run-directing actions.** At a beat's start, its run-directing actions (`seek`, `reset`, `branch`, `intervene`, `request`, `run`, `hold`) take effect in the order written, at the same presentation instant and before any presentation time passes. The beat's other actions (show, narrate, animate, wait) then start together and see the result. `sequence` is needed only to order actions that take time.
+  2. **Explicit sequence required.** Two run-directing actions in one beat without `sequence` are a static error.
+  3. **Unordered.** Left to implementations. Breaks deterministic frames (PK-8.7).
+- **Accepted position:** option 1.
+- **Reason:** authors read a beat top to bottom, and the instantaneous run actions have an obvious intended order ("go back to the start, then play"). Applying them before presentation time passes keeps "actions start together" true for everything the learner sees, and keeps frames deterministic.
+- **Consequences:** PK-9.1 gains the rule; RP-08 needs no `sequence` in `b4` and `b8`.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-8 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-034: Formula representation for expressions
+
+- **Status:** Accepted
+- **Original position:** PK-6.3 lists an `equation` representation typeset from an equation or expression, with symbols linked to bindings (PK-6.5). RP-06 shows a string (`"y = a x^2"`); RP-08 shows `R = v^2 sin(2θ) / g`, where `R`, `v` and `θ` are not bindings.
+- **Raised by:** syntax study, finding S-10.
+- **Builds on:** MK-10.6 (symbolic expressions), MK-6.1 (display symbol metadata), D-026 (text alternatives), D-029.
+- **Question:** How does a presentation show a formula that is not a model equation, and how do its symbols relate to bindings?
+- **Options considered:**
+  1. **A `formula` representation.** `formula(e)` typesets an expression from its symbolic IR; `formula(f)` of a derived binding or derived function value shows its definition (`f(x) = a x²`); `formula("R", e)` adds a left-hand label, which is presentation text, not a binding. Symbols use each binding's display symbol (MK-6.1). `live` substitutes current values. Strings are never parsed as mathematics. `equation` stays the representation of a model equation (MK section 11).
+  2. **Require a model equation** for everything shown. Forces lesson-only formulas into the model.
+  3. **Typeset strings.** Loses the link to bindings, live values and generated text alternatives.
+- **Accepted position:** option 1.
+- **Reason:** every displayed symbol stays linked to a binding, so highlighting, live values and generated text alternatives work (D-026), without making lesson formulas part of the model.
+- **Consequences:** PK-6.3 gains `formula`; PK-6.5 covers both; RP-06 shows `formula(f, live)`; RP-01's `speed` and `angle` declare display symbols `v` and `θ`; RP-08 shows `formula("R", speed^2 * sin(2 * angle) / g, live)`.
+- **History:**
+  - 2026-09-30 proposed from syntax study finding S-10 and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-035: Keywords and spelling of the working syntax
+
+- **Status:** Accepted
+- **Original position:** D-028 fixed the structure of the working syntax and left keywords and spellings to a later pass (`docs/syntax-study/comparison.md` section 8.2).
+- **Raised by:** syntax study, open item "keyword and spelling pass".
+- **Builds on:** D-028, R-46, D-002, D-019.
+- **Question:** Which keywords and spellings does the working syntax use?
+- **Options considered (per item):**
+  1. Derived bindings: `derived` (kept) or `let` (rejected: in most programming languages `let` computes once, while a derived binding is re-evaluated at every instant) or `def`.
+  2. Discrete state: `discrete` (kept) or `mode` (rejected: "mode" is the concept, not the binding, MK-14.4).
+  3. Crossing triggers: `falling(g)`, `rising(g)`, `crossing(g)` (kept: the kernel terms, short, and they state the direction) or phrases such as `g falls through 0` (rejected: longer, and a second spelling per trigger).
+  4. Microsteps in observations: `on E microstep n` (kept: one general form) or a named form such as `before handlers` (rejected: covers one case only).
+  5. Equality: `==` for equations, constraints and expectations; `=` only gives a value (kept, D-028).
+  6. `in`: a range after a declaration (`in [0, 1)`) and a target view in a timeline (`in scene { }`) (kept: the two contexts never overlap).
+  7. Operators: ASCII only (`^`, `-`, `<=`, `->`). Unicode letters are allowed in identifiers (`θ`, `ω`, `π`). The formatter never introduces Unicode.
+  8. Comments: `//` line comments; `///` documentation comments attached to the next element, carried into the IR (D-036).
+  9. Constraint policy: `policy reject | report | stop`; equation role: `checked within tol`; parameter range: `where cond` or `in I`.
+- **Accepted position:** the kept choices above. The full reserved-word list and lexical rules are in `docs/syntax-study/working-syntax.md` section 1.5.
+- **Reason:** each choice keeps one spelling per construct (canonical printing, D-019), uses the kernel's own term where one exists, and avoids words whose common programming meaning contradicts the semantics.
+- **History:**
+  - 2026-09-30 proposed by the keyword pass and accepted under the owner's standing delegation of 2026-09-30.
+  - 2026-09-30 the reserved-word list split into reserved words and contextual keywords (D-040).
+
+## D-036: Comments and identities across text and visual editing
+
+- **Status:** Accepted
+- **Original position:** R-47 and D-019: the IR is complete and serializable; declared elements have identities stable across edits (MK-7.6). How identities and comments survive when the same model is edited as text and in Mava Studio was left open (`docs/syntax-study/comparison.md` section 8.3).
+- **Raised by:** syntax study, round-trip analysis.
+- **Builds on:** R-47, D-019, MK-6.2, MK-7.6, PK-2.3.
+- **Question:** Where do element identities and author comments live, so that a text edit and a visual edit of one model both preserve them?
+- **Options considered:**
+  1. **Identities inline in the text** (`param g @id(4f2a) ...`). Always recoverable, but every line carries noise that authors must not touch.
+  2. **A sidecar identity file** maintained by the compiler, mapping declaration paths to identities. Survives plain text edits except renames, and adds a second file to every model.
+  3. **Identities in the IR, matched by declaration path.** The compiler matches each declaration to the previous IR by its path (`Projectile.param.speed`) and keeps its identity. A rename made through a tool (language server, Mava Studio) is an identity-preserving rename operation. A rename made by plain text editing is a removal and an addition; references that break are reported (PK-2.3), never silently rebound.
+- **Accepted position:** option 3 for identities. For comments: `///` documentation comments and a comment block directly before a declaration are **author notes** of that element in the IR, and print back before it; other comments (inside expressions, at end of line) are kept by the text formatter but may be lost by a visual edit of that element, which the editor reports before saving.
+- **Reason:** keeps source text free of machine data (D-002 authors), keeps the IR authoritative (R-47), and turns the failure case (a plain-text rename) into a reported breakage instead of a silent change of meaning. Notes attached to elements are what a visual editor can show and keep.
+- **Consequences:** the IR format (`docs/spec/04-ir.md`) gives every declared element an identity and a `notes` field; the compiler keeps the previous IR to match paths.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-037: IR serialization
+
+- **Status:** Accepted
+- **Original position:** D-019 and R-47 require a complete, serializable IR; the format was left to a separate specification.
+- **Raised by:** IR format specification (`docs/spec/04-ir.md`), before the Rust prototype.
+- **Builds on:** D-019, D-036, R-47.
+- **Question:** How is the IR serialized?
+- **Options considered:**
+  1. **JSON**, versioned, with opaque string identities and tagged expression trees. Readable in every language, native in the browser (D-018, the web player and Mava Studio), diffable in version control, supported by serde in Rust.
+  2. **A binary format** (CBOR, Protocol Buffers). Smaller and faster, but not readable or diffable, and needs a schema toolchain in every consumer.
+  3. **The text syntax itself as the stored form.** Rejected by D-036: text carries no identities or notes reliably, and a visual editor would need the parser.
+- **Accepted position:** option 1. A binary encoding of the same structure MAY be added later for large models; JSON stays the reference form.
+- **Reason:** the IR's first consumers are the web player and Mava Studio, both in the browser, and authors reviewing changes in version control. Size is not a first-slice concern.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-038: Self-retriggering is decided through flows, specialized on the handler's discrete values
+
+- **Status:** Accepted
+- **Original position:** MK-15.11: an event is self-retriggering if its handler writes a binding its trigger depends on "directly or through derived bindings". MK 19.2 and RP-03 say the bouncing ball's `bounce` is self-retriggering because its guard `y` depends on `v` "through the flow".
+- **Raised by:** the Rust kernel prototype. The two readings disagree on the reference programs: following derived bindings only, `bounce` is not self-retriggering and RP-03.D1 (expects MK-E16) fails; following flows as well, RP-01's `landed` (which writes `vel` and `flying`, both read by the flow of `pos`) is self-retriggering and the valid RP-01 model is rejected.
+- **Builds on:** D-004 (declared Zeno policy), MK-13 (dependency graph), MK-14.12 (flow conditions depend only on discrete state).
+- **Question:** When must a crossing event declare a Zeno policy?
+- **Options considered:**
+  1. **Derived bindings only** (the text of MK-15.11). Misses the bouncing ball, the canonical Zeno case.
+  2. **Derived bindings and flows.** Catches the bouncing ball, but also flags every event that stops the motion it detects (a landing that switches the flight mode off), which cannot retrigger.
+  3. **Derived bindings and flows, with flows specialized on the handler's constant discrete writes.** Where the handler sets discrete state to a constant (`set flying = false`), conditionals in flows that test that state are resolved before following the flow. The projectile's `der(pos)` becomes `0` after `landed`, so `pos.y` no longer depends on anything the handler writes; the bouncing ball's `der(y) = v` does not depend on discrete state, so `bounce` is still self-retriggering.
+- **Accepted position:** option 3. The analysis stays static and conservative: when a condition cannot be resolved, both branches are followed.
+- **Reason:** it gives the intended answer on every reference program and matches the physics: an event is self-retriggering only if the state after its handler can still carry the guard back across zero. Because flow conditions may read only discrete state, parameters and constants (MK-14.12), the specialization is always well defined.
+- **Consequences:** MK-15.11 is reworded; the prototype implements it (`self_retriggering` in `crates/prismal-kernel/src/check.rs`); RP-01 and RP-03 are unchanged.
+- **History:**
+  - 2026-09-30 found by the prototype, proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-039: Named mathematical constants in the IR
+
+- **Status:** Accepted
+- **Original position:** the working syntax predefines `π` and `pi` (section 1.5) and writes `2π` as a product (RP-05); the IR (`docs/spec/04-ir.md` section 6) has no form for a named constant, so lowering would store π as a decimal literal.
+- **Raised by:** the text parser, lowering RP-05's `T: Time = 2π * sqrt(m / k)`.
+- **Builds on:** MK-10.6 (expressions keep their symbolic structure), D-034 (the formula representation typesets from the IR), IR-1.1.
+- **Question:** How does the IR store a named mathematical constant?
+- **Options considered:**
+  1. **As its value** (`{"num": 3.141592653589793}`). No IR change, but the formula for RP-05's period shows `6.28319 √(m/k)` and cannot be printed back as `2π`.
+  2. **As a named constant** `{"const": "pi"}`: dimensionless, with MK-3.8 applying as to a bare literal. One more expression form; typesetting and printing keep π.
+  3. **As a predefined binding** of every model. Mixes a mathematical constant with model state: it would enter dependency analysis and could be a target of interventions.
+- **Accepted position:** option 2, with `pi` the only constant in v0. Others are added when a program needs them; `e` is not predefined because it is a common binding name (the restitution in RP-03).
+- **Reason:** keeps the symbolic structure that MK-10.6 and D-034 require, at the cost of one small expression form. Evaluation is unchanged: `2 * π` in binary64 equals the folded value, so the measurements of RP-05 are identical.
+- **Consequences:** 04-ir section 6 gains the form, MK-10.8 states the rule, the kernel checks it as a dimensionless literal. `inf` is not a constant: it is only an interval bound, and an unbounded end lowers to a one-sided comparison, so the IR never holds an infinity (which JSON cannot represent).
+- **History:**
+  - 2026-09-30 found by the text parser, proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-040: Reserved words and contextual keywords
+
+- **Status:** Accepted
+- **Original position:** D-035 and working syntax section 1.5 reserve every keyword of the language, including those of presentations, timelines and runs (`drag`, `scene`, `rate`, `until`, `limit`, `release`, ...).
+- **Raised by:** the text parser. The reference programs use reserved words as names: RP-01 declares `process drag`, RP-07 and RP-08 name a view `scene`, RP-07 names an observation `state`. Read literally, D-035 rejects all three.
+- **Builds on:** D-035, D-028, D-002 (authors are scientists and educators, whose ordinary names include drag, scene, rate, limit and release).
+- **Question:** Which keywords are reserved?
+- **Options considered:**
+  1. **Every keyword reserved**, and the elements of the programs renamed (`air_drag`, `stage`). One simple rule, but ordinary scientific words become unusable as names, and the list grows with every presentation feature, breaking existing models.
+  2. **Reserve the words of the model language, expressions and top-level items; recognize presentation, timeline and run words only where such a word is expected** (contextual keywords, as in C# and Kotlin). No ambiguity arises: those words never occur where a model expression or the name of a model element can start, and the places that expect them (the actions of a beat, the schedule of an observation, the items of a run) never hold a name.
+  3. **Any word may be a name wherever the grammar expects a name.** Loses the guarantee that a model reads unambiguously to a person (`param { in: Real = 1 }`).
+- **Accepted position:** option 2. Reserved: `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request`. Every other keyword is contextual (working syntax section 1.5). The observation `state` of RP-07 is renamed `values`, because `state` begins a model block.
+- **Reason:** keeps the model language unambiguous for readers and the parser, and leaves natural scientific names to authors. The contextual list can grow with the presentation kernel without breaking existing models.
+- **Consequences:** working syntax section 1.5 lists the two groups; RP-07 changed (recorded in its history); the parser implements the split (`crates/prismal-syntax/src/parser.rs`).
+- **History:**
+  - 2026-09-30 found by the text parser, proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-041: `on(E)` follows an occurrence of `E` as well as an emission
+
+- **Status:** Accepted
+- **Original position:** MK-15.3 defines the trigger `on(E)` as due when "event `E` occurred at the previous microstep". MK-15.10 says `emit(E)` makes `on(E)` triggers due at the next microstep, and RC section 8.1 step 1 collects "`on(E)` for each `E` emitted at `n - 1`". The prototype implemented the runtime contract: `on(E)` followed only emissions.
+- **Raised by:** the language guide (`docs/guide/05-events-and-modes.md`). The tank's `event alarm on full` never happened: `full` occurred through its own trigger but was not emitted. The texts contradict each other for any event that occurs without being emitted.
+- **Builds on:** D-004 (cascades at one instant through superdense time), D-024 (ordering only by cascades), MK-15.10.
+- **Question:** When is `on(E)` due?
+- **Options considered:**
+  1. **Only after `emit(E)`** (the runtime contract). Chaining one event after another requires every handler to emit its own name (`event full ... { set pumping = false; emit full }`), which is redundant and easy to forget; MK-15.3 would be reworded.
+  2. **After `E` occurs or is emitted.** `on(E)` reads as written: after `E`. `emit(E)` remains the way to signal `E` from another handler without `E`'s own trigger. One occurrence and one emission at the same microstep make `on(E)` due once.
+  3. **`emit(E)` makes `E` itself occur** (with its handler), and `on(E)` follows occurrences only. Changes the meaning of `emit` established by MK-15.10 and the prototype's cascade tests, and runs `E`'s handler when another event only meant to signal it.
+- **Accepted position:** option 2.
+- **Reason:** it is the reading of MK-15.3 an author expects, it keeps MK-15.10, and it makes D-024's rule (order is expressed by cascades) usable without boilerplate.
+- **Consequences:** MK-15.10 and RC section 8.1 step 1 state both sources; the runtime collects `on(E)` for events handled or emitted at the previous microstep (`crates/prismal-runtime/src/run.rs`, test `on_follows_occurrence`). An event triggered on itself (`event a on a`) cascades until the cascade limit, as an endless chain of emissions already did.
+- **History:**
+  - 2026-09-30 found by the language guide, proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-042: Animations in v0 are named effects
+
+- **Status:** Accepted
+- **Original position:** PK-8.4 defines an animation as a change of a presentation property over presentation time, from a value to a value with a duration and easing; PK-9.2 lists `reveal(style)`, `animate`, `camera`, `bind` and `release`. The working syntax had no spelling for any of them.
+- **Raised by:** the remaining timeline actions of the prototype (`docs/prototype.md`, "Not implemented").
+- **Builds on:** D-009, D-018 (video export), PK-8.5 (animations never drive bound properties), PK-8.7 (deterministic frames).
+- **Question:** How are animations written in v0?
+- **Options considered:**
+  1. **A general property animation**, `animate ball.opacity from 0 to 1 for 1 s ease in_out`, as in Motion Canvas and the Web Animations model. Complete, but it needs a presentation property model (which properties each representation has, their types and defaults) that the specification does not have yet, and most lessons use a few effects.
+  2. **Named effects:** `reveal fade|draw [for d] [in view] { reps }`, `hide name [for d]`, `camera view [to P] [zoom z] [for d]`, with one easing. They cover the typical uses PK-8.4 lists (reveal by fade or drawing, fading out, camera moves), need no property model, and read as the lesson's intent.
+  3. **Defer all animation.** Lessons stay static apart from the simulation; video output (D-018) loses the effects authors expect from Manim-like tools.
+- **Accepted position:** option 2. `animate`, `bind` and `release` remain unspecified until a program needs them; they can be added as option 1 later without changing the named effects, which become shorthands.
+- **Reason:** delivers the effects lessons need now, keeps frames deterministic and the syntax readable, and leaves the general mechanism open.
+- **Consequences:** PK-9.2c; working syntax section 1.2; the IR actions `reveal`, `hide` with a duration and `camera` (04-ir section 7); frame descriptions carry `opacity`, `drawn` and a view `camera`; the web player renders them.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-043: A group places its members by a shared transform in model space
+
+- **Status:** Accepted
+- **Original position:** PK-6.3 lists `group`, "a set of representations with a shared transform", without saying what the transform is, what a group may hold, or how a group is written. The prototype did not implement it.
+- **Raised by:** the next steps after D-042 (`docs/PROJECT-STATE.md`); rigid bodies (a wheel, a pendulum drawn as a body, a car) need a shape drawn once in its own coordinates and placed by the model.
+- **Builds on:** D-021 (angles are numbers), D-022 (points and vectors of a space), PK-6.1 (representations are not pixels), PK-11.1 (a group's text alternative summarizes its members), D-042 (timeline effects).
+- **Question:** What is a group's transform, where is it applied, and what may a group hold?
+- **Options considered:**
+  1. **A transform in view coordinates**, as SVG's `transform` on `<g>`: members are projected as usual, then moved on screen. Simple for renderers, but the members' text alternatives and any value a renderer or assistive technology reads would be in the group's local coordinates, not in the space the view shows.
+  2. **A rigid transform with scale, applied in model space:** `group(at: P, rotate: θ, scale: k) { members }`. A member's points `p` become `P + k R(θ) (p - origin)` and its vectors `v` become `k R(θ) v` before projection, so a member is an ordinary representation of points of the view's space. Nested groups compose. Text alternatives and frame values are in the view's space.
+  3. **A general affine or projective transform** (shear, reflection, a matrix). More than any first-slice program needs, and a matrix is harder to read than a placement, an angle and a scale.
+- **Accepted position:** option 2. `at` is a point of the view's space (default: the group's `origin` stays where it is), `rotate` an angle (default 0, counterclockwise in the model), `scale` a positive number (default 1). A group belongs in a spatial view and holds markers, arrows, segments, polylines, polygons and groups; a sampled representation (`trace`) is drawn from a model point outside the group, since it samples over time while the transform is taken at the instant shown. Members may be named and targeted by timeline actions; `reveal draw` of a group draws its paths and fades in its markers. A drag on a member (an inverse through the transform) is specified by composing the member's inverse with the inverse transform, but not implemented by the prototype (PK-E06).
+- **Reason:** keeps members in the space the view shows, so text alternatives, frame values and tests agree with the model; reads as the placement of a body; covers rigid bodies with no new representation kinds.
+- **Consequences:** PK-6.3b; working syntax section 1.2; the IR `members` of a representation (04-ir section 7.1); the frame shape `group` with placed members; the web player draws groups; guide chapter 7 (Groups).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-044: Prismal is a general embeddable system
+
+- **Status:** Accepted
+- **Original position:** D-019 names Mava Studio as the editor for non-programmer authors and asks that the web player be embeddable in it. Nothing said whether Prismal's integration surface is designed for Mava Studio or for any system.
+- **Raised by:** the next step after D-043, "Mava Studio groundwork", which could not be designed without knowing Mava Studio's architecture.
+- **Builds on:** D-018, D-019, D-036, D-037.
+- **Question:** Who is Prismal's integration surface designed for?
+- **Accepted position (owner):** Mava Studio is a consumer of Prismal, and its new architecture is not decided (it will be a Rust stack; authors will work through a graphical interface or code, and output will render inside the studio, probably with the Prismal runtime embedded). Prismal's design is general, so that any system can plug it in and play: other organizations may integrate it into their own systems. No Prismal interface assumes a particular host.
+- **Reason:** the owner's direction; Mava Studio's design is open, and other integrators are expected.
+- **Consequences:** the host interface (`docs/spec/05-host-interface.md`, D-045); the web player becomes one host of that interface; D-019's consequences hold for every host, not only Mava Studio.
+- **History:**
+  - 2026-09-30 stated by the owner: "The design for prismal should simply be general for systems to plug and play since there could be other societies that would need to integrate into there systems not necessarily mava studio."
+
+## D-045: The host interface
+
+- **Status:** Accepted
+- **Original position:** the only integration surface was the web player's `Player` (`prismal-web`): one program from source text, one open presentation, JSON answers shaped for the reference renderer, and each loaded program kept in memory for the life of the page.
+- **Raised by:** D-044.
+- **Builds on:** D-036 (identities and `reconcile`), D-037 (JSON IR), PK-12.1 (frame descriptions), PK-8.7 (deterministic frames).
+- **Question:** What interface do hosts use, and through which bindings?
+- **Options considered:**
+  1. **A Rust library only.** Natural for Rust hosts; every other host (a browser, another language) would need its own wrapper, each exposing something slightly different.
+  2. **An editor protocol of fine-grained edit operations** (insert, move, change a field). Commits Prismal to one style of editor before any editor is designed; a host that edits text or rewrites the IR gains nothing from it.
+  3. **An engine with handles, offered as a Rust API and as one JSON protocol through every binding.** Documents are loaded from text or IR and updated by whole replacement, with identities kept by `reconcile` and an identity-keeping `rename`; presentations open as instances driven by the host's clock and the learner's inputs; answers are layouts, frame descriptions and observations. Bindings (in-process Rust, WebAssembly, later a C ABI or a process on standard input and output) carry the same protocol. Follows the Language Server Protocol and FMI.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30. Fine-grained edit operations (option 2) can be added to the protocol later if a host needs them; whole replacement with `reconcile` serves both text and visual editing now.
+- **Reason:** any host can embed Prismal without Prismal knowing it; one protocol keeps bindings identical; whole-document updates work for editors of any design.
+- **Consequences:** `docs/spec/05-host-interface.md` (HI-1 to HI-6, HI-E01 to HI-E03); the `prismal-host` crate; `prismal-web` reduced to the WebAssembly binding and the reference renderer; sessions and playbacks own their compiled model, so documents can be closed and freed.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-046: Formulas are typeset for every medium
+
+- **Status:** Accepted
+- **Original position:** D-034 and PK-6.5 require formulas to be typeset from the IR. The prototype typeset them only as MathML, which browsers draw and no other medium does, and the host interface (HI-5.2) put that MathML in every frame. PK-12.2 names still image, video and vector documents as media alongside the web player.
+- **Raised by:** the owner's review of whether rendering is swappable to other targets, and the owner's requirement that formulas remain visible outside the browser.
+- **Builds on:** D-018, D-034, PK-6.5, PK-12.1, PK-12.2, D-045.
+- **Question:** How does a medium without a math engine draw a formula?
+- **Options considered:**
+  1. **Leave typesetting to each renderer**, from the symbolic IR in the frame. Every renderer re-implements math layout, and the same formula looks different in each medium.
+  2. **A TeX string** in the frame. Readable by math engines, but most media (images, video, native interfaces) have none, so it moves the problem rather than solving it.
+  3. **A math box tree and its layout in the core.** The presentation kernel builds a medium-independent box tree from the IR and places it as text runs, rules and stroked paths in em units, with approximate serif metrics and each run's width, so any renderer that draws text and lines draws the formula. A medium with a math engine may typeset the box tree instead; the browser binding writes it as MathML, so both come from one structure.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30. The layout is in `frame::Shape::Formula` and `Equation` as `layout`; MathML leaves the host interface for the WebAssembly binding. Frame descriptions also gain what the host used to add after the fact (labels, drag parts, control symbols and display units), so that they are complete for every renderer.
+- **Reason:** one typesetting for all media keeps formulas consistent and visible everywhere, without a math engine in each renderer; the frame description stays free of any one medium's format.
+- **Consequences:** PK-6.5a, PK-12.1a, HI-5.2; `prismal-present/src/math.rs`; `prismal-web/src/mathml.rs` renders the box tree; `prismal-present/tests/math.rs` checks layouts and writes them as SVG for inspection. Layout metrics are approximate: a renderer with a different font fits each run to its width.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-047: The host captures input; the engine interprets it
+
+- **Status:** Accepted
+- **Original position:** HI-4.3 offered only semantic inputs: `pointer_down(rep, part)`, `pointer_move(x, y)` in view coordinates, `key(rep, direction)`. The host had to find what a pointer was over, convert screen positions to view coordinates, and keep keyboard focus. The web player did so with the browser's DOM, and framed its views (extent, growth to fit, camera, zoom and pan) in its own code, which the SVG renderer then had to copy.
+- **Raised by:** the SVG renderer (a second renderer duplicated the framing logic), and the owner's question of how hosts other than browsers handle input, with the concern that Prismal must not take over the capture of events.
+- **Builds on:** D-025, D-026, D-042, D-044, D-045, PK-10.2, PK-11.2, PK-12.2.
+- **Question:** Who targets input, frames views and keeps focus: each host, or the engine?
+- **Options considered:**
+  1. **Each host** (the position before). Every host re-implements hit testing, viewport mapping, zoom and pan and focus order from the frame; the same lesson then behaves differently in each host, and PK-12.2 (a renderer defines no representation semantics) is broken in practice, since what can be grabbed and how is a presentation rule.
+  2. **Prismal captures input** (listeners registered in the host's event loop). Couples Prismal to every windowing system and toolkit, and takes control a host must keep (HI-1.4).
+  3. **The host captures and forwards; the engine interprets.** The host catches pointer, wheel and key events in its own layer and forwards them in its own terms (pixels of a view as it drew it, the drawn size, the pointer kind, W3C key names). The engine targets them (PK-10.2a), runs drags, pans and zooms, keeps focus (PK-11.2b), and answers what it did and whether it used the input, so that the host can use what it did not. Frames carry each view's viewport, which every renderer draws with. Semantic inputs stay for hosts that target input themselves (native widgets, accessibility trees).
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30, after the owner confirmed that the host keeps the capture of events. Protocol operations `pointer`, `wheel`, `key_down`, `focus` and `view_reset` (HI-4.5); viewports in frames (HI-5.2a). Panels (controls, buttons, formulas outside a view's coordinates) are laid out by the host, so pointers on them are the host's widgets' input, forwarded semantically; keyboard focus reaches them through the focus order.
+- **Reason:** one interpretation of input for every host keeps behavior identical across media and moves the hard part (targeting, viewport mapping, focus) out of every integrator's hands, while the host keeps its event loop and its devices.
+- **Consequences:** HI-1.4, HI-4.5, HI-5.2a, HI-6.5; PK-10.2a, PK-11.2b; `prismal-host/src/input.rs` and the raw operations of `Instance`; the web player forwards raw events and draws with the frame's viewport (its own framing, hit testing and zoom and pan code removed); the SVG renderer draws with the frame's viewport. A session's framing grows to fit each frame without memory of earlier frames, so the same instant gives the same frame (HI-4.2).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30, after the owner's direction: "my worry was us doing the actual event catching".
+
+## D-048: Declared functions in v0
+
+- **Status:** Accepted
+- **Original position:** MK-10.3 specifies declared functions (typed parameters, a result, a closed body) and the working syntax lists `fn f(x: A): B = e`, but the v0 IR had no form for them and the parser rejected `fn` (SX-E06). Authors could only write derived function values (MK-10.7), which read model bindings and cannot be shared between formulas without repeating them.
+- **Raised by:** the language completeness step after D-047 (owner's direction to complete the language items listed as not implemented).
+- **Builds on:** MK-10.3, MK-10.7, D-029, D-034, D-036, D-037.
+- **Question:** Where are functions declared, what may their bodies read, and how are they represented and called?
+- **Options considered:**
+  1. **Lower `fn` to a constant binding holding a lambda.** No new IR form, but a function would appear as a binding (in controls, observations and intervention checks), and constants of function type already carry the closedness rule MK-E20 with a different meaning.
+  2. **Model-level declarations with their own IR list and a function-value expression.** `functions: [{id, name, params, result, body}]`, `{"fn": id}` as a value, applied with the existing `apply`. The body reads parameters as lambda parameters; the checker enforces closedness (MK-E18) and forbids recursion (MK-E23).
+  3. **Document-level function libraries shared across models.** Useful later (R-55, modules), but needs imports and packaging, which are deferred.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30. A function body may read its parameters, constants and other declared functions; reading any other binding, the time or a derivative is MK-E18, so a function's meaning never depends on when it is called. Recursion, direct or mutual, is MK-E23: with no conditionals over unbounded data in v0, recursion would only loop. Functions share the namespace of bindings (SX-E09). `formula(f)` shows the definition. Constants are available wherever constant expressions are evaluated (case parameters, expectations), so a function that reads `g` can be called there.
+- **Reason:** keeps functions distinct from bindings in every tool that lists bindings, uses the application form the kernel already has, and keeps each function a self-contained piece of mathematics that can be typeset and reused.
+- **Consequences:** MK-10.3a, MK-E23; 04-ir sections 5.5 and 6; working syntax `fn`; `CModel::functions`, `CModel::constant_values`; formatter, identity matching and rename for functions; guide chapter 2 (Functions).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-049: Enumerations in v0
+
+- **Status:** Accepted
+- **Original position:** MK-2.2 makes enumerations nominal and MK-10.2 requires `match` to cover every case, but the v0 IR had an anonymous enumeration type (`{"kind": "enum", "cases": [...]}`), no declaration, no `match`, and the working syntax no spelling. Modes with more than two values had to be coded as numbers or several Booleans.
+- **Raised by:** the language completeness step after D-047.
+- **Builds on:** MK-2.2, MK-10.2, D-036, D-037, D-038.
+- **Question:** How are enumerations declared, how is a case written, and how is a value chosen by case?
+- **Options considered:**
+  1. **Structural enumeration types** (the type is its list of cases). Simple, but two unrelated enumerations with the same cases would be interchangeable, contrary to MK-2.2.
+  2. **Declared, nominal enumerations whose type carries the declaration's identity and its cases.** `enum Phase { a, b }` in a model; the type is `{"kind": "enum", "enum": id, "cases": [...]}`, so equality is by identity while every value can still be printed by name without a lookup. A case is written by name and typed by its context; `Phase.a` qualifies it. `match e { a => x, b => y }` has exactly one arm per case.
+  3. **Enumerations with payloads** (tagged unions). Specified in MK section 2, but no reference program needs them yet and they need pattern binding in `match`.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30; payloads deferred. Cases have no order and no arithmetic (`==`, `!=` only). Cases share the namespace of bindings and functions. `enum` and `match` become reserved words; `=>` is added to the operators. The self-retriggering analysis of D-038 decides `phase == c` and `phase != c` on the cases a handler sets.
+- **Reason:** gives modes names a learner can read in text alternatives and formulas (`phase = sinking`, one typeset row per case), and makes forgetting a case a static error.
+- **Consequences:** MK-2.2a, MK-10.3a (match), MK-E17 and MK-E22 for enumerations; 04-ir sections 3, 5.5 and 6; working syntax `enum`, `match`, `=>`; `CExpr::Match`; expectations type an expected case from their subject; formatter, identity matching and rename for enumerations; guide chapter 5 (Modes with more than two values).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-050: Event payloads in v0
+
+- **Status:** Accepted
+- **Original position:** MK-15.1 gives events an optional typed payload, readable by `on(E)` triggers and supplied by requests and `emit(E, payload)`; the IR listed a payload type and the working syntax `on request (payload: T)`, but nothing said how a handler names the payload, where an event that is not requested gets one, and the parser rejected payloads (SX-E06).
+- **Raised by:** the language completeness step after D-049.
+- **Builds on:** MK-15.1, MK-15.3, MK-15.10, D-027, D-041.
+- **Question:** Where is a payload declared, where does it come from, and how is it read?
+- **Options considered:**
+  1. **A payload per event, readable anywhere as `E.payload`.** Simple to write, but a crossing event has no value to carry, and reading `E.payload` elsewhere has no meaning between occurrences.
+  2. **A payload declared where it enters the event, with a name.** `on request(j: Momentum)` receives it from the request; `on E(j: Momentum)` receives the payload `E` occurred or was emitted with. The name is read in the event's condition and handler only. `emit E(v)` supplies the payload of `E`'s followers. An event with a payload and no such source is MK-E24.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30. Requests obey enabling conditions (they did not before, contrary to MK-15.5), supply the payload the event declares, and are rejected otherwise. The event log records each occurrence's payload. Hosts request with a payload through the runtime's `RequestWith` action and timelines with `request E(v)`; buttons request without one.
+- **Reason:** every payload has a source a reader can find in the text, types are checked where the value enters, and nothing is readable where it has no value.
+- **Consequences:** MK-15.1a, MK-E24, RC-11.6b; 04-ir payload forms; `CExpr::Payload`, `Ctx::payloads`; runtime event iteration carries payloads between microsteps; guide chapter 5.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-051: Inputs in v0
+
+- **Status:** Accepted
+- **Original position:** MK-6 and RC-11.6 define `input` bindings, supplied by the environment, piecewise constant, `unavailable` until supplied, with `on input(i)` triggers. The prototype refused any model with an input, and MK-6.7 forbids an input an initial definition, so a model with an input could not start until something outside supplied every input at the start.
+- **Raised by:** the language completeness step after D-049; the host interface (D-044, D-045), whose hosts are the environment of an embedded model.
+- **Builds on:** MK-6.7, MK-17.3, RC-11.6, RC-11.7, D-045.
+- **Question:** How does an input get its first value, how do runs and hosts change it, and what is due when it changes?
+- **Options considered:**
+  1. **As specified: unavailable until supplied.** Every expression reading an input would be `unavailable` at the start, so derived bindings and flows could not be evaluated and the run could not begin without an explicit starting value for every input.
+  2. **An optional default in the model, a starting value from the run configuration, and logged changes.** `input { thrust: Force = 0 N }`; a run's `input { thrust = 4 N; thrust = 0 N at t0 + 1 s }`; a host's `set_input`. A value supplied at a later instant is a change and makes `on input(i)` due; the starting value is not a change.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30; a departure from MK-6.7, recorded as MK-6.7a. Without a default or a starting value the run does not start, with a message naming the input. Values are evaluated against the input's type and read only constants; a wrong type or a binding that is not an input is rejected and logged. Inputs stay outside interventions: no control, handler or intervention sets them.
+- **Reason:** a model can be written, checked and run standalone with sensible defaults, and the same model embedded in a host receives the host's values; each change is logged, so runs replay without the host (RC-11.7).
+- **Consequences:** MK-6.7a, RC-11.6a; the runtime's `Input` action; 04-ir run `inputs`; HI-4.3a `set_input`; guide chapter 5.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-052: Video export
+
+- **Status:** Accepted
+- **Original position:** PK-12.2 lists video among the media a renderer produces, and PK-8.7 makes frames deterministic so that video export is possible; how pixels and video frames are produced is left to renderers (PK section 1). The SVG renderer (`prismal-svg`) wrote image sequences of SVG documents and left encoding to external tools.
+- **Raised by:** the media step after the second renderer (PROJECT-STATE next steps).
+- **Builds on:** PK-8.7, PK-9.10, PK-11.3, PK-12.2, PK-12.3, D-015, D-018, D-046.
+- **Question:** How does a presentation become a video file, and what does Prismal own in that path?
+- **Options considered:**
+  1. **Encode in process with a codec written in Rust.** One binary with no outside program, but a pure Rust encoder of a widely played codec (H.264) does not exist; AV1 encoders are slow and large, and codec and container work is outside the language's specification.
+  2. **Rasterize in process, encode with an external encoder fed through a pipe.** Frames are drawn by the SVG renderer and rasterized with resvg (pure Rust); raw frames go to ffmpeg's standard input. Without an encoder, the frames are written as PNG images with the captions and the encoder command.
+  3. **Keep writing SVG sequences only.** Every user rasterizes and encodes; results depend on the tools chosen and on their fonts, and captions are lost.
+- **Accepted position:** option 2, in a crate `prismal-media` with a command `prismal-media PROGRAM PRESENTATION OUT`, under the owner's standing delegation of 2026-09-30. The output's extension decides the medium: `mp4`, `mov`, `mkv`, `webm` or `gif` for a video, `png` for a still, anything else for a directory of frames. Settings:
+  - A lesson is opened in the `video` medium: explore beats play their fallbacks (PK-9.10) and elements without one are reported on standard error (PK-12.3). A session is recorded from the start of its run to its end or to `--until`.
+  - Frame `k` is the instant `k / fps`, up to and including the last instant not after the end, so the final state is shown.
+  - Frames of one clip may differ in size (a caption or a panel appears); every frame is drawn from its top left corner on one canvas, the largest frame rounded up to even pixels, filled with the theme's background, so views stay in place.
+  - Captions (PK-11.3) are drawn into the frames by default, or carried only as a subtitle track (`--captions track`), or both; they are always written beside the video as WebVTT.
+  - The SVG renderer's header line is off: it names the instant, which a video shows by playing.
+  - Generic font families resolve to the first installed of a list of common fonts; `--fonts DIR` adds fonts, so an export can be made identical across machines.
+- **Reason:** Prismal owns what its specification defines (the frames, their instants, fallbacks, captions) and nothing of codecs and containers; a pipe to one widely installed encoder gives every common format, and the frame directory keeps export possible with no encoder at all.
+- **Consequences:** `crates/prismal-media`; `docs/prototype.md` media section; guide chapter 8 (Exporting a video). Not yet done: narration audio (the language carries narration text only; when recorded or synthesized audio is added, its cues are placed at the captions' start times and muxed as an audio track), a descriptions track from announcements, and a layout of several views on one page (PK-7.4).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+  - 2026-09-30 narration audio settled by D-053: sound is supplied by hosts, video export included, not by the language.
+
+## D-053: Narration sound belongs to hosts
+
+- **Status:** Accepted
+- **Original position:** PK-9.2 makes a narration cue "caption text and, optionally, recorded or synthesized audio" that "ends when the audio or the reading time ends", and PK section 15 defers narration audio. D-052 left video without sound, expecting audio to enter the language.
+- **Raised by:** the owner, after D-052: sound should not be a language feature; and it is needed wherever captions play (the web player and other hosts), not only in video export.
+- **Builds on:** PK-8.7, PK-9.2, PK-9.2b, PK-11.3, D-026, D-045, D-052.
+- **Question:** Where does narration sound come from, how does a host find the sound of a cue, and what decides a cue's timing?
+- **Options considered:**
+  1. **Audio in the language** (`narrate "..." audio "b3.mp3"`), the audio's length ending the cue as PK-9.2 says. Programs would name media files, a lesson's timing and its cases would depend on assets outside the program, and every host would need the files at the same paths.
+  2. **Sound only in video export.** Keeps the language free of media, but every other host that shows captions would invent its own way to voice them.
+  3. **Sound supplied by hosts, keyed by cue names the engine gives every host.** The program carries text only; each caption cue is named after the beat that narrates it; a voice is a set of recordings named by cue, or a speech synthesizer for cues without one. The timeline keeps deciding when a cue starts and how long it lasts.
+- **Accepted position:** option 3, the owner's direction of 2026-09-30, with the details under the owner's standing delegation. A departure from PK-9.2, recorded as PK-9.2d:
+  - A cue's name is its beat's name, and `beat.2`, `beat.3` ... for the later narrations of the same beat (beat names are unique in a presentation and are what cases refer to, so names survive edits elsewhere in the lesson). Layouts list captions with `cue`, `start`, `end` and `text` (HI-5.1a); WebVTT files use the names as cue identifiers.
+  - A recording is a file named after its cue (`b3.wav`, `b3.mp3`, `.ogg`, `.opus`, `.m4a`, `.flac`, `.aac`, `.aiff`). A cue without one may be synthesized (the system's voice, a command, or a browser's speech synthesis) or stay silent, which is reported.
+  - Timing never depends on sound: a cue lasts its `for d` or its reading time (PK-9.2b), so captions, sound, frames and cases agree with or without a voice (PK-8.7). A recording longer than its cue is reported with the duration to write; it plays on, overlapping what follows.
+  - A host joining a cue part way starts its recording at the offset into the cue; synthesized speech starts only at a cue's start, since a sentence cannot be spoken from its middle.
+  - Video export: `--voice DIR`, `--speech system|COMMAND`, `--music FILE` (looped under the narration at `--music-volume`), and a recording script (`OUT.txt`, and `narration.txt` in a frame directory) listing every cue's name, start, length and text. The web player: a Voice menu (off, synthesized, recordings chosen as files).
+- **Reason:** programs stay text that runs the same everywhere; sound is a property of a medium, like captions drawn or in a track; one naming rule lets every host voice the same lesson, and recordings can be made from the script without touching the program.
+- **Consequences:** PK-9.2d; HI-5.1a; `Caption::cue` in `prismal-present`; `prismal-media` `voice` module; `web/player.js` narration sound and `web/check-voice.mjs`; guide chapter 8. Not yet done: voices for several languages (a voice directory per language is the natural extension), and fitting timing to recordings as an explicit, reported option.
+- **History:**
+  - 2026-09-30 raised by the owner and accepted; details under the owner's standing delegation of 2026-09-30.
+
+## D-054: Round geometry in the representation set
+
+- **Status:** Accepted
+- **Original position:** PK-6.3's first-slice representation set has straight geometry only (`segment`, `polyline`, `polygon`); `marker` draws a point as a dot of fixed screen size. The guide's rolling wheel (chapter 7) was drawn as a square, noting that v0 had no circle.
+- **Raised by:** the owner, 2026-09-30, asking why the wheel was a square; and a lesson on the circumference of a circle, unwrapped onto a line, which needs a circle whose edge can be partly drawn.
+- **Builds on:** PK-5.5, PK-6.3, PK-6.3b, PK-12.1a, D-042, D-043, D-046.
+- **Question:** How are circles drawn, and what does a frame carry for them?
+- **Options considered:**
+  1. **A polygon of many points.** No new kind, but the language has no loops or collections to write the points, and a drawn polygon is not a circle to a reader, a renderer or a text alternative.
+  2. **Frames carry sampled points of new kinds.** Every renderer draws them, but curves are approximate when zoomed, frames grow, and the shape's meaning is lost to renderers.
+  3. **`circle`, `ellipse`, `arc` kinds carried as exact elliptical arcs in view coordinates.** Renderers draw true curves (SVG paths, canvas arcs) from centre, radii, rotation, start and sweep; the engine applies the view's orientation and groups' transforms, so no renderer handles angles of the model.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30 (the owner asked for the circle). Radii are lengths in the model's units; angles counterclockwise from the space's `x` axis; `arc` takes `from` and `to`, `ellipse` takes `rotate`. One frame shape, `ellipse`, serves all three; `closed` marks a whole circle or ellipse. Hit testing and view extents sample the curve.
+- **Reason:** a circle of a model's size is basic to geometry, physics and chemistry content; exact curves keep frames small and renderers simple; the same shape drawn part way (`reveal draw`, or an arc whose end follows the model) shows a circle being drawn or unwound.
+- **Consequences:** PK-6.3c; `CKind::Round` and `Shape::Ellipse` in `prismal-present`; both renderers; guide chapter 7 (the wheel is a circle) and chapter 8 (Unwrapping a circle); `prismal-present/tests/shapes.rs`. Not included: circles as model values (a point constrained to a circle, intersections), which belong to geometry types in the model kernel, not to representations; author styling (colour, dashes, fill) of representations.
+- **History:**
+  - 2026-09-30 raised by the owner and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-055: Contained objects and fixed collections in v0
+
+- **Status:** Accepted
+- **Original position:** MK section 7 defines object types, contained objects and their identity; MK section 8 defines collections (declared or dynamic membership), relations, and expressions over collections (`count`, `map`, `filter`, `any`, `all`, `sum`, `reduce`); MK section 16 lists `create`, `destroy`, `connect` and `disconnect`. The first slice exercised none of them (MK-8.7), the working syntax reserves `object` and the structural operations without a syntax for holding objects or iterating over them, and the prototype rejected `object`.
+- **Raised by:** the language completeness step (PROJECT-STATE next steps); the owner chose it as the next work on 2026-09-30.
+- **Builds on:** MK-7.1 to MK-7.12, MK-8.1 to MK-8.4, MK-14.8, D-015, D-036, D-051.
+- **Question:** How are objects and collections written, carried in the IR, and executed, and which part comes first?
+- **Options considered:**
+  1. **Lower objects away in the parser.** The IR would be flat; but the formatter prints programs from the IR (D-036), so a program with objects could not be printed back, and hosts would not see the model's structure.
+  2. **Structure in the IR, executed natively.** The runtime would hold objects with per-object state and evaluate expressions against member indices. Needed for membership that changes during a run, but it changes the kernel's compiled form, the solver's state layout and every consumer of frames at once.
+  3. **Structure in the IR, elaborated to a flat model before checking.** Object types, parts, member expressions and aggregates are kept in the IR; a pure IR-to-IR pass expands each member of fixed membership into bindings, flows, events, equations and constraints with identities derived from the declaration and the member's path, and expands `for` in presentations. The checker, runtime, presentations and renderers are unchanged. This is how Modelica compiles components.
+- **Accepted position:** option 3 for contained objects and collections of fixed membership, under the owner's standing delegation of 2026-09-30. Dynamic membership (`create`, `destroy`) and relations are the next step and will need option 2 or a bounded form of it; they are not decided here.
+  - **Object types** are declared in a model: `object Ball { ... }`, with the body of a model (bindings, flows, events, equations, constraints, functions, enumerations, parts). An object reads its container only through its `input`s, which the container connects (MK-7.11); an unconnected input keeps its default.
+  - **Parts:** `parts { ball: Ball { pos = ... }  row: Ball[3] { pos = origin + (index * 1 m, 2 m) } }`. An override sets a member's starting value (state, discrete, parameter) or connects an input; it is written in the container's scope, where `index` is the member's number, from 1. Members are numbered in declaration order (MK-8.3).
+  - **Expressions:** `ball.pos`; `row[2].pos` with a constant index; aggregates `sum`, `min`, `max`, `any`, `all` written `sum(e for b in row)` with an optional filter `if c`, and `count(row)`. A filter may compare members (`o != b`); `min` and `max` take only such filters. `sum` over no member is `0`, `any` false, `all` true.
+  - **Container behaviour:** `flow { for b in row { der(b.vel) += e } }` writes members' derivatives from the container (MK-7.10), with `e` read in the container's scope; pairwise interactions are written with aggregates inside the loop.
+  - **Presentations:** `for b in row { marker(b.pos) as ball }` in views and timeline blocks draws one representation per member, named `ball[1]`, `ball[2]` ...; expressions in presentations, observations and expectations may use members and aggregates.
+  - **Identity:** an element of a member has the identity of its declaration followed by `@` and the member's path (`M.Ball.pos@row[2]`), and the name `row[2].pos`; paths nest (`cart.wheels[1]`). Identities are deterministic and stable across edits that keep the declaration (MK-7.6, D-036).
+- **Reason:** the structure a reader writes stays in the IR and in printed programs; fixed membership covers systems of several bodies, chains of springs, pendulum arrays and lattices, with every existing checker rule, solver and renderer applying unchanged; and identities remain declaration paths.
+- **Consequences:** MK-7.13, MK-8.3a, MK-8.8 (elaborations); 04-ir objects, parts, member and aggregate expressions, `each` on flows and representations; `prismal_ir::elaborate`; working syntax `parts`, `for`, `index`, aggregates; formatter; guide chapter on systems of objects. Not included: `create` and `destroy`, relations, container events per member, drags on members of collections.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-056: Sign references after a transition
+
+- **Status:** Accepted
+- **Original position:** RC-7.2 keeps each guard's sign reference as the sign of `g` where it was last non-zero; RC-7.6 places a located event on the far side of the crossing, so the guard there is small and already has its new sign; RC-7.4 allows two sign changes inside one step to be missed.
+- **Raised by:** the collections work (D-055): a row of balls bouncing on a floor at their radius (`falling(pos.y - r)`) fell through the floor after about fifty bounces instead of settling. The reference program bounces on a floor at zero, where steps near the floor are short, and never showed it.
+- **Builds on:** RC-7.2, RC-7.4, RC-7.6, RC-9, D-005.
+- **Question:** What sign reference does a guard take right after an event whose handler reverses it?
+- **Options considered:**
+  1. **As specified.** After a bounce the guard is a few `ε_t` below zero and its reference is negative; when the next hop is shorter than a step, the guard goes up and down again unsampled, and the landing is missed: RC-7.4 permits it, and the ball falls through.
+  2. **Ask authors to bound the step (`h_max`).** RC-7.4's remedy; but no step bound works for all hops, which shrink geometrically towards the accumulation point.
+  3. **Take the sign the guard is heading to when it is within the event tolerance of zero.** After a transition, advance the committed state `4 ε_t` by the flows; a guard that changes sign in that time takes the new sign as its reference.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30, as the elaboration RC-7.2a. Only guards within about `4 ε_t` of a crossing are affected, where the guard's own sign is below the location accuracy; everywhere else RC-7.2 applies unchanged.
+- **Reason:** a handler that reverses the motion is the common case of a repeated crossing (bounces, reflections, relays); the reference then describes where the model is going, which is what the next detection needs. Every reference program and guide case gives the same results.
+- **Consequences:** RC-7.2a; `Engine::retake_refs` and `Engine::just_ahead` in `prismal-runtime`; `prismal-present/tests/objects.rs` (a ball on a raised floor settles).
+- **History:**
+  - 2026-09-30 raised by the collections work and accepted under the owner's standing delegation of 2026-09-30.

@@ -12,13 +12,15 @@ The RP-01 model, unchanged. Drag is enabled by the parameter `k`.
 
 ```text
 presentation DragChecks for Projectile {
-  observe t_apex  = elapsed on(apex)
-  observe h_apex  = pos.y   on(apex)
-  observe t_land  = elapsed on(landed)
-  observe range   = pos.x   on(landed)
-  observe v_land  = vel     on(landed, microstep 0)   // before the reset
-  observe energy  = 0.5 * |vel|^2 + g * (pos - origin).y   every(0.01 s)   // per unit mass
-  observe balance = der(vel) - ((0 m/s^2, -g) - k * |vel| * vel)  every(0.01 s)
+  observe {
+    t_apex  = elapsed on apex
+    h_apex  = pos.y   on apex
+    t_land  = elapsed on landed
+    range   = pos.x   on landed
+    v_land  = vel     on landed microstep 0                          // before the reset
+    energy  = 0.5 * |vel|^2 + g * (pos - origin).y    every 0.01 s   // per unit mass
+    balance = der(vel) - ((0, -g) - k * |vel| * vel)  every 0.01 s
+  }
 }
 ```
 
@@ -53,11 +55,11 @@ From `tools/refvals.py`: classical RK4 in 50-digit decimal arithmetic at steps `
 
 | ID | Observation | Expected | Tolerance | Kind | Status |
 |---|---|---|---|---|---|
-| RP-02.E1 | `t_land` | 2.67328857282834 s | rel 1e-5 | reference | provisional |
-| RP-02.E2 | `range` | 31.3229266146783 m | rel 1e-5 | reference | provisional |
-| RP-02.E3 | `v_land` | (9.76677238322685, -12.3148244403059) m/s | rel 1e-5 per component | reference | provisional |
-| RP-02.E4 | `t_apex` | 1.29589657291982 s | rel 1e-5 | reference | provisional |
-| RP-02.E5 | `h_apex` | 8.78272286661045 m | rel 1e-5 | reference | provisional |
+| RP-02.E1 | `t_land` | 2.67328857282834 s | rel 1e-5 | reference | fixed |
+| RP-02.E2 | `range` | 31.3229266146783 m | rel 1e-5 | reference | fixed |
+| RP-02.E3 | `v_land` | (9.76677238322685, -12.3148244403059) m/s | rel 1e-5 per component | reference | fixed |
+| RP-02.E4 | `t_apex` | 1.29589657291982 s | rel 1e-5 | reference | fixed |
+| RP-02.E5 | `h_apex` | 8.78272286661045 m | rel 1e-5 | reference | fixed |
 | RP-02.E6 | `energy` during flight | strictly decreasing from sample to sample | - | behavior | fixed |
 | RP-02.E7 | `balance` during flight | every component within `1e-12 m/s^2` of zero | - | bound | fixed |
 | RP-02.E8 | `range` compared with RP-01.E2 | strictly less than 40.7747196738022 m | - | behavior | fixed |
@@ -73,10 +75,12 @@ E3 and E9 together check RC-4.3: microstep 0 of the landing instant holds the pr
 
 | ID | Observation | Expected | Tolerance | Kind | Status |
 |---|---|---|---|---|---|
-| RP-02.E10 | `t_land` | 2.67328857282834 s | rel 1e-8 | reference | provisional |
-| RP-02.E11 | `range` | 31.3229266146783 m | rel 1e-8 | reference | provisional |
-| RP-02.E12 | `h_apex` | 8.78272286661045 m | rel 1e-8 | reference | provisional |
+| RP-02.E10 | `t_land` | 2.67328857282834 s | rel 1e-8 | reference | fixed |
+| RP-02.E11 | `range` | 31.3229266146783 m | rel 1e-8 | reference | fixed |
+| RP-02.E12 | `h_apex` | 8.78272286661045 m | rel 1e-8 | reference | fixed |
 
 ## History
 
 - 2026-09-29 written.
+- 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied.
+- 2026-09-30 provisional tolerances confirmed by the Rust prototype and made fixed. Measured relative errors: default case `t_land` 1.7e-7, `range` 8.9e-8, `h_apex` 4.5e-7 (tolerance 1e-5); tight case 2.9e-12, 2.7e-12, 1.1e-11 (tolerance 1e-8).
