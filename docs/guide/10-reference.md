@@ -94,6 +94,81 @@ run Name of Model with Presentation {
 
 **Expectations** (chapter 6): `a == b within tol`, `a == b within rel r`, `a == b exactly`, `a in [lo, hi]`, `obs[k]`, `(e on E [microstep 0])`, `log == [E1, E2]`, `start of b`, `end of b`, `initialization fails`, `configuration rejected`.
 
+## Glossary
+
+Every word of the language, what it does, and the chapter that teaches it.
+
+| Word | What it does | Chapter |
+|---|---|---|
+| `and`, `or`, `not` | Boolean operators | 1 |
+| `as` | names a representation: `marker(pos) as ball` | 7 |
+| `at` | an event at an instant (`at τ`); an observation at an instant; a learner step or input change at a time | 5, 6, 8 |
+| `beat` | a step of a scene in a timeline | 8 |
+| `branch` | a timeline action: the lesson continues on a new run version | 8 |
+| `camera` | a timeline animation of a view's centre and zoom | 8 |
+| `checked` | `equation N: a == b checked within tol` is checked while running | 6 |
+| `config` | a run's solver settings | 6 |
+| `const` | constants: never change | 2 |
+| `constraint` | a condition checked while running, with a policy | 6 |
+| `continue` | a learner step that ends an explore beat | 8 |
+| `crossing` | an event when a value crosses zero either way | 5 |
+| `derived` | values computed from others, always current | 1 |
+| `discrete` | state changed only by events | 5 |
+| `drag` | the gesture of an inverse: `on drag as p` | 7 |
+| `else`, `if`, `then` | conditional values; `if` also filters an aggregate and enables an event | 1, 5, 9 |
+| `emit` | an operation that makes another event happen | 5 |
+| `enum`, `match` | enumerations and a choice by case | 5 |
+| `equation` | a named relation, shown and optionally checked | 6 |
+| `event` | something that happens at an instant, with operations | 5 |
+| `every` | an event every Δ; a sampled source (`pos every 0.1 s`); an observation schedule | 4, 5, 6 |
+| `exactly`, `rel`, `within` | tolerances of an expectation, or of a check | 6 |
+| `expect` | the checks of a run | 1, 6 |
+| `explore`, `limit`, `keep`, `fallback` | the learner's turn in a lesson, its time limit, what it keeps, and what video plays instead | 8 |
+| `falling`, `rising` | an event when a value crosses zero downwards or upwards | 5 |
+| `flow` | how continuous state changes: `der(x) = e` | 4 |
+| `fn` | a declared function | 2 |
+| `for` | a loop over a collection's members, in flows, aggregates and views; also `narrate ... for d`, `presentation P for M` | 7, 8, 9 |
+| `from` | the start of `every Δ from τ0` | 5 |
+| `hide`, `reveal`, `highlight` | timeline actions on representations | 8 |
+| `hold`, `run`, `rate`, `until`, `seek`, `reset`, `wait` | timeline control of the simulation: pause, play at a rate until an event, jump, restart, wait | 8 |
+| `in` | the space of a model (`model M in Plane`), a range (`x in [a, b]`), a view (`in scene { ... }`), a collection (`for b in row`) | 1, 3, 8, 9 |
+| `index` | the number of a member in a collection's overrides | 9 |
+| `input` | values supplied from outside, with an optional default; an object's connections | 5, 9 |
+| `intervenable` | state the learner may change | 3 |
+| `learner` | a run's scripted learner inputs | 8 |
+| `live`, `over`, `microstep` | observation schedules: current value, over an interval, at a microstep | 6 |
+| `model` | what exists and how it behaves | 1 |
+| `narrate`, `scene`, `sequence`, `timeline` | a lesson's narration, scenes, ordered actions and timeline | 8 |
+| `object`, `parts` | an object type, and the objects and collections a model holds | 9 |
+| `observe` | named values recorded for tests and display | 6 |
+| `of`, `with` | `run r of Model with Presentation`; `event_log of E` | 6 |
+| `on` | an event's trigger; an observation `on E` | 5, 6 |
+| `otherwise` | a default when a value is not available | 6 |
+| `panel`, `view` | regions of a presentation | 7 |
+| `param` | parameters: changed by cases, controls and lessons | 1 |
+| `permit` | what the learner may do | 7 |
+| `policy`, `reject`, `report`, `stop` | what a failed constraint does; `zeno stop` | 5, 6 |
+| `presentation` | how a model is shown | 1 |
+| `private` | a binding hidden from outside | 2 |
+| `process` | a named group of flows and events | 4 |
+| `propose` | the binding change an inverse proposes | 7 |
+| `request` | an event requested from outside (a button, a lesson) | 5 |
+| `run` | a test case; in timelines, `run rate r` | 1, 8 |
+| `set` | an operation that replaces a value | 5 |
+| `show` | a timeline action that adds a representation | 8 |
+| `space` | a geometric space: `space Plane = euclidean(2)` | 3 |
+| `start` | an event at the start of a run; `start of beat` | 5, 8 |
+| `state` | continuous state | 4 |
+| `symbol`, `unit` | display symbol and unit of a binding | 2 |
+| `true`, `false` | Boolean values | 1 |
+| `where` | a parameter's condition; an observation filter | 2, 6 |
+| `zeno`, `settle` | what happens when an event repeats without end | 5 |
+| `zoom` | the zoom of a `camera` action | 8 |
+| `contribute` | an operation adding to discrete state; not implemented (MK-E11) | reserved for later |
+| `create`, `destroy`, `connect`, `disconnect` | structural operations on collections and relations | reserved for later |
+| `enter` | reserved | reserved for later |
+| `animate`, `bind`, `release` | timeline actions, parsed and reported as not yet implemented | reserved for later |
+
 ## Words
 
 **Reserved** (never names): `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request enum match`.
