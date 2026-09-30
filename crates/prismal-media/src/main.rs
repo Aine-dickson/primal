@@ -10,11 +10,12 @@
 //!
 //! - `name.mp4`, `.mov`, `.mkv`, `.webm` or `.gif`: a video, encoded by ffmpeg (`--encoder`,
 //!   or `PRISMAL_FFMPEG`, or `ffmpeg` on the path), with the captions beside it as
-//!   `name.vtt`;
+//!   `name.vtt` and the events it shows as `name.descriptions.vtt`;
 //! - `name.png`: the frame at `--at T` (default 0);
 //! - `name.txt`: the recording script, every narration cue with its name, start, length and
 //!   text;
-//! - anything else: a directory of `frame-00000.png ...`, `captions.vtt` and `encode.txt`,
+//! - anything else: a directory of `frame-00000.png ...`, `captions.vtt`,
+//!   `descriptions.vtt` and `encode.txt`,
 //!   for encoding elsewhere.
 //!
 //! A lesson plays in the video medium: explore beats play their fallbacks (PK-9.10), and

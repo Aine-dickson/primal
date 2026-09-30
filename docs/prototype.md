@@ -329,7 +329,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
-| Narration audio in videos; a descriptions track from announcements; several views laid out on one page | PK-9.1, PK-11.3, PK-7.4, D-052 |
+| Several views laid out on one page by the author | PK-7.4, D-052 |
 | Snapshots and backward seek within a dynamic run (undo recomputes from the start) | RC section 14.1 |
 | `contribute` operations on discrete state | MK section 16 |
 | Failure policy `pause` (interactive) | RC-10.3 |

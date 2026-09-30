@@ -92,6 +92,14 @@ fn lesson_clip() {
     assert_eq!(burned.captions.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["b1", "b3", "b4", "b6", "b9"]);
     assert!(burned.frames[2].contains("A ball is launched at 45 degrees."));
 
+    // Descriptions of the events shown (PK-11.3a), one cue each, in order, never overlapping.
+    let d = &burned.descriptions;
+    assert!(!d.is_empty());
+    assert!(d.windows(2).all(|w| w[0].start < w[1].start && w[0].end <= w[1].start), "{d:?}");
+    assert!(d.iter().all(|c| c.end > c.start && c.end - c.start <= DESCRIPTION_SECONDS + 1e-12), "{d:?}");
+    let events: Vec<String> = inst.program().doc.models[0].events.iter().map(|e| e.name.clone()).collect();
+    assert!(d.iter().all(|c| c.text.split(", ").all(|e| events.iter().any(|n| n == e))), "{d:?} {events:?}");
+
     // With captions in a track only, no frame draws them.
     let track = clip(&mut example("rp08"), "ProjectileLesson", &settings(fps, Captions::Track)).unwrap();
     assert_eq!(track.captions, burned.captions);
@@ -167,6 +175,9 @@ fn still_and_frame_directory() {
     assert!(dir.join("frame-00004.png").exists() && !dir.join("frame-00005.png").exists());
     assert!(std::fs::read_to_string(dir.join("captions.vtt")).unwrap().contains("A ball is launched"));
     assert!(std::fs::read_to_string(dir.join("encode.txt")).unwrap().contains("-i captions.vtt"));
+    if !c.descriptions.is_empty() {
+        assert!(std::fs::read_to_string(dir.join("descriptions.vtt")).unwrap().starts_with("WEBVTT"));
+    }
 }
 
 #[test]

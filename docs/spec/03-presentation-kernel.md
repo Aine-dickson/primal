@@ -312,7 +312,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 - **PK-11.2a** A keyboard step moves a draggable representation by its `step` property, in view units; without one, by 1/100 of each axis span in a plot view, or 10 px in a spatial view. A slider without `step` moves by 1/100 of its range. Each step is one committed intervention, as a pointer drag.
 - **PK-11.2b** Keyboard focus moves through the representations that take it, in order: in each view in turn, the draggable and clickable ones, controls and buttons in the order the presentation declares them, then those over the presentation (D-047). A representation grabbed by a pointer takes focus, so that the keyboard continues where the pointer left off.
 - **PK-11.3** Narration has captions (text is required; audio is optional). Timeline beats and event occurrences can be announced to assistive technology.
-- **PK-11.3a** Playback announces every model event occurrence it passes while the simulation runs, at the presentation instant it is shown, and every occurrence an action causes at a held instant (a requested event).
+- **PK-11.3a** Playback announces every model event occurrence it passes while the simulation runs, at the presentation instant it is shown, and every occurrence an action causes at a held instant (a requested event). Linear media carry the announcements as a **descriptions track**: a cue at the first frame that shows the occurrences, naming them, until the next cue and for at most 2 s (WebVTT beside a video).
 - **PK-11.4** Color is never the only encoding of a value: a color encoding is paired with a value readout on demand, a legend, or another channel.
 
 ---
@@ -502,5 +502,6 @@ A presentation is checked against its model before it is used (PK-2.3). Each dia
 - 2026-10-01 clicks on an empty point of a view: PK-10.5c (D-060).
 - 2026-10-01 author styles: PK-6.6a (D-061).
 - 2026-10-01 drags on members of groups: PK-6.3b (D-062).
+- 2026-10-01 descriptions track in linear media: PK-11.3a.
 - 2026-09-30 narration sound supplied by hosts: PK-9.2d (D-053).
 - 2026-09-30 round geometry: PK-6.3c `circle`, `ellipse`, `arc` (D-054).

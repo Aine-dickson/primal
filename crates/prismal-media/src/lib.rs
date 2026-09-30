@@ -93,6 +93,9 @@ pub struct Clip {
     pub frames: Vec<String>,
     /// Narration captions (empty for a session).
     pub captions: Vec<Cue>,
+    /// Descriptions of the events shown, from the frames' announcements (PK-11.3a): a
+    /// track for assistive technology, written beside the video.
+    pub descriptions: Vec<Cue>,
     /// What the video medium could not show, and refusals and diagnostics of the lesson
     /// (PK-12.3): reported, never silently dropped.
     pub reports: Vec<String>,
@@ -112,7 +115,25 @@ pub fn clip(inst: &mut Instance, presentation: &str, s: &Settings) -> Result<Cli
     let layout = inst.open(presentation, true).map_err(|d| d.to_string())?;
     let lesson = layout["mode"] == "lesson";
     let end = s.until.unwrap_or_else(|| if lesson { &layout["lesson"]["end"] } else { &layout["session"]["end"] }.as_f64().unwrap_or(0.0));
-    let frames = times(end, s.fps).into_iter().map(|t| draw(inst, &layout, t, 1.0 / s.fps, s)).collect();
+    let mut frames = vec![];
+    let mut said: Vec<(f64, String)> = vec![];
+    for t in times(end, s.fps) {
+        let frame = frame_at(inst, &layout, t, 1.0 / s.fps);
+        let events: Vec<&str> = frame["announcements"].as_array().into_iter().flatten().filter_map(Json::as_str).collect();
+        if !events.is_empty() {
+            said.push((t, events.join(", ")));
+        }
+        frames.push(render(&layout, frame, s));
+    }
+    // Each description shows until the next, for at most `DESCRIPTION_SECONDS`.
+    let descriptions = said
+        .iter()
+        .enumerate()
+        .map(|(k, (t, text))| {
+            let next = said.get(k + 1).map(|x| x.0).unwrap_or(f64::INFINITY);
+            Cue { name: format!("d{}", k + 1), start: *t, end: (t + DESCRIPTION_SECONDS).min(next).min(end.max(*t)), text: text.clone() }
+        })
+        .collect();
     let l = &layout["lesson"];
     let list = |v: &Json| v.as_array().cloned().unwrap_or_default();
     let captions = list(&l["captions"])
@@ -122,22 +143,35 @@ pub fn clip(inst: &mut Instance, presentation: &str, s: &Settings) -> Result<Cli
         .collect();
     let mut reports: Vec<String> = list(&l["unsupported"]).iter().chain(&list(&l["diagnostics"])).map(|r| r.as_str().map(str::to_string).unwrap_or_else(|| r.to_string())).collect();
     reports.extend(list(&l["refusals"]).iter().map(|r| format!("refused at {} s: {} ({})", r["at"], r["input"].as_str().unwrap_or(""), r["reason"].as_str().unwrap_or(""))));
-    Ok(Clip { presentation: layout["presentation"].as_str().unwrap_or(presentation).to_string(), fps: s.fps, frames, captions, reports, background: s.svg.theme.bg.to_string() })
+    Ok(Clip { presentation: layout["presentation"].as_str().unwrap_or(presentation).to_string(), fps: s.fps, frames, captions, descriptions, reports, background: s.svg.theme.bg.to_string() })
+}
+
+/// How long a description of events stays at most, in seconds.
+pub const DESCRIPTION_SECONDS: f64 = 2.0;
+
+/// The frame description at instant `t`: presentation time in a lesson, simulation time in a
+/// session.
+fn frame_at(inst: &mut Instance, layout: &Json, t: f64, dt: f64) -> Json {
+    if layout["mode"] == "lesson" {
+        inst.frame(t, dt)
+    } else {
+        inst.seek(t);
+        inst.frame(0.0, dt)
+    }
+}
+
+fn render(layout: &Json, mut frame: Json, s: &Settings) -> String {
+    if !s.captions.burned() {
+        frame["captions"] = Json::Array(vec![]);
+    }
+    prismal_svg::render(layout, &frame, &s.svg)
 }
 
 /// The SVG document of the frame at instant `t` of an open presentation whose layout is
 /// `layout`: presentation time in a lesson, simulation time in a session.
 pub fn draw(inst: &mut Instance, layout: &Json, t: f64, dt: f64, s: &Settings) -> String {
-    let mut frame = if layout["mode"] == "lesson" {
-        inst.frame(t, dt)
-    } else {
-        inst.seek(t);
-        inst.frame(0.0, dt)
-    };
-    if !s.captions.burned() {
-        frame["captions"] = Json::Array(vec![]);
-    }
-    prismal_svg::render(layout, &frame, &s.svg)
+    let frame = frame_at(inst, layout, t, dt);
+    render(layout, frame, s)
 }
 
 /// The frame at instant `t` of `presentation` in linear media, as a PNG image.
@@ -367,6 +401,12 @@ pub fn sidecar(out: &Path) -> PathBuf {
     out.with_extension("vtt")
 }
 
+/// The descriptions track written beside `out`: `name.descriptions.vtt`, for a player's
+/// `<track kind="descriptions">` or a screen reader (PK-11.3a).
+pub fn descriptions_sidecar(out: &Path) -> PathBuf {
+    out.with_extension("descriptions.vtt")
+}
+
 /// Encodes `clip` as the video file `out` with `encoder`. Captions, when the clip has any,
 /// are written beside it as WebVTT, and carried as a subtitle track when the settings ask
 /// for one and the container has tracks. The settings' sound is voiced and mixed in.
@@ -379,6 +419,10 @@ pub fn encode(raster: &Raster, clip: &Clip, s: &Settings, encoder: &Path, out: &
         std::fs::write(&vtt, webvtt(&clip.captions)).map_err(|e| format!("{}: {e}", vtt.display()))?;
     }
     let subs = (s.captions.track() && !clip.captions.is_empty()).then_some(vtt.as_path());
+    if !clip.descriptions.is_empty() {
+        let d = descriptions_sidecar(out);
+        std::fs::write(&d, webvtt(&clip.descriptions)).map_err(|e| format!("{}: {e}", d.display()))?;
+    }
     let work = std::env::temp_dir().join(format!("prismal-voice-{}", std::process::id()));
     let mut reports = vec![];
     let mut mix = Mix { duration: clip.frames.len() as f64 / clip.fps, ..Default::default() };
@@ -439,6 +483,9 @@ pub fn write_frames(raster: &Raster, clip: &Clip, s: &Settings, dir: &Path) -> R
         if s.captions.track() {
             cmd.push_str(" -i captions.vtt -c:s mov_text");
         }
+    }
+    if !clip.descriptions.is_empty() {
+        std::fs::write(dir.join("descriptions.vtt"), webvtt(&clip.descriptions)).map_err(|e| e.to_string())?;
     }
     cmd.push_str(" -c:v libx264 -pix_fmt yuv420p -crf 18 video.mp4\n");
     std::fs::write(dir.join("encode.txt"), cmd).map_err(|e| e.to_string())

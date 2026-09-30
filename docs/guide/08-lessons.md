@@ -243,7 +243,7 @@ cargo run --release -p prismal-media -- lesson.md DropMovie drop.mp4 --fps 30 --
 - The first argument is the program (a source file, or a Markdown document whose `text` blocks form it); the second names the presentation.
 - The output's extension chooses the format: `mp4`, `mov`, `mkv`, `webm` or `gif`. The encoding is done by ffmpeg, which must be installed (or named with `--encoder` or the `PRISMAL_FFMPEG` variable).
 - `drop.png --at 4` writes the single frame at 4 s instead. Any other name is a directory: the frames as PNG images, the captions, and the ffmpeg command that makes a video of them.
-- Narration appears as captions, drawn into the frames. `--captions track` puts them only in a subtitle track the viewer can turn off; `--captions both` does both. They are always written beside the video as `drop.vtt`.
+- Narration appears as captions, drawn into the frames. `--captions track` puts them only in a subtitle track the viewer can turn off; `--captions both` does both. They are always written beside the video as `drop.vtt`. The events the video shows (`landed`, ...) are written as a descriptions track, `drop.descriptions.vtt`, for a player's `<track kind="descriptions">` and screen readers.
 - An explore beat without a `fallback` cannot be shown in a video: the export says so, and plays on.
 - A presentation without a timeline is recorded as a run from its start; `--until 10` sets its length in simulation seconds.
 - `--dark` uses the dark theme.
