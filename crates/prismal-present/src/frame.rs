@@ -61,6 +61,10 @@ pub struct ViewFrame {
     pub id: Id,
     pub kind: &'static str,
     pub reps: Vec<RepFrame>,
+    /// For a view that requests an event when a point of it is clicked: the event's name
+    /// (D-060).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub click: Option<String>,
     /// A camera set by the timeline (D-042).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub camera: Option<Camera>,
@@ -1050,15 +1054,46 @@ fn samples(run: &Run, t: f64, dt: f64) -> impl Iterator<Item = f64> {
 #[derive(Clone, Debug)]
 pub struct Projector {
     pub views: Vec<(Id, ViewCtx, Vec<CRep>)>,
+    /// Clicks on a point of a view, by view (D-060), with the event's name.
+    pub clicks: Vec<(Id, prismal_ir::present::Click, String)>,
+}
+
+/// Checks a view's `on click as p request E(p)` (D-060): the event is declared `on request`
+/// and the payload, read with the point clicked, has the type the event declares.
+fn compile_view_click(cm: &CModel, ctx: &ViewCtx, v: &prismal_ir::present::View, c: &prismal_ir::present::Click) -> Result<String, PDiag> {
+    let d = |code: &'static str, message: String| PDiag { code, message, element: v.id.clone() };
+    if matches!(ctx, ViewCtx::Panel) {
+        return Err(d("PK-E05", "a panel has no points to click (D-060)".into()));
+    }
+    let ev = cm.ir.events.iter().find(|e| e.id == c.event).ok_or_else(|| d("PK-E01", format!("unknown event `{}`", c.event)))?;
+    if !matches!(ev.trigger, prismal_ir::Trigger::Request) {
+        return Err(d("PK-E03", format!("`{}` is not declared `on request`, so no click can request it (D-027)", ev.name)));
+    }
+    match (&ev.payload, &c.payload) {
+        (None, None) => {}
+        (Some(p), Some(x)) => {
+            compile_expr(cm, &subst(x, &ctx.pointer([0.0, 0.0])), Some(&p.ty)).map_err(|ds| d("PK-E02", ds.iter().map(|x| format!("{}: {}", x.code, x.message)).collect::<Vec<_>>().join("; ")))?;
+        }
+        (Some(p), None) => return Err(d("PK-E02", format!("`request {}` supplies its payload `{}`", ev.name, p.name))),
+        (None, Some(_)) => return Err(d("PK-E02", format!("`{}` declares no payload", ev.name))),
+    }
+    Ok(ev.name.clone())
 }
 
 impl Projector {
     pub fn new(cm: &CModel, p: &Presentation) -> Result<Projector, Vec<PDiag>> {
         let mut views = vec![];
+        let mut clicks = vec![];
         let mut diags = vec![];
         for v in &p.views {
             match ViewCtx::of(cm, v) {
                 Ok(ctx) => {
+                    if let Some(c) = &v.click {
+                        match compile_view_click(cm, &ctx, v, c) {
+                            Ok(name) => clicks.push((v.id.clone(), c.clone(), name)),
+                            Err(d) => diags.push(d),
+                        }
+                    }
                     let mut reps = vec![];
                     for r in &v.representations {
                         match compile_rep(cm, &ctx, r) {
@@ -1072,7 +1107,7 @@ impl Projector {
             }
         }
         if diags.is_empty() {
-            Ok(Projector { views })
+            Ok(Projector { views, clicks })
         } else {
             Err(diags)
         }
@@ -1092,7 +1127,8 @@ impl Projector {
             for (_, r) in extra.iter().filter(|(v, r)| v.as_deref() == Some(id.as_str()) && r.shown(run, vals, t)) {
                 rs.push(project(cm, ctx, r, run, vals, t));
             }
-            out.push(ViewFrame { id: id.clone(), kind: ctx.kind(), reps: rs, camera: None });
+            let click = self.clicks.iter().find(|c| &c.0 == id).map(|c| c.2.clone());
+            out.push(ViewFrame { id: id.clone(), kind: ctx.kind(), reps: rs, click, camera: None });
         }
         let overlay = extra.iter().filter(|(v, r)| v.is_none() && r.shown(run, vals, t)).map(|(_, r)| project(cm, &ViewCtx::Panel, r, run, vals, t)).collect();
         (out, overlay)

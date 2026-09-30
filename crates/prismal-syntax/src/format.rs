@@ -160,6 +160,14 @@ impl<'a> Printer<'a> {
         }
     }
 
+    /// Payload arguments that read the gesture value by name (D-060).
+    fn payload_args_p(&self, p: &Expr, names: &[String]) -> String {
+        match p {
+            Expr::Tuple { tuple } if tuple.len() > 1 => tuple.iter().map(|x| self.expr_p(x, names)).collect::<Vec<_>>().join(", "),
+            _ => self.expr_p(p, names),
+        }
+    }
+
     /// A payload declaration: `p: T`, or a member `b in balls` (D-050, D-059).
     fn payload_decl(&self, p: &prismal_ir::Payload) -> String {
         p.declared()
@@ -904,7 +912,18 @@ impl<'a> Printer<'a> {
                 ),
                 ViewKind::Panel => format!("panel {}", v.name),
             };
-            sections.push(format!("{INDENT}{head} {}", self.reps_block(&v.representations, 1)));
+            let mut block = self.reps_block(&v.representations, 1);
+            // `on click as p request E(p)` first in the view's block (D-060).
+            if let Some(c) = &v.click {
+                let req = match &c.payload {
+                    Some(x) => format!("{}({})", self.event_name(&c.event), self.payload_args_p(x, &["p".to_string()])),
+                    None => self.event_name(&c.event),
+                };
+                block = format!("{{
+{INDENT}{INDENT}on click as p request {req}
+{}", &block[2..]);
+            }
+            sections.push(format!("{INDENT}{head} {block}"));
         }
         for perm in &p.permissions {
             sections.push(format!("{INDENT}permit {} {{ {} }}", perm.role, perm.allows.join("; ")));

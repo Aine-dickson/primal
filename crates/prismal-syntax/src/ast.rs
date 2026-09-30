@@ -410,6 +410,8 @@ pub struct ViewDecl {
     pub kind: Name,
     pub args: Vec<Arg>,
     pub reps: Vec<Rep>,
+    /// `on click as p request E(p)`: a click on an empty point of the view (D-060).
+    pub clicks: Vec<Interaction>,
     pub span: Span,
 }
 

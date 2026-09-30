@@ -89,6 +89,10 @@ pub struct View {
     pub kind: ViewKind,
     #[serde(default)]
     pub representations: Vec<Rep>,
+    /// `on click as p request E(p)`: a click on a point of the view where no representation
+    /// takes it requests an event; the payload reads the point as `{"param": 0}` (D-060).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub click: Option<Click>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

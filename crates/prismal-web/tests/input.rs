@@ -341,3 +341,46 @@ fn clicks_and_drags_on_members() {
     assert_eq!(r["ok"], false, "already removed: {r}");
     assert!(r["message"].as_str().unwrap().contains("`planets[3]` is not alive"), "{r}");
 }
+
+/// The guide's orbits lab (D-060): a press and release on an empty point of the sky places a
+/// planet there; a press that moves does not; the protocol's `click_at` does the same in view
+/// coordinates, and a point too near the sun is refused by the event's condition.
+#[test]
+fn clicks_on_an_empty_point() {
+    let (mut h, _) = Host::open("g9-orbits", "Sky");
+    let size = [640.0, 480.0];
+    let dims = json!({ "width": size[0], "height": size[1] });
+    let f = h.frame(0.0);
+    assert_eq!(f["views"][0]["click"], "place");
+    let count = |h: &mut Host| {
+        let f = h.frame(0.0);
+        f["views"][0]["reps"].as_array().unwrap().iter().filter(|r| r["id"].as_str().unwrap().contains("planet[")).count()
+    };
+    assert_eq!(count(&mut h), 2);
+
+    // 2 m below the sun is (0, 160) in view coordinates: nothing is drawn there.
+    let [x, y] = px(&f["views"][0], [0.0, 160.0], size);
+    let down = h.pointer("down", "sky", x, y, dims.clone());
+    assert_eq!((down["action"].clone(), down["target"].clone()), (json!("click"), Json::Null), "{down}");
+    let up = h.pointer("up", "sky", x + 1.0, y, dims.clone());
+    assert_eq!((up["action"].clone(), up["ok"].clone()), (json!("click"), json!(true)), "{up}");
+    assert_eq!(count(&mut h), 3);
+    let at = pt(&rep(&h.frame(0.0), "planet[3]")["at"]);
+    assert!(at[0].abs() < 1e-6 && (at[1] - 160.0).abs() < 1e-6, "placed where clicked: {at:?}");
+
+    // A press that moves past the tolerance is not a click.
+    let f = h.frame(0.0);
+    let [x, y] = px(&f["views"][0], [-160.0, 0.0], size);
+    h.pointer("down", "sky", x, y, dims.clone());
+    assert_eq!(h.pointer("move", "sky", x + 30.0, y, dims.clone())["action"], "cancel");
+    assert_eq!(h.pointer("up", "sky", x + 30.0, y, dims.clone())["handled"], false);
+    assert_eq!(count(&mut h), 3);
+
+    // The protocol's `click_at`, in view coordinates; the sun's surroundings are refused.
+    let r = h.op(json!({ "op": "click_at", "view": "sky", "x": -160.0, "y": 0.0 }));
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(count(&mut h), 4);
+    let r = h.op(json!({ "op": "click_at", "view": "sky", "x": 10.0, "y": 0.0 }));
+    assert_eq!(r["ok"], false, "{r}");
+    assert_eq!(count(&mut h), 4);
+}

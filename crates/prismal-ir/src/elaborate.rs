@@ -1214,6 +1214,12 @@ fn presentation<'a>(cx: &mut Cx<'a>, root: &'a Model, p: &Presentation) -> Prese
             ViewKind::Panel => ViewKind::Panel,
         };
         v.representations = pc.reps(&s, &v.representations);
+        // A click on a point of the view (D-060): its payload reads the point as `{"param": 0}`.
+        if let Some(c) = &v.click {
+            let declared = pc.cx.root.events.iter().find(|e| e.id == c.event).and_then(|e| e.payload.clone());
+            let payload = c.payload.as_ref().map(|p| pc.cx.payload_value(&s, declared.as_ref(), p));
+            v.click = Some(crate::present::Click { event: c.event.clone(), payload });
+        }
     }
     if let Some(t) = &mut out.timeline {
         for sc in &mut t.scenes {

@@ -177,6 +177,22 @@ impl Interactive {
         })
     }
 
+    /// Clicks a point of a view where no representation takes the click (D-060): the view's
+    /// `on click as p request E(p)` requests its event with the point, `p` in view
+    /// coordinates as a drag reads them (PK-10.5).
+    pub fn click_at(&mut self, view: &str, p: [f64; 2]) -> Result<(), Report> {
+        let found = self.projector.views.iter().find(|v| v.0 == view || v.0.ends_with(&format!(".view.{view}"))).map(|v| (v.0.clone(), v.1.clone()));
+        let Some((id, ctx)) = found else { return self.report(Why::Refused, format!("no view `{view}`")) };
+        let Some(c) = self.projector.clicks.iter().find(|c| c.0 == id).map(|c| c.1.clone()) else {
+            return self.report(Why::Refused, format!("`{view}` does nothing when a point of it is clicked"));
+        };
+        let point = ctx.pointer(p);
+        self.commit(match c.payload {
+            Some(v) => Action::RequestWith(c.event, subst(&v, &point)),
+            None => Action::Request(c.event),
+        })
+    }
+
     /// Requests an event declared `on request` at the instant shown, with its payload when it
     /// declares one (D-027, D-050). `event` is the event's identity or name.
     pub fn request(&mut self, event: &str, payload: Option<Expr>) -> Result<(), Report> {

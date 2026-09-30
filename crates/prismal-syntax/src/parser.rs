@@ -1323,14 +1323,14 @@ impl<'a> Parser<'a> {
             self.expect_punct(":")?;
             let kind = self.name("a view kind")?;
             let args = self.args()?;
-            let reps = self.block(|p| p.rep_item())?;
-            return Ok(vec![PresItem::View(ViewDecl { name, kind, args, reps, span: self.since(start) })]);
+            let (reps, clicks) = self.view_body()?;
+            return Ok(vec![PresItem::View(ViewDecl { name, kind, args, reps, clicks, span: self.since(start) })]);
         }
         if self.is_word("panel") {
             let kind = self.any_name("`panel`")?;
             let name = self.name("a panel name")?;
-            let reps = self.block(|p| p.rep_item())?;
-            return Ok(vec![PresItem::View(ViewDecl { name, kind, args: vec![], reps, span: self.since(start) })]);
+            let (reps, clicks) = self.view_body()?;
+            return Ok(vec![PresItem::View(ViewDecl { name, kind, args: vec![], reps, clicks, span: self.since(start) })]);
         }
         if self.eat_word("permit") {
             let who = self.name("a role")?;
@@ -1367,6 +1367,36 @@ impl<'a> Parser<'a> {
             None
         };
         Ok(Observation { name, expr, of, filter, schedule, span: self.since(start) })
+    }
+
+    /// A view's block: representations, and `on click as p request E(p)` for a click on a
+    /// point of the view that no representation takes (D-060).
+    fn view_body(&mut self) -> P<(Vec<Rep>, Vec<Interaction>)> {
+        let items = self.block(|p| {
+            if p.is_word("on") {
+                let start = p.span();
+                p.bump();
+                let gesture = p.any_name("`click`")?;
+                if gesture.text != "click" {
+                    return Err(Diag::new("SX-E02", "a view takes `on click as p request E(p)`; drags belong to representations", gesture.span));
+                }
+                p.expect_word("as")?;
+                let bind = p.name("a name for the point clicked")?;
+                p.expect_word("request")?;
+                let event = p.name("an event name")?;
+                let payload = p.payload_args()?;
+                return Ok(vec![Err(Interaction { gesture, part: None, bind, proposals: vec![], request: Some((event, payload)), span: p.since(start) })]);
+            }
+            Ok(p.rep_item()?.into_iter().map(Ok).collect())
+        })?;
+        let (mut reps, mut clicks) = (vec![], vec![]);
+        for i in items {
+            match i {
+                Ok(r) => reps.push(r),
+                Err(c) => clicks.push(c),
+            }
+        }
+        Ok((reps, clicks))
     }
 
     /// A representation, or `for b in row { representations }`, each repeated per member

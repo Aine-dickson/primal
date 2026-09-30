@@ -74,7 +74,7 @@ Operators: `+ - * / ^`, `== != < <= > >=`, `and or not`. Units: `m cm mm km s ms
 | `observe { n = e schedule }` | observations | 1, 6 |
 | `timeline { scene s { beat b { actions } } }` | a lesson | 8 |
 
-**Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `circle(P, r)`, `ellipse(P, a, b, rotate: θ)`, `arc(P, r, from: θ1, to: θ2)`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)`, `group(at: P, rotate: θ, scale: k) { members }` (chapter 7). `as name` names one; `{ on drag [head] as p { propose x = e } }` declares its inverse, and `{ on click request E(v) }` the event a click requests; in `for b in c { ... }`, `propose b.x = e` and `request E(b)` act on that member (chapter 9).
+**Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `circle(P, r)`, `ellipse(P, a, b, rotate: θ)`, `arc(P, r, from: θ1, to: θ2)`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)`, `group(at: P, rotate: θ, scale: k) { members }` (chapter 7). `as name` names one; `{ on drag [head] as p { propose x = e } }` declares its inverse, and `{ on click request E(v) }` the event a click requests; in `for b in c { ... }`, `propose b.x = e` and `request E(b)` act on that member (chapter 9). A view's `on click as q request E(q)` requests `E` with an empty point clicked (chapter 9).
 
 **Observation schedules:** `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over [a, b]`. **Sources:** any expression, `event_log [of E] [where zeno_applied]`, `diagnostics [of element]`, `intervention_log`.
 
@@ -114,7 +114,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `crossing` | an event when a value crosses zero either way | 5 |
 | `derived` | values computed from others, always current | 1 |
 | `discrete` | state changed only by events | 5 |
-| `click` | the gesture that requests an event: `on click request E(b)` | 9 |
+| `click` | the gesture that requests an event: `on click request E(b)`; in a view, `on click as q request E(q)` | 9 |
 | `drag` | the gesture of an inverse: `on drag as p`; of a member, `propose b.pos = p` | 7, 9 |
 | `else`, `if`, `then` | conditional values; `if` also filters an aggregate and enables an event | 1, 5, 9 |
 | `emit` | an operation that makes another event happen | 5 |

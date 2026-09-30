@@ -210,7 +210,19 @@ impl PresCx<'_, '_> {
         self.cx.map.insert(id.clone(), v.span);
         let mut counts = HashMap::new();
         let representations = v.reps.iter().map(|r| self.rep(r, &id, &mut counts)).collect();
-        Some(View { id, name: v.name.text.clone(), kind, representations })
+        // `on click as p request E(p)` (D-060): the point is the gesture value, `{"param": 0}`.
+        if let Some(extra) = v.clicks.get(1) {
+            self.err("SX-E06", "one click per view", extra.span);
+        }
+        let click = v.clicks.first().map(|i| {
+            if matches!(kind, ViewKind::Panel) {
+                self.err("SX-E06", "a panel has no points to click; clicks on a point are for spatial and plot views", i.span);
+            }
+            let (e, p) = i.request.as_ref().unwrap();
+            let locals = vec![i.bind.text.clone()];
+            Click { event: self.cx.event_id(e), payload: p.as_ref().map(|v| self.cx.expr(v, &locals)) }
+        });
+        Some(View { id, name: v.name.text.clone(), kind, representations, click })
     }
 
     fn observation(&mut self, o: &ast::Observation, model: &Model) -> Observation {

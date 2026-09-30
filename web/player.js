@@ -735,6 +735,8 @@ function renderFrame(frame) {
       // The engine gives the box of view coordinates each view shows: its framing, the
       // learner's zoom and pan, the timeline's camera (D-047).
       v.box = vf.box;
+      // A view that requests an event when an empty point is clicked (D-060).
+      v.click = vf.click || null;
       if (v.kind === 'spatial') {
         v.svg.setAttribute('viewBox', v.box.join(' '));
       } else {
@@ -882,8 +884,9 @@ function setupPointer(v) {
     if (g && g.pointerId !== e.pointerId) return;
     const res = forward(v, 'move', e);
     if (!g) {
-      // Hovering: show what can be grabbed, or clicked (D-059).
-      v.svg.style.cursor = res.hover ? (res.hover.drag ? 'grab' : 'pointer') : '';
+      // Hovering: show what can be grabbed, or clicked (D-059); an empty point of a view
+      // that takes clicks shows a crosshair (D-060).
+      v.svg.style.cursor = res.hover ? (res.hover.drag ? 'grab' : 'pointer') : (v.click && !st.lesson ? 'crosshair' : '');
       return;
     }
     if (res.action === 'drag') status(res.ok ? '' : `Not valid here: ${res.message || 'rejected'}`, !res.ok);

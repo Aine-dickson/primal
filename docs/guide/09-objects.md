@@ -469,6 +469,12 @@ model Orbits in Plane {
       vel = (sqrt(mu / (2 m)), 0 m/s)
     }
   }
+  event place on request(q: Point) if |q - origin| > 0.5 m {
+    create planets {
+      pos = q
+      vel = sqrt(mu / |q - origin|^3) * (-(q - origin).y, (q - origin).x)
+    }
+  }
   derived { n: Real = count(planets) }
 }
 ```
@@ -477,6 +483,7 @@ model Orbits in Plane {
 - `on request(p in planets)` declares a payload that is a member of `planets`. Whoever requests `remove` says which planet; the handler reads it as `p`, like a loop variable: `destroy p`, `p.pos`, `set p.vel = ...`.
 - The event happens only for a planet that is alive. A request for a planet already removed, or not made yet, is refused with the reason (`planets[2]` is not alive).
 - `add` takes no payload: it makes the next planet, on a circular orbit of radius 2 m.
+- `place` takes a point and makes a planet there, on a circular orbit through it: the velocity is the direction from the sun turned a quarter turn, `(-(q - origin).y, (q - origin).x)`, at the circular speed. Its condition keeps new planets away from the sun.
 - `pos` is `intervenable`, so the learner may move a planet (D-023).
 
 An event may take a member and a value together: `event kick on request(p in planets, j: Vector<Momentum>) { set p.vel = p.vel + j / 1 kg }` is requested as `kick(planets[1], (0 kg*m/s, 1 kg*m/s))`. `emit E(p)` passes a member on to the events that follow `E`, which receive it as `on E(q in planets)`.
@@ -486,6 +493,7 @@ In a lab, the learner acts on the planet under the pointer:
 ```text
 presentation Sky for Orbits {
   view sky: spatial(Plane, scale: 1 m -> 80 px, y: up) {
+    on click as q request place(q)
     marker(origin) as sun
     for p in planets { trace(p.pos every 0.05 s) }
     for p in planets {
@@ -502,6 +510,7 @@ presentation Sky for Orbits {
 - `on drag as q { propose p.pos = q }` in a representation repeated per member moves that member: dragging `planet[2]` proposes a new position for `planets[2]`. The binding must be intervenable in the object type.
 - `on click request remove(p)` requests `remove` with the planet clicked. A click is a press and release that does not move; moving further makes it a drag. A click only requests an event: what happens is written in the model.
 - With the keyboard, Tab gives focus to each planet in turn; arrow keys move it and Enter or space activates its click. The text alternative says so: `planet[2] ..., activate: remove`.
+- `on click as q request place(q)`, written in the view itself, acts on a click where no representation takes it: an empty point of the sky. `q` is the point clicked, in the view's space, and the view requests `place` with it (D-060). A click on a planet removes the planet; a click beside it places a new one. When the presentation also permits `pan`, a press that moves pans the view and a press that does not move clicks.
 - The button adds a planet. A host that has no pointer requests the same events with the member named: `remove` with payload `"planets[2]"`.
 
 | Form | Does |
@@ -512,6 +521,7 @@ presentation Sky for Orbits {
 | `emit E(b)` | passes a member to the events that follow `E` |
 | `on drag as q { propose b.x = q }` | in `for b in c { ... }`: dragging moves that member |
 | `on click request E(b)` | in `for b in c { ... }`: clicking requests `E` for that member |
+| `on click as q request E(q)` | in a view: clicking an empty point requests `E` with the point |
 
 A lesson requests for members as a learner would. The case checks the effect of each request:
 

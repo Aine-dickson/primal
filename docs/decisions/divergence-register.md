@@ -79,6 +79,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-058 | Relations: relation types with endpoints in collections, relation sets with a capacity, `connect` and `disconnect`, endpoints read and compared, relations ended with their endpoints | Accepted |
 | D-057 | Collections whose membership changes: a declared capacity (`Drop[max 50]`), `create` and `destroy` in handlers, events per member, `set b.x` from the container; elaborated to members with a liveness binding | Accepted |
 | D-059 | Members as payloads (`on request(b in balls)`), several payloads per event, drags and clicks on members; requests refused with a reason | Accepted |
+| D-060 | Clicks on an empty point of a view: `on click as q request E(q)` in the view, the point as payload | Accepted |
 
 ---
 
@@ -1117,3 +1118,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
   - 2026-09-30 planned with the owner (PROJECT-STATE next steps, item 5).
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30; step A implemented.
   - 2026-10-01 steps B (drags on members), C (clicks) and D (guide chapter 9, Labs with members) implemented.
+
+## D-060: Clicks on an empty point of a view
+
+- **Status:** Accepted
+- **Original position:** D-059 let a representation request an event when clicked, and left clicks on an empty point of a view for later. A lab could not let the learner place something where they click (a planet, a charge, a point of a polygon); it needed a button and a fixed place, or a drag of something already there.
+- **Raised by:** D-059 ("Later, not in this decision"); PROJECT-STATE next steps, item 3.
+- **Builds on:** PK-5.6, PK-10.2a, PK-10.5, PK-10.5b, HI-4.3, HI-4.5, D-009, D-011, D-026, D-027, D-047, D-050, D-059.
+- **Question:** How does a click on a point where nothing is drawn request an event, and what does it carry?
+- **Options considered:**
+  1. **A click written in the view**: `view sky: spatial(...) { on click as q request place(q) ... }`. The point is a gesture value, read as a drag's is (PK-10.5), so the payload is an expression of it. Representations keep their clicks; the view's applies only where no representation takes the press.
+  2. **An invisible representation covering the view** (`area(on click ...)`): no new place for interactions, but a representation with no drawing and no extent is a special case in framing, hit testing, text alternatives and focus.
+  3. **Clicks delivered to the model as an input** (`input click: Point`): the model would depend on a presentation gesture, which D-009 and D-011 rule out.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. `on click as q request E(q)` in a spatial or plot view (at most one per view; none in a panel, SX-E06). The payload has the event's declared type (PK-E02); the event is declared `on request` (PK-E03). A press on an empty point that is released within the pointer's reach clicks; with `pan` permitted, a press that moves pans. The host's `click_at` names a view and a point in view coordinates, for hosts that target input themselves. Frames carry the event a view's click requests; the web player shows a crosshair over an empty point.
+- **Reason:** the point is data the author turns into a payload with the language's own expressions, and nothing reaches the model but a request the author declared, validated, logged and undone like any other (D-027, D-059). Option 2 was set aside because it adds a representation that draws nothing; option 3 because the model would depend on the presentation.
+- **Consequences:** PK-10.5c; HI-4.3 (`click_at`), HI-4.5 (presses on an empty point); 04-ir: a view's `click`; working syntax; the parser reads `on click as q request E(q)` in a view's block, the formatter prints it first; elaboration carries the payload; `Projector` checks view clicks; `Interactive::click_at`; the host's gestures (`Point`, and a pan that may still click); the web player's crosshair; guide chapter 9 (`place` in the orbits lab); tests `view_clicks.rs`, the raw input test `clicks_on_an_empty_point`, and `web/check-input.mjs` in a browser. Keyboard users reach the same event through a control or button (D-026): a point is not chosen with keys in v0.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

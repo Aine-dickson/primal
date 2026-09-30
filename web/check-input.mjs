@@ -123,6 +123,13 @@ await ev(`document.querySelector('[tabindex][data-rep="${planet(1)}"]').focus()`
 await key('Enter', 13);
 await sleep(200);
 check('Enter on a focused planet removes it', !(await shown(1)));
+// D-060: an empty point of the sky shows a crosshair, and a click there places a planet.
+await mouse('mouseMoved', cx, cy, { buttons: 0 });
+check('hover over an empty point shows a crosshair', (await ev(`document.querySelector('#views svg').style.cursor`)) === 'crosshair');
+await mouse('mousePressed', cx, cy);
+await mouse('mouseReleased', cx, cy);
+await sleep(200);
+check('a click on an empty point places planet 3', await shown(3));
 
 // RP-08 permits zoom and pan.
 await open('rp08/ProjectileLesson@1');
