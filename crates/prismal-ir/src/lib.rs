@@ -376,6 +376,49 @@ pub struct Payload {
     pub name: String,
     #[serde(rename = "type")]
     pub ty: Type,
+    /// A member of the collection with this part identity (`on request(b in balls)`, D-059):
+    /// the payload is the member's number in its collection, of type `Real`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub of: Option<Id>,
+    /// Made by elaboration for a member payload: the collection's path in the flat model
+    /// (`balls`, `cart.wheels`), by which hosts name a member (`balls[2]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub members: Option<String>,
+    /// Several payloads (`on request(b in balls, j: Momentum)`, D-059): the payload is the
+    /// tuple of these, each read as its component; `name` lists their names and `ty` is the
+    /// tuple of their types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<Payload>,
+}
+
+impl Payload {
+    /// A payload of a value of type `ty`.
+    pub fn value(name: impl Into<String>, ty: Type) -> Payload {
+        Payload { name: name.into(), ty, of: None, members: None, items: vec![] }
+    }
+    /// A member of the collection `of`, by its number.
+    pub fn member(name: impl Into<String>, of: impl Into<Id>) -> Payload {
+        Payload { name: name.into(), ty: Type::real(), of: Some(of.into()), members: None, items: vec![] }
+    }
+    /// Several payloads, carried as one tuple.
+    pub fn several(items: Vec<Payload>) -> Payload {
+        let name = items.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ");
+        let ty = Type::Tuple { items: items.iter().map(|p| p.ty.clone()).collect() };
+        Payload { name, ty, of: None, members: None, items }
+    }
+    /// The payloads as declared: the items, or this one.
+    pub fn declared(&self) -> Vec<&Payload> {
+        if self.items.is_empty() {
+            vec![self]
+        } else {
+            self.items.iter().collect()
+        }
+    }
+    /// Whether two events carry the same kind of payload: types and collections (D-059).
+    pub fn same_kind(&self, other: &Payload) -> bool {
+        let (a, b) = (self.declared(), other.declared());
+        self.ty == other.ty && a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.ty == y.ty && x.of == y.of)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

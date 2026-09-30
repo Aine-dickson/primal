@@ -64,7 +64,8 @@ struct Inst<'a> {
 }
 
 /// A member selected by an expression: one known when elaborating, or one of a collection's
-/// members chosen during the run by its number, as the member at a relation's endpoint.
+/// members chosen during the run by its number, as the member at a relation's endpoint or a
+/// member payload (D-058, D-059).
 #[derive(Clone)]
 enum Sel<'a> {
     One(Inst<'a>),
@@ -105,7 +106,7 @@ fn num(x: f64) -> Expr {
 struct Scope<'a> {
     ty: &'a Model,
     path: String,
-    vars: Vec<(String, Inst<'a>)>,
+    vars: Vec<(String, Sel<'a>)>,
     index: Option<u32>,
     /// Whether the scope's member is alive, when it or a container belongs to a collection
     /// whose membership changes (D-057).
@@ -126,7 +127,7 @@ impl<'a> Scope<'a> {
     }
     fn with_var(&self, var: &str, inst: Inst<'a>) -> Scope<'a> {
         let mut s = self.clone();
-        s.vars.push((var.to_string(), inst));
+        s.vars.push((var.to_string(), Sel::One(inst)));
         s
     }
     fn local(&self, id: &str) -> Id {
@@ -201,7 +202,20 @@ impl<'a> Cx<'a> {
         match e {
             Expr::End { end, of } => {
                 let rel = match of {
-                    Some(x) => self.member(s, x)?,
+                    // The endpoint of a relation chosen during the run: its number is picked
+                    // among the relations' endpoint bindings (D-059).
+                    Some(x) => match self.select(s, x)? {
+                        Sel::One(r) => r,
+                        Sel::Chosen { members, index, .. } => {
+                            return match self.end(&members[0], end)? {
+                                Sel::Chosen { members: ends, coll, .. } => {
+                                    let from = members.iter().map(|r| Expr::Ref { r#ref: flat(end, &r.path) }).collect();
+                                    Some(Sel::Chosen { members: ends, index: Expr::Pick { pick: Box::new(index), from }, coll })
+                                }
+                                one => Some(one),
+                            };
+                        }
+                    },
                     None => match &s.me {
                         Some(m) => m.clone(),
                         None => {
@@ -212,6 +226,10 @@ impl<'a> Cx<'a> {
                 };
                 self.end(&rel, end)
             }
+            Expr::Var { var } => match s.vars.iter().rev().find(|(v, _)| v == var) {
+                Some((_, sel)) => Some(sel.clone()),
+                None => self.member(s, e).map(Sel::One),
+            },
             _ => self.member(s, e).map(Sel::One),
         }
     }
@@ -244,7 +262,11 @@ impl<'a> Cx<'a> {
     fn member(&mut self, s: &Scope<'a>, e: &Expr) -> Option<Inst<'a>> {
         match e {
             Expr::Var { var } => match s.vars.iter().rev().find(|(v, _)| v == var) {
-                Some((_, i)) => Some(i.clone()),
+                Some((_, Sel::One(i))) => Some(i.clone()),
+                Some((_, Sel::Chosen { .. })) => {
+                    self.err("MK-E26", format!("`{var}` is chosen during the run: here a member known when the program is read is needed"));
+                    None
+                }
                 None => {
                     self.err("MK-E26", format!("`{var}` is not a member here: it is named only inside its `for` or aggregate"));
                     None
@@ -465,6 +487,61 @@ impl<'a> Cx<'a> {
         Target { binding, component: t.component, member: None }
     }
 
+    /// The targets of an operation on a binding of a member chosen during the run (a member
+    /// payload, `set b.vel`, or an endpoint, `set s.a.vel`): one per member of its collection,
+    /// each with the condition that it is the one chosen (D-059). `None` for any other target.
+    fn chosen_targets(&mut self, s: &Scope<'a>, t: &Target) -> Option<Vec<(Expr, Target)>> {
+        let m = t.member.as_ref()?;
+        let chosen = match m {
+            Expr::End { .. } => true,
+            Expr::Var { var } => matches!(s.vars.iter().rev().find(|(v, _)| v == var), Some((_, Sel::Chosen { .. }))),
+            _ => false,
+        };
+        if !chosen {
+            return None;
+        }
+        let sel = self.select(s, m)?;
+        let (members, index) = match sel {
+            Sel::Chosen { members, index, .. } => (members, index),
+            Sel::One(i) => return Some(vec![(Expr::Bool { bool: true }, Target { binding: flat(&t.binding, &i.path), component: t.component, member: None })]),
+        };
+        if members[0].ty.binding(&t.binding).is_none() {
+            self.err("MK-E26", format!("an object `{}` has no binding `{}`", members[0].ty.name, t.binding.rsplit('.').next().unwrap_or(&t.binding)));
+            return Some(vec![]);
+        }
+        Some(members.iter().map(|m| (Expr::bin(BinOp::Eq, index.clone(), num(m.pos as f64)), Target { binding: flat(&t.binding, &m.path), component: t.component, member: None })).collect())
+    }
+
+    /// The payload `e` supplied to an event that declares `declared`, in scope `s`: a member
+    /// payload is given a member and carries its number; several are given as a tuple (D-059).
+    fn payload_value(&mut self, s: &Scope<'a>, declared: Option<&crate::Payload>, e: &Expr) -> Expr {
+        let Some(p) = declared else { return self.expr(s, e) };
+        let items = p.declared();
+        match e {
+            Expr::Tuple { tuple } if items.len() > 1 && tuple.len() == items.len() => Expr::Tuple { tuple: items.iter().zip(tuple).map(|(i, x)| self.payload_item(s, i, x)).collect() },
+            _ if items.len() > 1 => {
+                self.err("MK-E26", format!("the payload is {} values: `{}`", items.len(), p.name));
+                num(0.0)
+            }
+            _ => self.payload_item(s, items[0], e),
+        }
+    }
+
+    fn payload_item(&mut self, s: &Scope<'a>, item: &crate::Payload, e: &Expr) -> Expr {
+        let Some(of) = &item.of else { return self.expr(s, e) };
+        if !Self::is_member(e) {
+            self.err("MK-E26", format!("the payload `{}` is a member of `{}`: give one, `{}[1]` or a member's name", item.name, part_name(s.ty, of), part_name(s.ty, of)));
+            return num(0.0);
+        }
+        let Some(sel) = self.select(s, e) else { return num(0.0) };
+        let (coll, index) = Self::key(&sel);
+        if coll != coll_key(&s.path, of) {
+            self.err("MK-E26", format!("the payload `{}` is a member of `{}`", item.name, part_name(s.ty, of)));
+            return num(0.0);
+        }
+        index
+    }
+
     /// The operations of a handler. The creates and connects of one collection in one handler
     /// take the next free members in order, and the count of members made is set once (D-057).
     fn ops(&mut self, s: &Scope<'a>, ops: &[Op]) -> Vec<Op> {
@@ -472,9 +549,22 @@ impl<'a> Cx<'a> {
         let mut made: Vec<(Id, u32)> = vec![];
         for o in ops {
             match o {
-                Op::Set { target, value } => out.push(Op::Set { target: self.target(s, target), value: self.expr(s, value) }),
-                Op::Contribute { target, value } => out.push(Op::Contribute { target: self.target(s, target), value: self.expr(s, value) }),
-                Op::Emit { event, payload } => out.push(Op::Emit { event: s.local(event), payload: payload.as_ref().map(|p| self.expr(s, p)) }),
+                Op::Set { target, value } | Op::Contribute { target, value } => {
+                    let value = self.expr(s, value);
+                    let op = |t: Target| match o {
+                        Op::Set { .. } => Op::Set { target: t, value: value.clone() },
+                        _ => Op::Contribute { target: t, value: value.clone() },
+                    };
+                    match self.chosen_targets(s, target) {
+                        Some(ts) => out.extend(ts.into_iter().map(|(cond, t)| Op::If { r#if: cond, then: vec![op(t)] })),
+                        None => out.push(op(self.target(s, target))),
+                    }
+                }
+                Op::Emit { event, payload } => {
+                    let declared = s.ty.events.iter().find(|e| &e.id == event).and_then(|e| e.payload.clone());
+                    let payload = payload.as_ref().map(|p| self.payload_value(s, declared.as_ref(), p));
+                    out.push(Op::Emit { event: s.local(event), payload })
+                }
                 Op::If { r#if, then } => out.push(Op::If { r#if: self.expr(s, r#if), then: self.ops(s, then) }),
                 Op::Destroy { member: Expr::Ref { .. } } | Op::Make { .. } => out.push(o.clone()),
                 Op::Destroy { member } | Op::Disconnect { relation: member } => {
@@ -624,6 +714,31 @@ impl<'a> Cx<'a> {
     /// An event in scope `s`, with the identity and name it has there, in effect while `live`.
     fn event(&mut self, s: &Scope<'a>, e: &Event, id: Id, name: String, live: Option<Expr>) -> Event {
         self.element = e.id.clone();
+        // D-059: a member payload is a member of its collection chosen by the number the
+        // occurrence carries. The event is enabled only for a member that exists and is alive.
+        let mut scope = s.clone();
+        let mut payload = e.payload.clone();
+        let mut chosen: Option<Expr> = None;
+        if let Some(p) = &mut payload {
+            let several = !p.items.is_empty();
+            let items: Vec<&mut crate::Payload> = if several { p.items.iter_mut().collect() } else { vec![p] };
+            for (k, item) in items.into_iter().enumerate() {
+                let Some(of) = item.of.clone() else { continue };
+                let Some((members, many)) = self.members(&scope, &of) else { continue };
+                if !many {
+                    self.err("MK-E26", format!("`{}` is one object; a member payload names a member of a collection", part_name(scope.ty, &of)));
+                    continue;
+                }
+                let read = Expr::Payload { payload: id.clone() };
+                let index = if several { Expr::Comp { comp: Box::new(read), axis: k } } else { read };
+                let exists = Expr::Pick { pick: Box::new(index.clone()), from: members.iter().map(|m| m.live.clone().unwrap_or(Expr::Bool { bool: true })).collect() };
+                chosen = both(chosen, Some(exists));
+                item.members = Some(join(&scope.path, &part_name(scope.ty, &of)));
+                let coll = coll_key(&scope.path, &of);
+                scope.vars.push((item.name.clone(), Sel::Chosen { members, index, coll }));
+            }
+        }
+        let s = &scope;
         let trigger = match &e.trigger {
             Trigger::Rising { guard } => Trigger::Rising { guard: self.expr(s, guard) },
             Trigger::Falling { guard } => Trigger::Falling { guard: self.expr(s, guard) },
@@ -648,7 +763,7 @@ impl<'a> Cx<'a> {
             id,
             name,
             trigger,
-            enable: both(live, enable),
+            enable: both(live, both(chosen, enable)),
             handler: self.ops(s, &e.handler),
             zeno: e.zeno.as_ref().map(|z| Zeno {
                 policy: match &z.policy {
@@ -658,7 +773,7 @@ impl<'a> Cx<'a> {
                 ..z.clone()
             }),
             process: e.process.as_ref().map(|p| s.local(p)),
-            payload: e.payload.clone(),
+            payload,
             each: None,
             notes: e.notes.clone(),
         }
@@ -1014,7 +1129,10 @@ impl<'a> PCx<'a, '_> {
                 Action::Run { rate } => Action::Run { rate: self.e(&s, rate) },
                 Action::Seek { time } => Action::Seek { time: self.e(&s, time) },
                 Action::Intervene { ops } => Action::Intervene { ops: self.cx.ops(&s, ops) },
-                Action::Request { event, payload } => Action::Request { event: event.clone(), payload: ex(self, payload) },
+                Action::Request { event, payload } => {
+                    let declared = s.ty.events.iter().find(|e| &e.id == event).and_then(|e| e.payload.clone());
+                    Action::Request { event: event.clone(), payload: payload.as_ref().map(|p| self.cx.payload_value(&s, declared.as_ref(), p)) }
+                }
                 Action::Wait { duration } => Action::Wait { duration: self.e(&s, duration) },
                 Action::Explore { limit, keep, controls, fallback } => Action::Explore { limit: ex(self, limit), keep: keep.clone(), controls: self.reps(&s, controls), fallback: self.actions(fallback) },
                 Action::Sequence { actions } => Action::Sequence { actions: self.actions(actions) },

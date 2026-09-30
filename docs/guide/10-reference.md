@@ -35,13 +35,13 @@ Each block keyword also has a one-line form: `param g: Acceleration = 9.81 m/s^2
 
 **Modifiers:** `symbol "θ"` (display symbol), `unit deg` (display unit of an angle), `intervenable` (state the learner may change), `private`.
 
-**Triggers:** `rising(g)`, `falling(g)`, `crossing(g)` (zero crossings of `g`), `at τ`, `every Δ [from τ0]`, `start`, `request`, `E` (after event `E` occurs or is emitted), `input(i)`. `request(p: T)` and `E(p: T)` receive a payload named `p` (chapter 5).
+**Triggers:** `rising(g)`, `falling(g)`, `crossing(g)` (zero crossings of `g`), `at τ`, `every Δ [from τ0]`, `start`, `request`, `E` (after event `E` occurs or is emitted), `input(i)`. `request(p: T)` and `E(p: T)` receive a payload named `p` (chapter 5); `request(b in c)` receives a member of the collection `c`, and `request(b in c, p: T)` several payloads (chapter 9).
 
 **Inputs:** `input { x: T [= default] }`, values from the environment; a case supplies them with `input { x = v; x = v at τ }` (chapter 5).
 
 **Members** (chapter 9): `a.x`, `c[k].x`; `sum`, `min`, `max`, `any`, `all` of `(e for b in c [if cond])`; `count(c)`, `count(b for b in c if cond)`. In views, `for b in c { reps }` draws one representation per member, named `name[k]`.
 
-**Operations:** `set x = e`, `emit E`, `emit E(v)` (with a payload), `contribute x += e` (contributions to discrete state are not implemented by the prototype, MK-E11).
+**Operations:** `set x = e`, `set b.x = e` (a member's binding), `emit E`, `emit E(v)` (with a payload), `emit E(b, v)` (several), `contribute x += e` (contributions to discrete state are not implemented by the prototype, MK-E11).
 
 ## Types and values
 
@@ -78,7 +78,7 @@ Operators: `+ - * / ^`, `== != < <= > >=`, `and or not`. Units: `m cm mm km s ms
 
 **Observation schedules:** `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over [a, b]`. **Sources:** any expression, `event_log [of E] [where zeno_applied]`, `diagnostics [of element]`, `intervention_log`.
 
-**Timeline actions:** `narrate "..." [for d]`, `run rate r [until E]`, `hold`, `seek τ`, `reset`, `branch`, `highlight name`, `hide name [for d]`, `reveal fade|draw [for d] [in view] { reps }`, `camera view [to P] [zoom z] [for d]`, `in view { reps }`, `show rep`, `intervene { set p = e }`, `request E`, `wait d`, `sequence { ... }`, `explore [limit L] [keep p, ...] { controls } [fallback { actions }]` (chapter 8).
+**Timeline actions:** `narrate "..." [for d]`, `run rate r [until E]`, `hold`, `seek τ`, `reset`, `branch`, `highlight name`, `hide name [for d]`, `reveal fade|draw [for d] [in view] { reps }`, `camera view [to P] [zoom z] [for d]`, `in view { reps }`, `show rep`, `intervene { set p = e }`, `request E`, `request E(v)`, `request E(c[k], v)`, `wait d`, `sequence { ... }`, `explore [limit L] [keep p, ...] { controls } [fallback { actions }]` (chapter 8).
 
 ## Runs
 
@@ -133,7 +133,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `from` | the start of `every Δ from τ0` | 5 |
 | `hide`, `reveal`, `highlight` | timeline actions on representations | 8 |
 | `hold`, `run`, `rate`, `until`, `seek`, `reset`, `wait` | timeline control of the simulation: pause, play at a rate until an event, jump, restart, wait | 8 |
-| `in` | the space of a model (`model M in Plane`), a range (`x in [a, b]`), a view (`in scene { ... }`), a collection (`for b in row`) | 1, 3, 8, 9 |
+| `in` | the space of a model (`model M in Plane`), a range (`x in [a, b]`), a view (`in scene { ... }`), a collection (`for b in row`), a member payload (`request(b in row)`) | 1, 3, 8, 9 |
 | `index` | the number of a member in a collection's overrides | 9 |
 | `input` | values supplied from outside, with an optional default; an object's connections | 5, 9 |
 | `intervenable` | state the learner may change | 3 |

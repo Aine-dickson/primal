@@ -447,6 +447,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 - **MK-15.1** An **event** has identity, an owner, a **trigger**, an optional **enabling condition**, a **handler**, and an optional typed **payload**.
 - **MK-15.1a** In v0 a payload has a name and a type, declared where it enters the event: `on request(j: Momentum)` (the request supplies it) or `on E(j: Momentum)` (the payload `E` occurred or was emitted with, of the same type). Any other source is MK-E24. The payload is read by its name in the event's enabling condition and handler, and nowhere else. `emit E(v)` supplies the payload of `E`'s followers and requires `E` to declare a payload of `v`'s type. Every occurrence in the event log carries its payload (RC-15.1) (D-050).
 - **MK-15.1b** (D-057) A model may repeat an event for each member of a collection: `for d in drops { event land on falling(d.pos.y) { destroy d } }`. Each member has its own event, named `land[k]`, in effect while the member is alive; its trigger, condition and handler read the member as `d`, and its handler may write the member's bindings (`set d.vel = ...`, MK-7.10).
+- **MK-15.1c** (D-059) In v0 a payload may be a **member** of a collection of the event's model: `on request(b in balls)`, `on E(b in balls)`. The occurrence carries the member's number in its collection; the condition and handler read the member as `b` (`b.pos`, `b == o`), write its bindings (`set b.vel = ...`, one conditional operation per member after elaboration) and may destroy it. The event is enabled only for a member that exists and is alive. An event may declare **several payloads**, `on request(b in balls, j: Momentum)`, carried as one tuple and supplied as a list: `request kick(balls[2], j)`, `emit kick(b, j)`. `emit E(b)` passes a member on; a follower receives members of the same collection (MK-E24 otherwise). Through a relation, `set s.a.vel = ...` writes the member at an endpoint.
 - **MK-15.2** An event **occurs** at an event instant `(t, n)` (superdense time: `n` counts successive transitions at the same `t`). Locating `t` and ordering occurrences is the runtime contract; the kernel defines when an occurrence is due.
 
 ### 15.2 Triggers
@@ -571,7 +572,7 @@ The kernel defines these static errors. They are detected before execution, on t
 | MK-E21 | Tuple used as a vector with no expected vector type | MK-4.8 |
 | MK-E22 | Target defined twice: two defining flows for one `der(x)`, or two definitions of one binding; a case declared twice | MK-14.7, MK-6.1, MK-2.2a |
 | MK-E23 | Declared function that calls itself, directly or through other functions | MK-10.3a |
-| MK-E24 | Event payload without a source: not requested, and not following an event that carries a payload of the same type | MK-15.1a |
+| MK-E24 | Event payload without a source: not requested, and not following an event that carries a payload of the same type (members of the same collection) | MK-15.1a, MK-15.1c |
 | MK-E25 | `index` read outside the overrides of a collection | MK-8.3a |
 | MK-E26 | A member that does not exist or is not constant, a part used as a value, an unknown object type, a derived binding given a value in a part, or an aggregate without a value | MK-7.13, MK-8.3a |
 
@@ -737,6 +738,7 @@ Positions that elaborate accepted decisions without changing them are specified 
 - Object types, parts and fixed collections, elaborated before checking (MK-7.13, MK-8.3a, MK-8.3b, MK-8.8; D-055).
 - Collections whose membership changes, with a declared capacity; `create`, `destroy` and events per member (MK-7.7a, MK-8.2a, MK-15.1b, MK-16.1a; D-057).
 - Relation types with endpoints in collections, relation sets, `connect` and `disconnect` (MK-8.5a, MK-8.6a, MK-16.1b; D-058).
+- Members as payloads and several payloads per event (MK-15.1c; D-059).
 
 - `Real` is binary64; non-finite results are `invalid`; integer overflow is `invalid` (2.2).
 - Quantities compute in coherent SI units; units affect input and display only (3.3).

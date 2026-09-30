@@ -18,7 +18,7 @@ use prismal_present::data::Data;
 use crate::input::{focus_order, hit, tolerance, Target, ViewKind, ViewState, Viewport, PLOT_MARGIN};
 use prismal_present::frame::{CKind, CRep, Frame, RepFrame, Shape, ViewCtx};
 use prismal_present::interact::{si_literal, Interactive, Key};
-use prismal_present::text::{fmt_binding, fmt_num, fmt_value, print, symbol, unit_text};
+use prismal_present::text::{fmt_binding, fmt_num, fmt_payload, fmt_value, print, symbol, unit_text};
 use prismal_present::timeline::{play, Input, Medium, Playback};
 use prismal_present::{Program, LESSON_HORIZON};
 use prismal_runtime::{Action, Config};
@@ -450,6 +450,27 @@ impl Instance {
         }
     }
 
+    /// Requests an event declared `on request` (by name or identity) at the instant shown,
+    /// with its payload (HI-4.3b, D-050, D-059): a number in coherent SI units (0 and 1 for a
+    /// Boolean), an array of numbers for a vector or a point, a member as `"balls[2]"`, and
+    /// several payloads as an array with one entry each.
+    pub fn request(&mut self, event: &str, payload: Option<&Json>) -> Json {
+        let i = match self.interactive() {
+            Ok(i) => i,
+            Err(e) => return json!({ "ok": false, "message": e }),
+        };
+        let declared = i.cm.ir.events.iter().find(|e| e.id == event || e.name == event).and_then(|e| e.payload.clone());
+        let value = match (payload, &declared) {
+            (Some(v), Some(p)) => match payload_expr(p, v) {
+                Ok(e) => Some(e),
+                Err(m) => return json!({ "ok": false, "why": "refused", "message": m }),
+            },
+            (Some(_), None) => return json!({ "ok": false, "why": "refused", "message": format!("`{event}` declares no payload") }),
+            (None, _) => None,
+        };
+        Self::outcome(i.request(event, value))
+    }
+
     /// Presses a button: requests its event at the instant shown (D-027).
     pub fn press(&mut self, rep: &str) -> Json {
         match self.interactive() {
@@ -779,6 +800,37 @@ fn literal(value: f64, ty: &prismal_ir::Type) -> prismal_ir::Expr {
     }
 }
 
+/// A payload given in the protocol, as the expression a request supplies (HI-4.3b).
+fn payload_expr(p: &prismal_ir::Payload, v: &Json) -> Result<prismal_ir::Expr, String> {
+    use prismal_ir::{Expr, Type};
+    if !p.items.is_empty() {
+        let items = v.as_array().filter(|a| a.len() == p.items.len()).ok_or_else(|| format!("the payload `{}` is an array of {} values", p.name, p.items.len()))?;
+        return Ok(Expr::Tuple { tuple: p.items.iter().zip(items).map(|(i, x)| payload_expr(i, x)).collect::<Result<_, _>>()? });
+    }
+    // D-059: a member is named by its collection and number, `balls[2]`, or by the number.
+    if let Some(path) = &p.members {
+        let k = match v {
+            Json::String(s) => s.strip_prefix(path.as_str()).and_then(|r| r.strip_prefix('[')).and_then(|r| r.strip_suffix(']')).and_then(|n| n.trim().parse::<u32>().ok()),
+            Json::Number(n) => n.as_u64().map(|n| n as u32),
+            _ => None,
+        };
+        return match k {
+            Some(k) => Ok(Expr::Num { num: k as f64, unit: None }),
+            None => Err(format!("the payload `{}` is a member of `{path}`: `\"{path}[1]\"`", p.name)),
+        };
+    }
+    let nums = |a: &Vec<Json>| a.iter().map(Json::as_f64).collect::<Option<Vec<f64>>>();
+    match (v, &p.ty) {
+        (Json::Bool(b), Type::Boolean) => Ok(Expr::Bool { bool: *b }),
+        (Json::Number(n), ty) => Ok(literal(n.as_f64().unwrap_or(0.0), ty)),
+        (Json::Array(a), Type::Vector { dim, .. }) => match nums(a) {
+            Some(xs) => Ok(Expr::Tuple { tuple: xs.into_iter().map(|x| si_literal(x, &Type::Quantity { dim: *dim })).collect() }),
+            None => Err(format!("the payload `{}` is an array of numbers", p.name)),
+        },
+        _ => Err(format!("the payload `{}` is not given as its type needs", p.name)),
+    }
+}
+
 fn control_type<'a>(cm: &CModel, reps: impl Iterator<Item = &'a CRep>, rep: &str) -> prismal_ir::Type {
     for r in reps {
         if r.rep.id == rep || r.rep.name.as_deref() == Some(rep) {
@@ -871,7 +923,7 @@ fn fmt_data(cm: &CModel, run: &prismal_runtime::Run, o: &Observation, d: &Data) 
             .iter()
             .map(|e| {
                 let payload = match (&e.payload, cm.ir.events.iter().find(|x| x.id == e.event).and_then(|x| x.payload.as_ref())) {
-                    (Some(v), Some(p)) => format!("({})", fmt_value(v, &p.ty)),
+                    (Some(v), Some(p)) => format!("({})", fmt_payload(v, p)),
                     _ => String::new(),
                 };
                 format!("{}{payload} at {} s", e.name, fmt_num(e.t))
@@ -883,7 +935,14 @@ fn fmt_data(cm: &CModel, run: &prismal_runtime::Run, o: &Observation, d: &Data) 
             .map(|s| match &s.action {
                 Action::Intervene(ops) => format!("at {} s: {}", fmt_num(s.t), ops.iter().map(|o| fmt_op(cm, run, s.t, o)).collect::<Vec<_>>().join("; ")),
                 Action::Request(e) => format!("at {} s: request {}", fmt_num(s.t), e.rsplit('.').next().unwrap_or(e)),
-                Action::RequestWith(e, v) => format!("at {} s: request {}({})", fmt_num(s.t), e.rsplit('.').next().unwrap_or(e), print(v, cm, &[])),
+                Action::RequestWith(e, v) => {
+                    let declared = cm.ir.events.iter().find(|x| &x.id == e).and_then(|x| x.payload.as_ref());
+                    let shown = match (declared, prismal_present::constant_as(cm, v, declared.map(|p| &p.ty))) {
+                        (Some(p), Ok(x)) => fmt_payload(&x, p),
+                        _ => print(v, cm, &[]),
+                    };
+                    format!("at {} s: request {}({shown})", fmt_num(s.t), e.rsplit('.').next().unwrap_or(e))
+                }
                 Action::Input(b, v) => format!("at {} s: input {} = {}", fmt_num(s.t), cm.ir.binding(b).map(|x| x.name.as_str()).unwrap_or(b), print(v, cm, &[])),
             })
             .collect(),

@@ -307,8 +307,16 @@ impl<'a, 'b> Tc<'a, 'b> {
                 }
                 let mut items = vec![];
                 let mut types = vec![];
-                for it in tuple {
-                    let (c, t) = self.expr(it, None)?;
+                // A tuple expected of a tuple type has items of its item types (D-059).
+                let want = match exp {
+                    Some(Type::Tuple { items }) if items.len() == tuple.len() => Some(items),
+                    _ => None,
+                };
+                for (k, it) in tuple.iter().enumerate() {
+                    let (c, t) = match want {
+                        Some(w) => (self.expect(it, &w[k])?, w[k].clone()),
+                        None => self.expr(it, None)?,
+                    };
                     items.push(c);
                     types.push(t);
                 }
@@ -868,7 +876,7 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
         if let Some(p) = &e.payload {
             let source_ok = match &e.trigger {
                 Trigger::Request => true,
-                Trigger::On { event } => model.events.iter().find(|x| &x.id == event).and_then(|x| x.payload.as_ref()).is_some_and(|q| q.ty == p.ty),
+                Trigger::On { event } => model.events.iter().find(|x| &x.id == event).and_then(|x| x.payload.as_ref()).is_some_and(|q| q.same_kind(p)),
                 _ => false,
             };
             if !source_ok {

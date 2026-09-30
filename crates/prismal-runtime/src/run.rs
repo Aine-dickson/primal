@@ -690,6 +690,27 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// Why a request of event `ei` with `payload` is not enabled: a member it names is not
+    /// alive (D-059), or the event's condition does not hold.
+    fn not_enabled(&self, ei: usize, payload: Option<&Value>) -> String {
+        let name = &self.cm.events[ei].name;
+        if let (Some(p), Some(v)) = (&self.cm.ir.events[ei].payload, payload) {
+            let values: Vec<Value> = match v {
+                Value::Tuple(t) if !p.items.is_empty() => t.iter().cloned().collect(),
+                other => vec![other.clone()],
+            };
+            for (item, v) in p.declared().into_iter().zip(values) {
+                let (Some(of), Some(path)) = (&item.of, &item.members) else { continue };
+                let member = format!("{path}[{}]", v.num());
+                let live = self.cm.index.get(&prismal_ir::elaborate::alive(of, &member));
+                if live.is_some_and(|&b| !self.vals[b].boolean()) {
+                    return format!("`{name}` is refused: `{member}` is not alive (not made yet, or destroyed)");
+                }
+            }
+        }
+        format!("`{name}` is not enabled now: its condition does not hold")
+    }
+
     /// Event iteration at the current event time (RC section 8.1).
     fn iterate(&mut self, due: Vec<usize>, requested: Vec<usize>) -> Result<(), RunDiag> {
         let r = self.iterate_with(due, requested.into_iter().map(|e| (e, None)).collect(), vec![None; self.cm.events.len()]);
@@ -986,6 +1007,24 @@ impl<'a> Engine<'a> {
                     }
                     (Action::Intervene(_) | Action::Input(..), _) => unreachable!(),
                 };
+                // A request the event's enabling condition refuses is rejected with the reason:
+                // a member payload names a member that is not alive, or the condition is false
+                // (MK-15.5, D-059).
+                if let Some(c) = &self.cm.events[ei].enable {
+                    let mut payloads = vec![None; self.cm.events.len()];
+                    payloads[ei] = payload.clone();
+                    let ctx = Ctx { vals: &self.vals, der: None, t: self.t, t0: self.cfg.t0, args: &[], payloads: &payloads };
+                    let why = match c.eval(&ctx) {
+                        Ok(Value::Bool(true)) => None,
+                        Ok(_) => Some(self.not_enabled(ei, payload.as_ref())),
+                        Err(s) => Some(format!("`{}` cannot be requested: {}", self.cm.events[ei].name, s.cause)),
+                    };
+                    if let Some(why) = why {
+                        let rd = self.diag(Category::Intervention, why, Some(id));
+                        self.run.rejected.push(rd);
+                        return Ok(());
+                    }
+                }
                 let r = self.iterate_with(vec![], vec![(ei, payload)], vec![None; self.cm.events.len()]);
                 self.payloads = vec![None; self.cm.events.len()];
                 r

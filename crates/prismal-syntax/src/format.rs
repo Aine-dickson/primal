@@ -145,6 +145,33 @@ impl<'a> Printer<'a> {
     }
 
     /// The name of a part, of the model or of one of its object types.
+    /// The name of the payload item `k` of the event whose payload `e` reads (D-059).
+    fn payload_item(&self, e: &Expr, k: usize) -> Option<String> {
+        let Expr::Payload { payload } = e else { return None };
+        let p = self.model.events.iter().find(|x| &x.id == payload)?.payload.as_ref()?;
+        p.items.get(k).map(|i| i.name.clone())
+    }
+
+    /// The payload a request or `emit` supplies: several as an argument list (D-059).
+    fn payload_args(&self, p: &Expr) -> String {
+        match p {
+            Expr::Tuple { tuple } if tuple.len() > 1 => tuple.iter().map(|x| self.expr(x)).collect::<Vec<_>>().join(", "),
+            _ => self.expr(p),
+        }
+    }
+
+    /// A payload declaration: `p: T`, or a member `b in balls` (D-050, D-059).
+    fn payload_decl(&self, p: &prismal_ir::Payload) -> String {
+        p.declared()
+            .iter()
+            .map(|x| match &x.of {
+                Some(of) => format!("{} in {}", x.name, self.part_name(of)),
+                None => format!("{}: {}", x.name, self.ty(&x.ty)),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     fn part_name(&self, id: &str) -> String {
         std::iter::once(self.root)
             .chain(&self.root.objects)
@@ -391,6 +418,8 @@ impl<'a> Printer<'a> {
             Expr::Apply { apply, args } => format!("{}({})", w(apply, P_ATOM), args.iter().map(p).collect::<Vec<_>>().join(", ")),
             Expr::If { r#if, then, r#else } => format!("if {} then {} else {}", p(r#if), p(then), p(r#else)),
             Expr::Tuple { tuple } => format!("({})", tuple.iter().map(p).collect::<Vec<_>>().join(", ")),
+            // One of several payloads is read by its name (D-059).
+            Expr::Comp { comp, axis } if matches!(&**comp, Expr::Payload { .. }) && self.payload_item(comp, *axis).is_some() => self.payload_item(comp, *axis).unwrap(),
             Expr::Comp { comp, axis } => {
                 let name = self.axes.get(*axis).cloned().unwrap_or_else(|| axis.to_string());
                 format!("{}.{name}", w(comp, P_ATOM))
@@ -665,7 +694,7 @@ impl<'a> Printer<'a> {
             Op::Set { target, value } => format!("set {} = {}", self.target(target), self.expr(value)),
             Op::Contribute { target, value } => format!("contribute {} += {}", self.target(target), self.expr(value)),
             Op::Emit { event, payload } => match payload {
-                Some(p) => format!("emit {}({})", self.event_name(event), self.expr(p)),
+                Some(p) => format!("emit {}({})", self.event_name(event), self.payload_args(p)),
                 None => format!("emit {}", self.event_name(event)),
             },
             Op::Create { part, overrides } => {
@@ -734,7 +763,7 @@ impl<'a> Printer<'a> {
         notes(&mut s, &ind, &e.notes);
         let _ = write!(s, "{ind}event {} on {}", e.name, self.trigger(&e.trigger));
         if let Some(p) = &e.payload {
-            let _ = write!(s, "({}: {})", p.name, self.ty(&p.ty));
+            let _ = write!(s, "({})", self.payload_decl(p));
         }
         if let Some(c) = &e.enable {
             let _ = write!(s, " if {}", self.expr(c));
@@ -1064,7 +1093,7 @@ impl<'a> Printer<'a> {
             Action::Branch => "branch".into(),
             Action::Intervene { ops } => format!("intervene {}", block(ops.iter().map(|o| self.op(o)).collect())),
             Action::Request { event, payload } => match payload {
-                Some(p) => format!("request {}({})", self.event_name(event), self.expr(p)),
+                Some(p) => format!("request {}({})", self.event_name(event), self.payload_args(p)),
                 None => format!("request {}", self.event_name(event)),
             },
             Action::Wait { duration } => format!("wait {}", self.expr(duration)),

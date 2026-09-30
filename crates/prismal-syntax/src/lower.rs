@@ -189,8 +189,9 @@ pub(crate) struct ModelCx<'a> {
     pub(crate) enums: HashMap<String, (Id, Vec<String>)>,
     /// Declared functions by name (D-048).
     pub(crate) functions: HashMap<String, Id>,
-    /// While lowering an event with a payload: the payload's name and the event (D-050).
-    payload: Option<(String, Id)>,
+    /// While lowering an event with payloads: each value payload's name, the event, and its
+    /// component when the event carries several (D-050, D-059). Member payloads are in `vars`.
+    payload: Vec<(String, Id, Option<usize>)>,
     pub(crate) diags: &'a mut Vec<Diag>,
     pub(crate) map: &'a mut SourceMap,
     flows: usize,
@@ -223,7 +224,7 @@ impl<'a> ModelCx<'a> {
             events: m.events.iter().map(|ev| (ev.name.clone(), ev.id.clone())).collect(),
             enums: m.enums.iter().map(|e| (e.name.clone(), (e.id.clone(), e.cases.clone()))).collect(),
             functions: m.functions.iter().map(|f| (f.name.clone(), f.id.clone())).collect(),
-            payload: None,
+            payload: vec![],
             diags,
             map,
             flows: 0,
@@ -262,7 +263,7 @@ impl<'a> ModelCx<'a> {
             events: HashMap::new(),
             enums: HashMap::new(),
             functions: HashMap::new(),
-            payload: None,
+            payload: vec![],
             diags,
             map,
             flows: 0,
@@ -800,17 +801,51 @@ impl<'a> ModelCx<'a> {
             ast::TriggerExpr::On(n, _) => Trigger::On { event: self.event_id(n) },
         };
         let id = format!("{}.event.{}", self.name, e.name.text);
-        // D-050: the payload's name reads the occurrence's payload in the condition and handler.
-        let payload = match &e.trigger {
-            ast::TriggerExpr::Request(Some((n, t))) | ast::TriggerExpr::On(_, Some((n, t))) => {
-                if self.bindings.contains_key(&n.text) || self.functions.contains_key(&n.text) {
-                    self.err("SX-E09", format!("payload `{}` has the name of a binding or function", n.text), n.span);
-                }
-                Some(Payload { name: n.text.clone(), ty: self.ty(t) })
-            }
-            _ => None,
+        // D-050: the payload's name reads the occurrence's payload in the condition and handler;
+        // a member payload names a member of its collection, as a loop variable does (D-059).
+        let decls: &[ast::PayloadDecl] = match &e.trigger {
+            ast::TriggerExpr::Request(d) | ast::TriggerExpr::On(_, d) => d,
+            _ => &[],
         };
-        self.payload = payload.as_ref().map(|p| (p.name.clone(), id.clone()));
+        let vars = self.vars.len();
+        let mut items = vec![];
+        for (k, d) in decls.iter().enumerate() {
+            let n = &d.name;
+            if self.bindings.contains_key(&n.text) || self.functions.contains_key(&n.text) {
+                self.err("SX-E09", format!("payload `{}` has the name of a binding or function", n.text), n.span);
+            }
+            if decls[..k].iter().any(|x| x.name.text == n.text) {
+                self.err("SX-E09", format!("payload `{}` declared twice", n.text), n.span);
+            }
+            let component = if decls.len() > 1 { Some(k) } else { None };
+            match &d.ty {
+                ast::PayloadTy::Value(t) => {
+                    items.push(Payload::value(n.text.clone(), self.ty(t)));
+                    self.payload.push((n.text.clone(), id.clone(), component));
+                }
+                ast::PayloadTy::Member(c) => match self.parts.get(&c.text).cloned() {
+                    Some(p) if p.many => {
+                        items.push(Payload::member(n.text.clone(), p.id));
+                        self.vars.push((n.text.clone(), p.object));
+                    }
+                    // The name stays a member, of no known type, so that its uses are not
+                    // reported again.
+                    Some(_) => {
+                        self.err("SX-E08", format!("`{}` is one object; a member payload names a member of a collection", c.text), c.span);
+                        self.vars.push((n.text.clone(), String::new()));
+                    }
+                    None => {
+                        self.err("SX-E03", format!("unknown collection `{}`", c.text), c.span);
+                        self.vars.push((n.text.clone(), String::new()));
+                    }
+                },
+            }
+        }
+        let payload = match items.len() {
+            0 => None,
+            1 => items.pop(),
+            _ => Some(Payload::several(items)),
+        };
         let enable = e.enable.as_ref().map(|c| self.expr(c, &[]));
         let handler = e.handler.iter().map(|o| self.op(o)).collect();
         let zeno = e.zeno.as_ref().map(|z| Zeno {
@@ -822,7 +857,8 @@ impl<'a> ModelCx<'a> {
             n: None,
             window: None,
         });
-        self.payload = None;
+        self.payload.clear();
+        self.vars.truncate(vars);
         if each.is_some() {
             self.vars.pop();
         }
@@ -924,6 +960,10 @@ impl<'a> ModelCx<'a> {
     fn target(&mut self, p: &ast::Path) -> Target {
         let names_member = |cx: &Self, n: &str| !cx.bindings.contains_key(n) && (cx.vars.iter().any(|(v, _)| v == n) || cx.parts.contains_key(n));
         let (member, name, component) = match (&p.member, &p.component) {
+            // `s.b.vel`: the member at the endpoint `b` of `s` (D-059).
+            (Some(m), Some(c)) if self.quiet_type(m, &[]).is_some_and(|t| self.objects.get(&t).is_some_and(|o| o.ends.contains_key(&p.name.text))) => {
+                (Some(ast::Expr { kind: ExprKind::Field(Box::new(m.clone()), p.name.clone()), span: m.span }), c.clone(), None)
+            }
             (Some(m), _) => (Some(m.clone()), p.name.clone(), p.component.clone()),
             (None, Some(c)) if names_member(self, &p.name.text) => {
                 (Some(ast::Expr { kind: ExprKind::Name(p.name.text.clone()), span: p.name.span }), c.clone(), None)
@@ -1243,10 +1283,12 @@ impl<'a> ModelCx<'a> {
         if let Some(i) = locals.iter().position(|l| l == n) {
             return build::param(i);
         }
-        if let Some((p, ev)) = &self.payload {
-            if p == n {
-                return Expr::Payload { payload: ev.clone() };
-            }
+        if let Some((_, ev, k)) = self.payload.iter().find(|(p, ..)| p == n) {
+            let read = Expr::Payload { payload: ev.clone() };
+            return match k {
+                Some(k) => Expr::Comp { comp: Box::new(read), axis: *k },
+                None => read,
+            };
         }
         if let Some(id) = self.bindings.get(n) {
             return build::r(id);

@@ -203,6 +203,21 @@ Acceptance: `prismal-present/tests/relations.rs` (two balls on a spring oscillat
 
 Found on the way: `create` could not give a parameter of the new member a starting value (MK-E08); guards of events of members not alive were evaluated on values that do not exist; a mistake in a member expression was reported twice.
 
+### Members as payloads
+
+A request, and an event following another, may carry a member of a collection (D-059). Elaboration treats the payload as D-058 treats an endpoint: a member chosen during the run by its number.
+
+| Part | Content |
+|---|---|
+| Syntax | `on request(b in balls)`, `on E(c in balls)`, several payloads `on request(b in balls, j: T)`; `emit E(b, j)`, `request E(balls[2], j)`; targets through endpoints, `set s.b.vel.x = e` |
+| IR | a payload's `of` (the collection's part), `members` (its path after elaboration), `items` (several payloads, carried as a tuple and read as its components) |
+| Elaboration | a loop variable may be a member chosen during the run; the event's condition gains `pick(k, [alive of member 1, ...])`; `set b.x` becomes one conditional `set` per member; the endpoint of a chosen relation picks among the relations' endpoint bindings; a member supplied to `emit` or a timeline `request` becomes its number, checked against the collection declared |
+| Kernel | a tuple expected of a tuple type is checked item by item (a vector literal inside a tuple payload) |
+| Runtime | a request whose event is not enabled is rejected with the reason (a member not alive, no member of that number, the condition false) instead of being dropped |
+| Host | the protocol's `request` with a JSON payload (`"balls[2]"`, `["balls[3]", [0, 2]]`); event logs print members by name, `remove(balls[2]) at 1 s` |
+
+Acceptance: `prismal-present/tests/member_payloads.rs` (removal, refusals of members not alive or not existing, a member and an impulse, a condition reading the member, `emit` passing a member on, `set` through a relation's endpoint, replay, a lesson's timeline requesting both, printing, diagnostics); `prismal-host/tests/protocol.rs`, `requests_name_members`.
+
 ### Members that come and go
 
 Collections whose membership changes (D-057) declare a capacity, the most members a run makes (`drops: Drop[max 40]`, `Drop[2, max 4]`), and are elaborated to that many members, the `k`-th member made being `drops[k]` for the whole run. Nothing below elaboration knows about membership, except three small forms.
@@ -297,7 +312,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Item | Where specified |
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
-| Undirected relations as a declared property, relations between relations or across containers, creation and destruction as interventions, unbounded populations (D-057 option 1), drags on members of collections; payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
+| Undirected relations as a declared property, relations between relations or across containers, creation and destruction as interventions (set aside by D-059), unbounded populations (D-057 option 1), drags on members of collections; payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
 | Drags on members of a group; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
@@ -333,3 +348,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 objects and fixed collections (D-055), elaborated before checking; guide chapter 9; sign references after a transition (RC-7.2a, D-056).
 - 2026-09-30 relations (D-058): relation types, relation sets, `connect`, `disconnect`, endpoints; derived values of members not alive not evaluated.
 - 2026-09-30 collections whose membership changes (D-057): capacity, `create`, `destroy`, events per member, member targets; aggregates folded as balanced trees.
+- 2026-10-01 members as payloads and several payloads per event (D-059); requests refused with a reason; the protocol's `request`.

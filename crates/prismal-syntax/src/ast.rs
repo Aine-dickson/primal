@@ -184,9 +184,22 @@ pub enum TriggerExpr {
     Every(Expr, Option<Expr>),
     Start,
     Input(Name),
-    Request(Option<(Name, TypeExpr)>),
+    Request(Vec<PayloadDecl>),
     /// `on E` or `on E(p: T)`, receiving `E`'s payload as `p` (D-050).
-    On(Name, Option<(Name, TypeExpr)>),
+    On(Name, Vec<PayloadDecl>),
+}
+
+/// A payload an occurrence receives: `p: T` (D-050), or a member `b in balls` (D-059).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PayloadDecl {
+    pub name: Name,
+    pub ty: PayloadTy,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PayloadTy {
+    Value(TypeExpr),
+    Member(Name),
 }
 
 #[derive(Clone, Debug, PartialEq)]

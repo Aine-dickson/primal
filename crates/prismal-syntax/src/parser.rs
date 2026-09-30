@@ -676,42 +676,79 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `(p: T)` after `request` or an event name: the payload the occurrence receives (D-050).
-    fn payload_decl(&mut self) -> P<Option<(Name, TypeExpr)>> {
+    /// `(p: T)` after `request` or an event name: the payload the occurrence receives
+    /// (D-050); a member, `(b in balls)`, or several, `(b in balls, j: Momentum)` (D-059).
+    fn payload_decl(&mut self) -> P<Vec<PayloadDecl>> {
+        let mut out = vec![];
         if !self.eat_punct("(") {
+            return Ok(out);
+        }
+        loop {
+            let name = self.name("a payload name")?;
+            let ty = if self.eat_word("in") {
+                PayloadTy::Member(self.name("a collection")?)
+            } else {
+                self.expect_punct(":")?;
+                PayloadTy::Value(self.type_expr()?)
+            };
+            out.push(PayloadDecl { name, ty });
+            if !self.eat_punct(",") {
+                break;
+            }
+        }
+        self.expect_punct(")")?;
+        Ok(out)
+    }
+
+    /// `(v)` or `(v, w)` right after an event name in `emit` and `request`: the payload it
+    /// supplies, several as one tuple (D-050, D-059).
+    fn payload_args(&mut self) -> P<Option<Expr>> {
+        if !(self.is_punct("(") && !self.tok().space_before) {
             return Ok(None);
         }
-        let n = self.name("a payload name")?;
-        self.expect_punct(":")?;
-        let t = self.type_expr()?;
+        let start = self.span();
+        self.bump();
+        let mut items = vec![self.expr()?];
+        while self.eat_punct(",") {
+            items.push(self.expr()?);
+        }
         self.expect_punct(")")?;
-        Ok(Some((n, t)))
+        Ok(Some(if items.len() == 1 { items.pop().unwrap() } else { Expr { kind: ExprKind::Tuple(items), span: self.since(start) } }))
     }
 
     /// `x`, `x.c`, or a member's binding: `b.x`, `b.x.c`, `row[2].x`, `row[2].x.c` (D-057).
+    /// A longer chain names a member through endpoints: `s.b.vel`, `s.b.vel.x` (D-059); the
+    /// parser keeps the last two names as binding and component, and lowering decides.
     fn path(&mut self) -> P<Path> {
         let start = self.span();
         let first = self.name("a binding name")?;
-        if self.eat_punct("[") {
+        let mut base = Expr { kind: ExprKind::Name(first.text.clone()), span: first.span };
+        let indexed = self.eat_punct("[");
+        if indexed {
             let i = self.expr()?;
             self.expect_punct("]")?;
             self.expect_punct(".")?;
-            let base = Expr { kind: ExprKind::Name(first.text.clone()), span: first.span };
-            let member = Some(Expr { kind: ExprKind::Index(Box::new(base), Box::new(i)), span: self.since(start) });
-            let name = self.name("a binding name")?;
-            let component = if self.eat_punct(".") { Some(self.name("a component")?) } else { None };
-            return Ok(Path { member, name, component });
-        }
-        if !self.eat_punct(".") {
+            base = Expr { kind: ExprKind::Index(Box::new(base), Box::new(i)), span: self.since(start) };
+        } else if !self.eat_punct(".") {
             return Ok(Path { member: None, name: first, component: None });
         }
-        let second = self.name("a binding or a component")?;
-        if self.eat_punct(".") {
-            let third = self.name("a component")?;
-            let member = Some(Expr { kind: ExprKind::Name(first.text.clone()), span: first.span });
-            return Ok(Path { member, name: second, component: Some(third) });
+        let mut names = vec![self.name("a binding or a component")?];
+        while self.eat_punct(".") {
+            names.push(self.name("a binding or a component")?);
         }
-        Ok(Path { member: None, name: first, component: Some(second) })
+        if !indexed && names.len() == 1 {
+            return Ok(Path { member: None, name: first, component: names.pop() });
+        }
+        // The member is the base and every name but the binding and its component.
+        let keep = if names.len() >= 2 { 2 } else { 1 };
+        let rest = names.split_off(names.len() - keep);
+        let mut member = base;
+        for n in names {
+            member = Expr { span: self.since(start), kind: ExprKind::Field(Box::new(member), n) };
+        }
+        let mut rest = rest.into_iter();
+        let name = rest.next().unwrap();
+        Ok(Path { member: Some(member), name, component: rest.next() })
     }
 
     fn op(&mut self) -> P<OpStmt> {
@@ -730,14 +767,7 @@ impl<'a> Parser<'a> {
         }
         if self.eat_word("emit") {
             let event = self.name("an event name")?;
-            let payload = if self.is_punct("(") && !self.tok().space_before {
-                self.bump();
-                let e = self.expr()?;
-                self.expect_punct(")")?;
-                Some(e)
-            } else {
-                None
-            };
+            let payload = self.payload_args()?;
             return Ok(OpStmt::Emit { event, payload, span: self.since(start) });
         }
         // `create drops`, `create drops { pos = p }` (D-057).
@@ -1494,14 +1524,7 @@ impl<'a> Parser<'a> {
         }
         if self.eat_word("request") {
             let e = self.name("an event name")?;
-            let payload = if self.is_punct("(") && !self.tok().space_before {
-                self.bump();
-                let v = self.expr()?;
-                self.expect_punct(")")?;
-                Some(v)
-            } else {
-                None
-            };
+            let payload = self.payload_args()?;
             return Ok(Action::Request(e, payload));
         }
         for w in ["animate", "bind", "release"] {
