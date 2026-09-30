@@ -42,6 +42,7 @@
 - **HI-4.1** `open` opens a presentation of a checked document as an **instance**: a **lesson** when it has a timeline (PK sections 8, 9; in the interactive or the video medium, PK-9.10), otherwise an **interactive session** (PK section 10). It returns the instance's handle and layout (HI-5.1).
 - **HI-4.2** The host owns the clock. A lesson is asked for the frame at a presentation instant; an interactive session is told which simulation instant to show (`seek`, RC section 12). Frames are deterministic (PK-8.7): the same instant gives the same frame.
 - **HI-4.3** Learner inputs name representations by identity or author name: set a control, press a button, pointer down, move and up on a draggable representation, a keyboard step (PK-11.2), cancel, undo and redo. In a lesson, inputs carry their presentation instant and are refused outside explore beats (D-025, PK-9.8a). Each answers with what happened: applied, previewed (with validity and reason, PK-10.6) or refused (with reason).
+- **HI-4.3a** **Environment inputs** (D-051). `set_input` supplies a new value of one of the model's `input` bindings, by name or identity, at the instant an interactive session shows; it is logged, replayed and undone as interventions are, and makes `on input(i)` events due (RC-11.6). It is how a host feeds a model from its own world: a sensor, a controller, another simulation.
 - **HI-4.4** `restart` replays a lesson without the learner's inputs; `reset` starts an interactive session's run again with an empty log.
 - **HI-4.5** **Raw input** (D-047). A host that does not target input itself forwards what it captured, in its own terms, and the engine interprets it the same way for every host:
   - `pointer`: a phase (`down`, `move`, `up`, `cancel`), the view, the position in pixels from the top left of the view as the host drew it, the size it drew the view at (`width`, `height`), and the kind of pointer (`mouse`, `pen`, `touch`; a finger reaches farther, PK-10.2a). Pressing on a draggable part starts a drag (in an interactive session); pressing elsewhere pans a spatial view if the presentation permits `pan`; moving without a gesture answers what is under the pointer (`hover`), so that the host can show that it can be grabbed.
@@ -75,7 +76,8 @@
   ```
 
 - **HI-6.3** **WebAssembly.** The `prismal-web` crate exports the engine's protocol to JavaScript, for browsers and web views.
-- **HI-6.4** Further bindings (a C ABI for other languages, a standalone process speaking the protocol on standard input and output) are added when a host needs them; they carry the protocol unchanged.
+- **HI-6.4** **Process.** The `prismal-stdio` program serves the protocol over standard input and output, for hosts in any language that can start a process: one request per line of JSON, one response per line, in order (JSON Lines). A request MAY carry an `id` of any JSON value, which its response repeats, so that a host can match responses to requests. Nothing but responses is written to standard output; the process ends when its input ends. `crates/prismal-stdio/client.py` is a host in Python.
+- **HI-6.4a** Further bindings (a C ABI for languages that link libraries) are added when a host needs them; they carry the protocol unchanged.
 - **HI-6.5** **Versions.** Requests carry the protocol version. `capabilities` answers the protocol and IR versions (D-037), the representation kinds and timeline actions the implementation supports, the input it takes (semantic and raw operations, pointer kinds, keys), and its limits, so that a host can adapt without trial and error.
 
 ### 6.1 Operations
@@ -94,6 +96,7 @@
 | `layout`, `frame` | `instance`, `time`?, `dt`? | the layout, the frame |
 | `seek`, `reset`, `restart` | `instance`, `time`? | the clock or the layout |
 | `set_control`, `press`, `key`, `pointer_down`, `pointer_move`, `pointer_up`, `cancel`, `undo`, `redo`, `continue` | `instance`, `rep`, value, `time` in a lesson | the outcome |
+| `set_input` | `instance`, `input`, `value` | the outcome |
 | `pointer` | `instance`, `phase`, `view`, `x`, `y`, `width`?, `height`?, `pointer`?, `time` in a lesson | `handled`, `action`, `target` or `hover`, the outcome |
 | `wheel` | `instance`, `view`, `x`, `y`, `width`?, `height`?, `delta`, `time` in a lesson | `handled`, `action` |
 | `key_down` | `instance`, `key`, `shift`?, `time` in a lesson | `handled`, `action`, `focus` or `target`, the outcome |
@@ -116,4 +119,6 @@
 - 2026-09-30 written with D-044 and D-045.
 - 2026-09-30 HI-5.2: frames carry formula layouts; MathML moved to the WebAssembly binding (D-046).
 - 2026-09-30 HI-5.3: the SVG renderer named as a second reference renderer.
+- 2026-09-30 HI-6.4: the process binding `prismal-stdio` with request ids.
+- 2026-09-30 HI-4.3a: environment inputs (D-051); the event log shows payloads (D-050).
 - 2026-09-30 HI-1.4, HI-4.5, HI-5.2a, HI-6.5: the host captures input and Prismal interprets it; raw input, viewports and focus in frames (D-047).

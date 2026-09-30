@@ -14,6 +14,8 @@ pub struct EventRec {
     pub t: f64,
     pub n: u32,
     pub zeno: bool,
+    /// The occurrence's payload (D-050).
+    pub payload: Option<prismal_kernel::Value>,
 }
 
 /// The data an observation produces (PK-3.5).
@@ -46,7 +48,7 @@ impl Data {
 pub fn events(cm: &CModel, run: &Run) -> Vec<EventRec> {
     run.log
         .iter()
-        .map(|l| EventRec { event: cm.events[l.event].id.clone(), name: l.name.clone(), t: l.t, n: l.n, zeno: l.zeno })
+        .map(|l| EventRec { event: cm.events[l.event].id.clone(), name: l.name.clone(), t: l.t, n: l.n, zeno: l.zeno, payload: l.payload.clone() })
         .collect()
 }
 

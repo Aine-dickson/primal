@@ -101,7 +101,7 @@ pub fn constant_as(cm: &CModel, e: &Expr, expected: Option<&prismal_ir::Type>) -
         return Err("the expression reads bindings of the model; it is not a constant".into());
     }
     let (c, _) = compile_expr(cm, e, expected).map_err(|d| d.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("; "))?;
-    c.eval(&Ctx { vals: &cm.constant_values(), der: None, t: 0.0, t0: 0.0, args: &[] }).map_err(|s| s.cause)
+    c.eval(&Ctx { vals: &cm.constant_values(), der: None, t: 0.0, t0: 0.0, args: &[], payloads: &[] }).map_err(|s| s.cause)
 }
 
 /// A constant number (a quantity in coherent SI units, or an instant in seconds).
@@ -142,6 +142,14 @@ pub fn config(cm: &CModel, case: &RunCase, default_end: f64) -> Result<Config, S
     };
     for o in &case.params {
         cfg = cfg.param(&o.binding, o.value.clone());
+    }
+    // D-051: an input's value from the start is its starting value; one at an instant is a
+    // logged change.
+    for i in &case.inputs {
+        cfg = match &i.at {
+            None => cfg.param(&i.binding, i.value.clone()),
+            Some(at) => cfg.at(number(cm, at)?, prismal_runtime::Action::Input(i.binding.clone(), i.value.clone())),
+        };
     }
     Ok(cfg)
 }

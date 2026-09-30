@@ -55,7 +55,8 @@ pub enum CTrigger {
 #[derive(Clone, Debug)]
 pub enum COp {
     Set { binding: usize, component: Option<usize>, value: CExpr },
-    Emit { event: usize },
+    /// `emit E` or `emit E(value)`, the value becoming the payload of `E`'s followers (D-050).
+    Emit { event: usize, payload: Option<CExpr> },
 }
 
 #[derive(Clone, Debug)]
@@ -136,7 +137,7 @@ impl CModel {
                 continue;
             }
             if let Some(e) = &b.init {
-                if let Ok(v) = e.eval(&Ctx { vals: &vals, der: None, t: 0.0, t0: 0.0, args: &[] }) {
+                if let Ok(v) = e.eval(&Ctx { vals: &vals, der: None, t: 0.0, t0: 0.0, args: &[], payloads: &[] }) {
                     vals[i] = v;
                 }
             }
@@ -160,11 +161,15 @@ impl CModel {
             }
             let e = match b.role {
                 Role::Derived => b.def.as_ref(),
-                Role::Input => return Err(Status::invalid(format!("input `{}` is not supported by this prototype", b.name))),
+                // D-051: an input starts at the value the run configuration supplies, else at
+                // its declared default; without either the environment has not supplied it.
+                Role::Input if b.init.is_none() => {
+                    return Err(Status::invalid(format!("input `{}` has no value at the start: supply one in the run configuration, or declare a default", b.name)))
+                }
                 _ => b.init.as_ref(),
             };
             let v = {
-                let c = Ctx { vals: &vals, der: None, t: t0, t0, args: &[] };
+                let c = Ctx { vals: &vals, der: None, t: t0, t0, args: &[], payloads: &[] };
                 e.expect("checked").eval(&c).map_err(|s| Status { kind: s.kind, cause: format!("initializing `{}`: {}", b.name, s.cause) })?
             };
             vals[i] = v;
@@ -176,7 +181,7 @@ impl CModel {
     pub fn update_derived(&self, vals: &mut [Value], t: f64, t0: f64) -> Result<(), Status> {
         for &i in &self.derived_order {
             let v = {
-                let c = Ctx { vals, der: None, t, t0, args: &[] };
+                let c = Ctx { vals, der: None, t, t0, args: &[], payloads: &[] };
                 self.bindings[i].def.as_ref().expect("checked").eval(&c)?
             };
             vals[i] = v;
@@ -206,7 +211,7 @@ impl CModel {
     /// The combined flow of every continuous state (MK-14.5), written into `dy`.
     /// `vals` must hold current stored values and derived bindings.
     pub fn rhs(&self, vals: &[Value], t: f64, t0: f64, dy: &mut [f64]) -> Result<(), Status> {
-        let c = Ctx { vals, der: None, t, t0, args: &[] };
+        let c = Ctx { vals, der: None, t, t0, args: &[], payloads: &[] };
         for s in &self.cont {
             let out = &mut dy[s.offset..s.offset + s.len];
             match &s.flows {

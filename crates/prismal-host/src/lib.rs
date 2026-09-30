@@ -41,6 +41,8 @@ pub fn capabilities() -> Json {
         // Raw input (HI-4.5, D-047): what the host forwards and the keys the engine uses.
         "input": {
             "semantic": ["set_control", "press", "key", "pointer_down", "pointer_move", "pointer_up", "cancel", "undo", "redo"],
+            // Values from the host's environment for the model's `input` bindings (D-051).
+            "environment": ["set_input"],
             "raw": ["pointer", "wheel", "key_down", "focus", "view_reset"],
             "pointers": ["mouse", "pen", "touch"],
             "keys": ["Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape"],
@@ -237,6 +239,10 @@ fn instance_op(i: &mut Instance, op: &str, r: &Json, s: Field<&str>, n: Field<f6
         }
         "set_control" if lesson => i.lesson_set_control(n("time")?, s("rep")?, n("value")?).map_err(from_json),
         "set_control" => Ok(i.set_control(s("rep")?, n("value")?)),
+        "set_input" => {
+            only(false)?;
+            Ok(i.set_input(s("input")?, n("value")?))
+        }
         "press" => {
             only(false)?;
             Ok(i.press(s("rep")?))

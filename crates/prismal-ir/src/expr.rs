@@ -148,6 +148,11 @@ pub enum Expr {
     Fn {
         r#fn: Id,
     },
+    /// The payload of the occurrence being handled, in the enabling condition and handler of
+    /// the event with this identity (MK-15.1, D-050).
+    Payload {
+        payload: Id,
+    },
     /// A choice by the case of an enumeration, one arm per case (MK-10.2, D-049).
     Match {
         r#match: Box<Expr>,

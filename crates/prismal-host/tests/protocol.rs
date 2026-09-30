@@ -178,6 +178,46 @@ fn instances_of_both_modes() {
     assert_eq!(codes(&mut e, &json!({ "protocol": 1, "op": "open", "document": d, "presentation": "Nope" }).to_string()), ["HI-E02"]);
 }
 
+/// A host supplies values of the model's inputs from its environment (HI-4.3a, D-051), and
+/// events carry payloads into the event log (D-050).
+#[test]
+fn environment_inputs_and_payloads() {
+    const CART: &str = "model Cart {
+  const { m: Mass = 2 kg }
+  input { thrust: Force = 0 N }
+  state { x: Length = 0 m; v: Velocity = 0 m/s }
+  discrete { pushes: Real = 0 }
+  flow { der(x) = v; der(v) = thrust / m }
+  event pushed on input(thrust) { set pushes = pushes + 1 }
+  event kick on request(j: Momentum) { set v = v + j / m }
+}
+presentation Lab for Cart {
+  view track: plot(x: [0 s, 4 s], y: [0 m/s, 10 m/s]) { series_plot(v every 0.1 s) }
+  panel status { label(pushes) }
+  observe { log = event_log over [t0, t0 + 4 s] }
+}
+";
+    let mut e = Engine::new();
+    let d = load(&mut e, CART);
+    let lab = ok(&mut e, json!({ "protocol": 1, "op": "open", "document": d, "presentation": "Lab" }))["instance"].as_str().unwrap().to_string();
+    let caps = ok(&mut e, json!({ "protocol": 1, "op": "capabilities" }));
+    assert_eq!(caps["input"]["environment"], json!(["set_input"]));
+    ok(&mut e, json!({ "protocol": 1, "op": "seek", "instance": lab, "time": 1.0 }));
+    // 4 N on 2 kg from 1 s: 2 m/s after 1 s more.
+    let r = ok(&mut e, json!({ "protocol": 1, "op": "set_input", "instance": lab, "input": "thrust", "value": 4.0 }));
+    assert_eq!(r["ok"], true, "{r}");
+    ok(&mut e, json!({ "protocol": 1, "op": "seek", "instance": lab, "time": 2.0 }));
+    let f = ok(&mut e, json!({ "protocol": 1, "op": "frame", "instance": lab }));
+    let text = f.to_string();
+    assert!(text.contains("pushes = 1"), "{text}");
+    assert!(text.contains("last 2 at 2 s") || text.contains("last 2 m/s"), "v = 2 m/s at 2 s: {text}");
+    // Only inputs take environment values; the value has the input's type.
+    let r = ok(&mut e, json!({ "protocol": 1, "op": "set_input", "instance": lab, "input": "x", "value": 1.0 }));
+    assert_eq!(r["ok"], false, "{r}");
+    let obs = ok(&mut e, json!({ "protocol": 1, "op": "observations", "instance": lab }));
+    assert!(obs["log"].to_string().contains("pushed at 1 s"), "{obs}");
+}
+
 #[test]
 fn closing_frees_documents_and_instances() {
     let mut e = Engine::new();

@@ -226,10 +226,16 @@ pub fn print(e: &Expr, cm: &CModel, params: &[String]) -> String {
         Expr::Lambda { lambda } => print(&lambda.body, cm, &lambda.names),
         Expr::Otherwise { otherwise, default } => format!("{} otherwise {}", p(otherwise), p(default)),
         Expr::Fn { r#fn } => fn_name(cm, r#fn),
+        Expr::Payload { payload } => payload_name(cm, payload),
         Expr::Match { r#match, arms } => {
             format!("match {} {{ {} }}", p(r#match), arms.iter().map(|a| format!("{} => {}", a.case, p(&a.value))).collect::<Vec<_>>().join(", "))
         }
     }
+}
+
+/// The name of an event's payload (D-050).
+pub fn payload_name(cm: &CModel, event: &str) -> String {
+    cm.ir.events.iter().find(|e| e.id == event).and_then(|e| e.payload.as_ref()).map(|p| p.name.clone()).unwrap_or_else(|| "payload".into())
 }
 
 /// The name of a declared function (D-048).

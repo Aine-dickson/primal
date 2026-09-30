@@ -161,6 +161,16 @@ impl Interactive {
         self.commit(Action::Request(event.clone()))
     }
 
+    /// The environment supplies a new value of an input at the instant shown (RC-11.6, D-051).
+    /// `input` is the binding's identity or name.
+    pub fn set_input(&mut self, input: &str, value: Expr) -> Result<(), Report> {
+        let found = self.cm.ir.bindings.iter().find(|b| (b.id == input || b.name == input) && b.role == prismal_ir::Role::Input).map(|b| b.id.clone());
+        match found {
+            Some(id) => self.commit(Action::Input(id, value)),
+            None => self.report(Why::Refused, format!("`{input}` is not an input of the model")),
+        }
+    }
+
     /// Sets the control of a kind that targets a binding (learner scripts: `set slider a = 2`).
     pub fn set_control_of(&mut self, control: &str, binding: &str, value: Expr) -> Result<(), Report> {
         let found = self.projector.views.iter().flat_map(|v| v.2.iter()).find(|r| matches!(&r.kind, CKind::Control { control: c, binding: b, .. } if c == control && b == binding));

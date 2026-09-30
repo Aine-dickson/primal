@@ -160,6 +160,8 @@ pub(crate) struct ModelCx<'a> {
     pub(crate) enums: HashMap<String, (Id, Vec<String>)>,
     /// Declared functions by name (D-048).
     pub(crate) functions: HashMap<String, Id>,
+    /// While lowering an event with a payload: the payload's name and the event (D-050).
+    payload: Option<(String, Id)>,
     pub(crate) diags: &'a mut Vec<Diag>,
     pub(crate) map: &'a mut SourceMap,
     flows: usize,
@@ -177,6 +179,7 @@ impl<'a> ModelCx<'a> {
             events: m.events.iter().map(|ev| (ev.name.clone(), ev.id.clone())).collect(),
             enums: m.enums.iter().map(|e| (e.name.clone(), (e.id.clone(), e.cases.clone()))).collect(),
             functions: m.functions.iter().map(|f| (f.name.clone(), f.id.clone())).collect(),
+            payload: None,
             diags,
             map,
             flows: 0,
@@ -201,7 +204,7 @@ impl<'a> ModelCx<'a> {
             None => None,
         };
         let model = build::ModelBuilder::new(&name).finish();
-        ModelCx { name, space, spaces, bindings: HashMap::new(), events: HashMap::new(), enums: HashMap::new(), functions: HashMap::new(), diags, map, flows: 0, model }
+        ModelCx { name, space, spaces, bindings: HashMap::new(), events: HashMap::new(), enums: HashMap::new(), functions: HashMap::new(), payload: None, diags, map, flows: 0, model }
     }
 
     pub(crate) fn err(&mut self, code: &'static str, msg: impl Into<String>, span: Span) {
@@ -383,9 +386,8 @@ impl<'a> ModelCx<'a> {
         } else if role == Role::Derived {
             def = value;
         } else if role == Role::Input {
-            if value.is_some() {
-                self.err("SX-E08", "an input has no initial definition; its value comes from the environment", d.span);
-            }
+            // D-051: an input's value is its default until the environment supplies one.
+            init = value;
         } else {
             init = value;
         }
@@ -452,14 +454,21 @@ impl<'a> ModelCx<'a> {
             },
             ast::TriggerExpr::Start => Trigger::Start,
             ast::TriggerExpr::Input(i) => Trigger::Input { binding: self.binding(i) },
-            ast::TriggerExpr::Request(payload) => {
-                if let Some((n, _)) = payload {
-                    self.err("SX-E06", "event payloads are not yet implemented (MK-15.1)", n.span);
-                }
-                Trigger::Request
-            }
-            ast::TriggerExpr::On(n) => Trigger::On { event: self.event_id(n) },
+            ast::TriggerExpr::Request(_) => Trigger::Request,
+            ast::TriggerExpr::On(n, _) => Trigger::On { event: self.event_id(n) },
         };
+        let id = format!("{}.event.{}", self.name, e.name.text);
+        // D-050: the payload's name reads the occurrence's payload in the condition and handler.
+        let payload = match &e.trigger {
+            ast::TriggerExpr::Request(Some((n, t))) | ast::TriggerExpr::On(_, Some((n, t))) => {
+                if self.bindings.contains_key(&n.text) || self.functions.contains_key(&n.text) {
+                    self.err("SX-E09", format!("payload `{}` has the name of a binding or function", n.text), n.span);
+                }
+                Some(Payload { name: n.text.clone(), ty: self.ty(t) })
+            }
+            _ => None,
+        };
+        self.payload = payload.as_ref().map(|p| (p.name.clone(), id.clone()));
         let enable = e.enable.as_ref().map(|c| self.expr(c, &[]));
         let handler = e.handler.iter().map(|o| self.op(o)).collect();
         let zeno = e.zeno.as_ref().map(|z| Zeno {
@@ -471,7 +480,7 @@ impl<'a> ModelCx<'a> {
             n: None,
             window: None,
         });
-        let id = format!("{}.event.{}", self.name, e.name.text);
+        self.payload = None;
         self.map.insert(id.clone(), e.span);
         self.model.events.push(Event {
             id,
@@ -481,6 +490,7 @@ impl<'a> ModelCx<'a> {
             handler,
             zeno,
             process: process.cloned(),
+            payload,
             notes: e.notes.clone(),
         });
     }
@@ -762,6 +772,11 @@ impl<'a> ModelCx<'a> {
     fn name(&mut self, n: &str, span: Span, locals: &[String]) -> Expr {
         if let Some(i) = locals.iter().position(|l| l == n) {
             return build::param(i);
+        }
+        if let Some((p, ev)) = &self.payload {
+            if p == n {
+                return Expr::Payload { payload: ev.clone() };
+            }
         }
         if let Some(id) = self.bindings.get(n) {
             return build::r(id);

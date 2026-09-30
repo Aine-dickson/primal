@@ -244,7 +244,12 @@ pub enum Action {
     Reset,
     Branch,
     Intervene { ops: Vec<Op> },
-    Request { event: Id },
+    Request {
+        event: Id,
+        /// The payload the request supplies (D-050).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<Expr>,
+    },
     Wait { duration: Expr },
     WaitUntil { event: Id },
     Explore {
@@ -288,6 +293,10 @@ pub struct RunCase {
     pub presentation: Option<Id>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<Override>,
+    /// Values the environment supplies to `input` bindings (D-051): at the start, or at an
+    /// instant.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<InputValue>,
     #[serde(default)]
     pub config: RunConfig,
     /// `until τ`: the end of the run.
@@ -304,6 +313,15 @@ pub struct RunCase {
 pub struct Override {
     pub binding: Id,
     pub value: Expr,
+}
+
+/// An input's value from the environment (D-051): from the start, or from instant `at`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InputValue {
+    pub binding: Id,
+    pub value: Expr,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<Expr>,
 }
 
 /// Run configuration (RC section 16); absent entries take their defaults.

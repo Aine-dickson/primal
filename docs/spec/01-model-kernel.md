@@ -235,6 +235,7 @@ Every binding has exactly one role. The role fixes when the value may change and
 - **MK-6.5** Continuous state changes only by flows (section 14). Its value is replaced only by a reset in an event handler or by an intervention (D-004).
 - **MK-6.6** Parameters do not change during continuous evolution. A parameter change is an intervention and happens at an event instant (section 17). Event handlers MUST NOT set parameters; a value that the model itself switches belongs in discrete state.
 - **MK-6.7** Every stored binding except `input` has an **initial definition**: an expression over constants, parameters and other initial definitions. Initial definitions are evaluated once, at run start, in dependency order (section 13). An `input` has no initial definition; until the environment supplies it, it is `unavailable`.
+- **MK-6.7a** An `input` MAY declare a default (`input { thrust: Force = 0 N }`): its value until the environment supplies one. Without a default, the run configuration supplies its starting value; otherwise the run does not start (D-051).
 - **MK-6.8** A parameter's initial definition is its default. A run configuration or the instantiating object MAY override it.
 - **MK-6.9** Property, variable, parameter, constant and derived value are roles of the one binding concept. An object's properties are its bindings. Bindings owned directly by the root object are the model's standalone bindings (R-58).
 
@@ -436,6 +437,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 ### 15.1 Structure
 
 - **MK-15.1** An **event** has identity, an owner, a **trigger**, an optional **enabling condition**, a **handler**, and an optional typed **payload**.
+- **MK-15.1a** In v0 a payload has a name and a type, declared where it enters the event: `on request(j: Momentum)` (the request supplies it) or `on E(j: Momentum)` (the payload `E` occurred or was emitted with, of the same type). Any other source is MK-E24. The payload is read by its name in the event's enabling condition and handler, and nowhere else. `emit E(v)` supplies the payload of `E`'s followers and requires `E` to declare a payload of `v`'s type. Every occurrence in the event log carries its payload (RC-15.1) (D-050).
 - **MK-15.2** An event **occurs** at an event instant `(t, n)` (superdense time: `n` counts successive transitions at the same `t`). Locating `t` and ordering occurrences is the runtime contract; the kernel defines when an occurrence is due.
 
 ### 15.2 Triggers
@@ -558,6 +560,7 @@ The kernel defines these static errors. They are detected before execution, on t
 | MK-E21 | Tuple used as a vector with no expected vector type | MK-4.8 |
 | MK-E22 | Target defined twice: two defining flows for one `der(x)`, or two definitions of one binding; a case declared twice | MK-14.7, MK-6.1, MK-2.2a |
 | MK-E23 | Declared function that calls itself, directly or through other functions | MK-10.3a |
+| MK-E24 | Event payload without a source: not requested, and not following an event that carries a payload of the same type | MK-15.1a |
 
 Conflicts between different events can only be detected at run time.
 

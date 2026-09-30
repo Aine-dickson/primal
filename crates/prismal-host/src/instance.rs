@@ -424,6 +424,18 @@ impl Instance {
         Self::outcome(r)
     }
 
+    /// Supplies a new value of an input binding (by name or identity) at the instant shown
+    /// (HI-4.3a, D-051): a number in coherent SI units, or 0 and 1 for a Boolean.
+    pub fn set_input(&mut self, input: &str, value: f64) -> Json {
+        let i = match self.interactive() {
+            Ok(i) => i,
+            Err(e) => return json!({ "ok": false, "message": e }),
+        };
+        let ty = i.cm.ir.bindings.iter().find(|b| b.id == input || b.name == input).map(|b| b.ty.clone()).unwrap_or_else(prismal_ir::Type::real);
+        let r = i.set_input(input, literal(value, &ty));
+        Self::outcome(r)
+    }
+
     /// A key on a focused control or draggable representation: `left`, `right`, `up`, `down`.
     pub fn key(&mut self, rep: &str, key: &str) -> Json {
         let key = match key {
@@ -853,13 +865,25 @@ fn fmt_data(cm: &CModel, run: &prismal_runtime::Run, o: &Observation, d: &Data) 
     match d {
         Data::Value(x) => vec![v(x)],
         Data::Series(s) => s.iter().map(|(t, x)| format!("t = {} s: {}", fmt_num(*t), v(x))).collect(),
-        Data::Events(es) => es.iter().map(|e| format!("{} at {} s", e.name, fmt_num(e.t))).collect(),
+        // An occurrence with a payload shows it: `kick(2 N s) at 1 s` (D-050).
+        Data::Events(es) => es
+            .iter()
+            .map(|e| {
+                let payload = match (&e.payload, cm.ir.events.iter().find(|x| x.id == e.event).and_then(|x| x.payload.as_ref())) {
+                    (Some(v), Some(p)) => format!("({})", fmt_value(v, &p.ty)),
+                    _ => String::new(),
+                };
+                format!("{}{payload} at {} s", e.name, fmt_num(e.t))
+            })
+            .collect(),
         Data::Diagnostics(ds) => ds.iter().map(|d| d.message.clone()).collect(),
         Data::Interventions(is) => is
             .iter()
             .map(|s| match &s.action {
                 Action::Intervene(ops) => format!("at {} s: {}", fmt_num(s.t), ops.iter().map(|o| fmt_op(cm, run, s.t, o)).collect::<Vec<_>>().join("; ")),
                 Action::Request(e) => format!("at {} s: request {}", fmt_num(s.t), e.rsplit('.').next().unwrap_or(e)),
+                Action::RequestWith(e, v) => format!("at {} s: request {}({})", fmt_num(s.t), e.rsplit('.').next().unwrap_or(e), print(v, cm, &[])),
+                Action::Input(b, v) => format!("at {} s: input {} = {}", fmt_num(s.t), cm.ir.binding(b).map(|x| x.name.as_str()).unwrap_or(b), print(v, cm, &[])),
             })
             .collect(),
     }

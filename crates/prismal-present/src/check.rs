@@ -181,9 +181,19 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     out.extend(ds.into_iter().map(|d| PDiag { code: "PK-E03", message: format!("{}: {}", d.code, d.message), element: beat.into() }));
                 }
             }
-            Action::Request { event } => {
-                if event_exists(cm, event, beat, out) && !matches!(cm.ir.events.iter().find(|e| &e.id == event).unwrap().trigger, Trigger::Request) {
-                    out.push(PDiag { code: "PK-E03", message: format!("`{event}` is not declared `on request` (D-027)"), element: beat.into() });
+            Action::Request { event, payload } => {
+                if event_exists(cm, event, beat, out) {
+                    let ev = cm.ir.events.iter().find(|e| &e.id == event).unwrap();
+                    if !matches!(ev.trigger, Trigger::Request) {
+                        out.push(PDiag { code: "PK-E03", message: format!("`{event}` is not declared `on request` (D-027)"), element: beat.into() });
+                    }
+                    // D-050: a request supplies the payload the event declares, of its type.
+                    match (&ev.payload, payload) {
+                        (Some(p), Some(v)) => expr(cm, v, Some(&p.ty), beat, out),
+                        (Some(p), None) => out.push(PDiag { code: "PK-E02", message: format!("`request {}` supplies its payload `{}`", ev.name, p.name), element: beat.into() }),
+                        (None, Some(_)) => out.push(PDiag { code: "PK-E02", message: format!("`{}` declares no payload", ev.name), element: beat.into() }),
+                        (None, None) => {}
+                    }
                 }
             }
             Action::WaitUntil { event } => {

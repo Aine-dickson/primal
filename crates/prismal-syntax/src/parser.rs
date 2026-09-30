@@ -573,19 +573,27 @@ impl<'a> Parser<'a> {
             return Ok(TriggerExpr::Input(n));
         }
         if self.eat_word("request") {
-            if self.eat_punct("(") {
-                let n = self.name("a payload name")?;
-                self.expect_punct(":")?;
-                let t = self.type_expr()?;
-                self.expect_punct(")")?;
-                return Ok(TriggerExpr::Request(Some((n, t))));
-            }
-            return Ok(TriggerExpr::Request(None));
+            return Ok(TriggerExpr::Request(self.payload_decl()?));
         }
         match self.peek() {
-            Tok::Ident(s) if !is_reserved(s) => Ok(TriggerExpr::On(self.name("an event name")?)),
+            Tok::Ident(s) if !is_reserved(s) => {
+                let e = self.name("an event name")?;
+                Ok(TriggerExpr::On(e, self.payload_decl()?))
+            }
             _ => Err(self.unexpected("a trigger (`rising(g)`, `falling(g)`, `crossing(g)`, `at`, `every`, `start`, `input(i)`, `request` or an event name)")),
         }
+    }
+
+    /// `(p: T)` after `request` or an event name: the payload the occurrence receives (D-050).
+    fn payload_decl(&mut self) -> P<Option<(Name, TypeExpr)>> {
+        if !self.eat_punct("(") {
+            return Ok(None);
+        }
+        let n = self.name("a payload name")?;
+        self.expect_punct(":")?;
+        let t = self.type_expr()?;
+        self.expect_punct(")")?;
+        Ok(Some((n, t)))
     }
 
     fn path(&mut self) -> P<Path> {
@@ -1302,7 +1310,16 @@ impl<'a> Parser<'a> {
             return Ok(Action::Wait(self.expr()?));
         }
         if self.eat_word("request") {
-            return Ok(Action::Request(self.name("an event name")?));
+            let e = self.name("an event name")?;
+            let payload = if self.is_punct("(") && !self.tok().space_before {
+                self.bump();
+                let v = self.expr()?;
+                self.expect_punct(")")?;
+                Some(v)
+            } else {
+                None
+            };
+            return Ok(Action::Request(e, payload));
         }
         for w in ["animate", "bind", "release"] {
             if self.is_word(w) {
@@ -1324,6 +1341,7 @@ impl<'a> Parser<'a> {
             model,
             presentation,
             params: vec![],
+            inputs: vec![],
             config: vec![],
             until: None,
             learner: vec![],
@@ -1332,6 +1350,7 @@ impl<'a> Parser<'a> {
         };
         enum RunItem {
             Params(Vec<(Name, Expr)>),
+            Inputs(Vec<(Name, Expr, Option<Expr>)>),
             Config(Vec<(Name, Expr)>),
             Until(Expr),
             Learner(Vec<LearnerStep>),
@@ -1347,6 +1366,18 @@ impl<'a> Parser<'a> {
                 let v = if p.is_punct("{") { p.block(assign)? } else { assign(p)? };
                 return Ok(vec![RunItem::Params(v)]);
             }
+            if p.eat_word("input") {
+                // `x = v` from the start, `x = v at τ` from an instant (D-051).
+                let one = |p: &mut Self| -> P<Vec<(Name, Expr, Option<Expr>)>> {
+                    let n = p.name("an input name")?;
+                    p.expect_punct("=")?;
+                    let v = p.expr()?;
+                    let at = if p.eat_word("at") { Some(p.expr()?) } else { None };
+                    Ok(vec![(n, v, at)])
+                };
+                let v = if p.is_punct("{") { p.block(one)? } else { one(p)? };
+                return Ok(vec![RunItem::Inputs(v)]);
+            }
             if p.eat_word("config") {
                 let v = if p.is_punct("{") { p.block(assign)? } else { assign(p)? };
                 return Ok(vec![RunItem::Config(v)]);
@@ -1361,11 +1392,12 @@ impl<'a> Parser<'a> {
                 let v = if p.is_punct("{") { p.block(|p| Self::one(p.expect()))? } else { vec![p.expect()?] };
                 return Ok(vec![RunItem::Expect(v)]);
             }
-            Err(p.unexpected("`param`, `config`, `until`, `learner` or `expect`"))
+            Err(p.unexpected("`param`, `input`, `config`, `until`, `learner` or `expect`"))
         })?;
         for it in items {
             match it {
                 RunItem::Params(v) => run.params.extend(v),
+                RunItem::Inputs(v) => run.inputs.extend(v),
                 RunItem::Config(v) => run.config.extend(v),
                 RunItem::Until(e) => run.until = Some(e),
                 RunItem::Learner(v) => run.learner.extend(v),

@@ -269,8 +269,20 @@ pub struct Event {
     pub zeno: Option<Zeno>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub process: Option<Id>,
+    /// The value each occurrence carries (MK-15.1, D-050), read in the enabling condition
+    /// and the handler as `{"payload": id}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<Payload>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+}
+
+/// An event's payload: its name as written (for display) and its type.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Payload {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: Type,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

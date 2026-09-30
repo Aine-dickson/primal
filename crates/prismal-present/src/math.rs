@@ -251,6 +251,14 @@ pub fn boxes(e: &Expr, cm: &CModel, params: &[String]) -> MathBox {
         Expr::Otherwise { otherwise, default } => {
             row(vec![p(otherwise), MathBox::Space { em: 0.3 }, MathBox::Text { text: "otherwise".into() }, MathBox::Space { em: 0.3 }, p(default)])
         }
+        Expr::Payload { payload } => {
+            let name = crate::text::payload_name(cm, payload);
+            if name.chars().count() == 1 {
+                ident(&name)
+            } else {
+                upright(&name)
+            }
+        }
         // A declared function's name: a single letter in italics, a word upright, as `sin`.
         Expr::Fn { r#fn } => {
             let name = crate::text::fn_name(cm, r#fn);

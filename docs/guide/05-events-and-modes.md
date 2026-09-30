@@ -251,6 +251,82 @@ run toss of Toss with TossLab {
 }
 ```
 
+## Events that carry values, and values from outside
+
+An event can carry a value, its **payload** (MK-15.1, D-050). And a model can receive values from its environment while it runs: a sensor, a game controller, a host application. These are **inputs** (RC-11.6, D-051).
+
+```text
+model Cart {
+  const { m: Mass = 2 kg }
+  input { thrust: Force = 0 N }
+  state {
+    x: Length   = 0 m
+    v: Velocity = 0 m/s
+  }
+  discrete {
+    pushes: Real     = 0
+    last:   Momentum = 0 kg*m/s
+  }
+  flow {
+    der(x) = v
+    der(v) = thrust / m
+  }
+  /// A kick of a given impulse.
+  event kick on request(j: Momentum) if j > 0 kg*m/s { set v = v + j / m }
+  event remember on kick(j: Momentum) { set last = j }
+  event pushed on input(thrust) { set pushes = pushes + 1 }
+}
+```
+
+- `on request(j: Momentum)` declares the payload: whoever requests `kick` (a timeline's `request kick(3 kg*m/s)`, a host) supplies an impulse, which the condition and handler read as `j`. A request without it is rejected.
+- `on kick(j: Momentum)` receives the payload of the event it follows. A handler can also pass a value on explicitly: `emit tally(2 * j)` makes the events `on tally(k: ...)` due with `k = 2 j`.
+- A payload is read only in its own event, and it always comes from somewhere: a request, or an event that carries a payload of the same type (`MK-E24` otherwise).
+- `input { thrust: Force = 0 N }` is a value the model does not control: the environment supplies it, and it holds between changes. `0 N` is its default until then; an input without a default needs a starting value from the run.
+- `on input(thrust)` happens whenever the environment supplies a new value.
+- Inputs are not parameters: the learner cannot set them with a control, and a handler cannot set them.
+
+A case supplies inputs in an `input` block: a value from the start, and values `at` later instants.
+
+```text
+presentation CartChecks for Cart {
+  observe {
+    x_end = x at t0 + 2 s
+    v_end = v at t0 + 2 s
+    count = pushes at t0 + 2 s
+  }
+}
+```
+
+```cases
+run push of Cart with CartChecks {
+  input {
+    thrust = 4 N
+    thrust = 0 N at t0 + 1 s
+  }
+  until t0 + 2 s
+  expect {
+    v_end == 2 m/s within 1e-9 m/s    // 4 N on 2 kg for 1 s
+    x_end == 3 m within 1e-9 m        // 1 m while pushed, 2 m after
+    count == 1 exactly                // the change at 1 s; the starting value is not a change
+  }
+}
+```
+
+A host supplies inputs through its interface (`set_input`, `docs/spec/05-host-interface.md`), at the instant it shows.
+
+A payload with no source:
+
+```error
+// error: MK-E24
+model Wrong {
+  state { v: Velocity = 0 m/s }
+  event nudge on start { set v = 1 m/s }
+  event echo on nudge(j: Momentum) { set v = 0 m/s }
+}
+```
+
+`nudge` carries no payload, so `echo` has nothing to receive.
+
 A `match` that forgets a case:
 
 ```error

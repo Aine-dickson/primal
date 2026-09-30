@@ -272,6 +272,7 @@ impl ModelBuilder {
             handler,
             zeno: None,
             process: None,
+            payload: None,
             notes: vec![],
         });
         id

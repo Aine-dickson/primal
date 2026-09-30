@@ -26,7 +26,7 @@ self-study, deep study, and syllabus-based educational content creation.
 | `docs/spec/04-ir.md` | Semantic IR format (JSON, D-037) | Living, normative |
 | `docs/spec/05-host-interface.md` | Host interface: how any system embeds Prismal (D-044, D-045) | Living, normative |
 | `docs/prototype.md` | Rust kernel prototype: structure, coverage of the reference programs, measured accuracy, gaps | Living |
-| `crates/` | Prototype source: `prismal-ir`, `prismal-kernel`, `prismal-runtime`, `prismal-syntax` (text parser), `prismal-present` (presentation kernel and timeline), `prismal-host` (host interface: engine, documents, instances, JSON protocol), `prismal-web` (WASM bindings and the reference player), `prismal-svg` (SVG renderer: still images, vector documents, image sequences); `cargo test` runs the reference programs, from the IR API and from their text | Living |
+| `crates/` | Prototype source: `prismal-ir`, `prismal-kernel`, `prismal-runtime`, `prismal-syntax` (text parser), `prismal-present` (presentation kernel and timeline), `prismal-host` (host interface: engine, documents, instances, JSON protocol), `prismal-web` (WASM bindings and the reference player), `prismal-svg` (SVG renderer: still images, vector documents, image sequences), `prismal-stdio` (the protocol over standard input and output); `cargo test` runs the reference programs, from the IR API and from their text | Living |
 | `web/` | Web player front end; build and run in `web/README.md` | Living |
 | `docs/guide/` | Learn Prismal: a guide to writing programs in the working syntax, chapters 1 to 8 and a reference card; every program in it is compiled and its cases run by `cargo test` | Living |
 | `docs/syntax-study/` | Syntax study (D-006): candidates A, B, C with all reference programs, comparison, specification findings S-1 to S-12 | Study record, non-normative |
@@ -93,6 +93,8 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-047:** the host captures input and forwards it; the engine interprets it (targeting, viewports, zoom and pan, keyboard focus). Raw inputs (`pointer`, `wheel`, `key_down`, `focus`, `view_reset`) and semantic inputs may be mixed; frames carry each view's viewport.
 - **D-048:** declared functions in v0: model-level `fn`, closed (parameters, constants, other functions), non-recursive; IR `functions` and `{"fn": id}`.
 - **D-049:** enumerations in v0: model-level `enum`, nominal by identity, cases typed by context, `match` with one arm per case; `enum`, `match` reserved.
+- **D-050:** event payloads: declared where they enter (`on request(p: T)`, `on E(p: T)`), supplied by requests and `emit E(v)`; requests obey enabling conditions.
+- **D-051:** inputs: optional defaults, starting values and changes from runs (`input { x = v at τ }`) and hosts (`set_input`); each change makes `on input(x)` due.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
@@ -106,11 +108,11 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 1. Mava Studio is not designed yet (D-044): do not design for it. Integration work goes into the general host interface (`docs/spec/05-host-interface.md`), driven by what any host needs.
 2. **Media from the SVG renderer**, when content needs them: encoding image sequences to a video file with narration (an external encoder over `prismal-svg` frames, PK-12.3 fallbacks already applied by the `video` medium), raster images, and a layout of several views on one page chosen by the author (PK-7.4).
 3. Input follow-ups, when content needs them: drags on members of a group (D-043), multi-touch gestures (pinch zoom), drags in lessons if explore beats come to offer them.
-4. Host interface follow-ups, when a host needs them: a C ABI (`prismal-ffi`) or a process speaking the protocol on standard input and output (HI-6.4); fine-grained edit operations (D-045 option 2); introspection for editors (the bindings, types, units and representations available for a value, D-019) as protocol operations.
-5. Language and runtime items still open (`docs/prototype.md`, "Not implemented"): inputs (`on input`), event payloads, backward seek within a run, payloads of enumeration cases. Each makes the IR more complete for every host.
+4. Host interface follow-ups, when a host needs them: a C ABI (`prismal-ffi`, HI-6.4a) for hosts that link libraries (a process binding exists: `prismal-stdio`); fine-grained edit operations (D-045 option 2); introspection for editors (the bindings, types, units and representations available for a value, D-019) as protocol operations.
+5. Language and runtime items still open (`docs/prototype.md`, "Not implemented"): backward seek within a run (snapshots), payloads of enumeration cases, contained objects and collections. Each makes the IR more complete for every host.
 6. The owner reviews by learning the language from `docs/guide/` and writing programs (see Working process). Keep the guide in step with every language change; `prismal-web/tests/guide.rs` enforces that its programs compile and pass.
 
-How to verify the state quickly: `cargo test` at the root (98 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`; from PowerShell or a terminal that can start a browser, `node crates/prismal-svg/compare.mjs` compares both renderers and `node web/check-input.mjs` drives the player with real input events.
+How to verify the state quickly: `cargo test` at the root (104 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`; from PowerShell or a terminal that can start a browser, `node crates/prismal-svg/compare.mjs` compares both renderers and `node web/check-input.mjs` drives the player with real input events.
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances confirmed by the prototype and fixed.
@@ -130,7 +132,9 @@ How to verify the state quickly: `cargo test` at the root (98 tests pass as of t
 16. Second renderer: SVG documents and image sequences (`prismal-svg`), compared with the web player.
 17. Input for every host (D-047): raw input interpreted by the engine, viewports in frames.
 18. Declared functions (D-048) and enumerations with `match` (D-049).
-19. Next: see Next steps.
+19. Event payloads (D-050) and environment inputs (D-051), with `set_input` for hosts.
+20. Process binding `prismal-stdio` (HI-6.4): the protocol for hosts in any language.
+21. Next: see Next steps.
 
 ## Session log
 
@@ -157,6 +161,8 @@ How to verify the state quickly: `cargo test` at the root (98 tests pass as of t
 | 2026-09-30 | Second renderer `crates/prismal-svg` (PK-12.2): a frame description drawn as a standalone SVG document from the host's layout and frame JSON only, following the web player's drawing (framing, cameras, ticks, marks, colors), with panels, formulas from their layouts, controls, tables, captions, themes and text alternatives; `render` example for frames at chosen instants or image sequences at N frames per second. Tests draw 63 frames of every presentation of the reference programs and the guide and DropMovie's animations frame by frame. `compare.mjs` draws 13 frames in both renderers (the player now opens `#program/Presentation@seconds`) and finds the same view boxes, geometry and text alternatives. Found: native and WebAssembly runs differ near 1e-10 (D-015 tolerance); formula layouts gained an italic correction. |
 | 2026-09-30 | Owner question on input for hosts that are not browsers; owner confirmed the host keeps the capture of events. D-047: the host forwards raw pointer, wheel and key events and the engine interprets them (`prismal-host/src/input.rs`: viewports, pixel mapping, hit testing with a reach by pointer kind, focus order); protocol operations `pointer`, `wheel`, `key_down`, `focus`, `view_reset`; frames carry viewports and focus; HI-1.4, HI-4.5, HI-5.2a, PK-10.2a, PK-11.2b. The web player forwards raw events and draws with the frame's viewport (its framing, hit testing and zoom and pan code removed); the SVG renderer likewise. Tests drive drags, focus, keys, zoom and pan through the protocol alone (`prismal-web/tests/input.rs`, 5 tests); `web/check-input.mjs` drives the player with real events in headless Edge (8 checks pass); the renderer comparison still agrees on all 13 frames. |
 | 2026-09-30 | Owner direction: complete the language, then a binding for other languages. Declared functions (D-048: model-level `fn`, closed, non-recursive, MK-E18, MK-E23; `formula(f)` shows the definition) and enumerations (D-049: model-level `enum`, nominal, cases typed by context, `match` with one arm per case, MK-E17) through IR, checker, syntax, formatter, identities, text and typesetting; MK-2.2a, MK-10.3a, 04-ir 5.5. Found: constant expressions could not read constants (a function calling `g` in a case), expected cases had no type, words in products ran together in formulas, D-038 did not decide `!=`. Guide chapters 2 (Functions) and 5 (Modes with more than two values); `prismal-syntax/tests/functions_enums.rs`. 98 tests pass. |
+| 2026-09-30 | Event payloads (D-050: declared where they enter, `on request(j: T)`, `on E(j: T)`, `emit E(v)`, `request E(v)` in timelines, MK-E24) and inputs (D-051: defaults, a run's `input` block with changes `at` instants, the host's `set_input`, `on input(x)` due at each change). Found: requested events ignored their enabling conditions (MK-15.5), now obeyed. MK-15.1a, MK-6.7a, RC-11.6a, RC-11.6b, HI-4.3a, 04-ir; guide chapter 5 (Events that carry values, and values from outside); `prismal-present/tests/payloads_inputs.rs`, a protocol test. |
+| 2026-09-30 | Process binding `crates/prismal-stdio` (HI-6.4): the JSON protocol over standard input and output as JSON Lines, request ids echoed, errors answered as responses; `tests/process.rs` drives the running binary; `client.py` is a Python host that feeds an input and reads frames. 104 tests pass. |
 
 ## Working process
 

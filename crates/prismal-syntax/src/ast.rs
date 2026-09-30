@@ -151,7 +151,8 @@ pub enum TriggerExpr {
     Start,
     Input(Name),
     Request(Option<(Name, TypeExpr)>),
-    On(Name),
+    /// `on E` or `on E(p: T)`, receiving `E`'s payload as `p` (D-050).
+    On(Name, Option<(Name, TypeExpr)>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -407,7 +408,8 @@ pub enum Action {
     Intervene(Vec<OpStmt>),
     Wait(Expr),
     WaitUntil(Name),
-    Request(Name),
+    /// `request E` or `request E(value)` (D-050).
+    Request(Name, Option<Expr>),
     Reset,
     Branch,
 }
@@ -420,6 +422,8 @@ pub struct RunDecl {
     pub model: Name,
     pub presentation: Option<Name>,
     pub params: Vec<(Name, Expr)>,
+    /// `input { x = v }`, `input { x = v at τ }` (D-051).
+    pub inputs: Vec<(Name, Expr, Option<Expr>)>,
     pub config: Vec<(Name, Expr)>,
     pub until: Option<Expr>,
     pub learner: Vec<LearnerStep>,

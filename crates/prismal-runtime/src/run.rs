@@ -2,7 +2,7 @@
 //! location, event iteration, Zeno detection, failures, interventions and requests.
 
 use crate::solver::{Attempt, Dopri5, Rhs, Rk4, Step};
-use prismal_ir::{Expr, Id, Op, Policy, Type};
+use prismal_ir::{Expr, Id, Op, Policy, Role, Type};
 use prismal_kernel::{check_intervention, compile_expr, distance, CExpr, CModel, COp, CTrigger, Ctx, Dir, Status, Value};
 use std::collections::VecDeque;
 
@@ -20,6 +20,13 @@ pub enum Action {
     Intervene(Vec<Op>),
     /// A request for an `on request` event (MK-17.2a, D-027).
     Request(Id),
+    /// A request that supplies the event's payload (D-050); the expression is evaluated at
+    /// the request's instant against the payload's type.
+    RequestWith(Id, Expr),
+    /// The environment supplies a new value of an input binding (RC-11.6, D-051): the
+    /// expression is evaluated at the instant against the input's type, and `on input(x)`
+    /// events are due.
+    Input(Id, Expr),
 }
 
 #[derive(Clone, Debug)]
@@ -122,6 +129,8 @@ pub struct LogEntry {
     /// True when a Zeno policy replaced the handler (RC-15.1).
     pub zeno: bool,
     pub requested: bool,
+    /// The occurrence's payload (D-050, RC-15.1).
+    pub payload: Option<Value>,
 }
 
 /// A committed superdense state (RC-4.2).
@@ -169,6 +178,8 @@ struct Engine<'a> {
     /// Next instant of each time event (RC-7.9); `every_k` counts `every` occurrences.
     time_next: Vec<Option<f64>>,
     every_k: Vec<u64>,
+    /// Payloads of the occurrences handled at the current microstep, by event (D-050).
+    payloads: Vec<Option<Value>>,
     run: Run,
 }
 
@@ -231,7 +242,7 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
         };
         let v = compile_expr(cm, e, Some(&cm.bindings[i].ty))
             .map_err(|d| format!("{d:?}"))
-            .and_then(|(c, _)| c.eval(&Ctx { vals: &cm.constant_values(), der: None, t: cfg.t0, t0: cfg.t0, args: &[] }).map_err(|s| s.cause));
+            .and_then(|(c, _)| c.eval(&Ctx { vals: &cm.constant_values(), der: None, t: cfg.t0, t0: cfg.t0, args: &[], payloads: &[] }).map_err(|s| s.cause));
         match v {
             Ok(v) => overrides.push((i, v)),
             Err(m) => {
@@ -257,6 +268,7 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
         zeno: (0..cm.events.len()).map(|_| ZenoMonitor { last: None, recent: VecDeque::new() }).collect(),
         time_next: vec![None; cm.events.len()],
         every_k: vec![0; cm.events.len()],
+        payloads: vec![None; cm.events.len()],
         run,
     };
     if let Err(d) = e.schedule_time_events() {
@@ -344,8 +356,8 @@ impl<'a> Engine<'a> {
         RunDiag { category, message, element: element.map(|s| s.to_string()), t: self.t, n: self.n }
     }
 
-    fn ctx<'v>(&self, vals: &'v [Value]) -> Ctx<'v> {
-        Ctx { vals, der: None, t: self.t, t0: self.cfg.t0, args: &[] }
+    fn ctx<'v>(&'v self, vals: &'v [Value]) -> Ctx<'v> {
+        Ctx { vals, der: None, t: self.t, t0: self.cfg.t0, args: &[], payloads: &self.payloads }
     }
 
     fn commit(&mut self) {
@@ -412,7 +424,7 @@ impl<'a> Engine<'a> {
         let der = self.cm.der_values(&self.vals, self.t, self.cfg.t0).ok();
         for q in &self.cm.equations {
             let Some(tol) = q.check_tol else { continue };
-            let c = Ctx { vals: &self.vals, der: der.as_deref(), t: self.t, t0: self.cfg.t0, args: &[] };
+            let c = Ctx { vals: &self.vals, der: der.as_deref(), t: self.t, t0: self.cfg.t0, args: &[], payloads: &[] };
             let res = match (q.lhs.eval(&c), q.rhs.eval(&c)) {
                 (Ok(a), Ok(b)) => distance(&a, &b),
                 _ => None,
@@ -596,7 +608,7 @@ impl<'a> Engine<'a> {
         let mut vals = scratch.to_vec();
         self.cm.load_y(&mut vals, &y);
         self.cm.update_derived(&mut vals, t, self.cfg.t0)?;
-        let c = Ctx { vals: &vals, der: None, t, t0: self.cfg.t0, args: &[] };
+        let c = Ctx { vals: &vals, der: None, t, t0: self.cfg.t0, args: &[], payloads: &[] };
         match &self.cm.events[ei].trigger {
             Some(CTrigger::Crossing { guard, .. }) => Ok(guard.eval(&c)?.num()),
             _ => unreachable!(),
@@ -645,11 +657,35 @@ impl<'a> Engine<'a> {
     }
 
     /// Event iteration at the current event time (RC section 8.1).
-    fn iterate(&mut self, mut due: Vec<usize>, mut requested: Vec<usize>) -> Result<(), RunDiag> {
+    fn iterate(&mut self, due: Vec<usize>, requested: Vec<usize>) -> Result<(), RunDiag> {
+        let r = self.iterate_with(due, requested.into_iter().map(|e| (e, None)).collect(), vec![None; self.cm.events.len()]);
+        self.payloads = vec![None; self.cm.events.len()];
+        r
+    }
+
+    /// Event iteration with payloads (D-050): `requested` with the payload each request
+    /// supplies, `carried` the payload each event occurred or was emitted with at the
+    /// previous microstep, which the events that follow it (`on E`) receive.
+    fn iterate_with(&mut self, mut due: Vec<usize>, mut requested: Vec<(usize, Option<Value>)>, mut carried: Vec<Option<Value>>) -> Result<(), RunDiag> {
         loop {
+            // The payloads of this microstep's occurrences.
+            self.payloads = vec![None; self.cm.events.len()];
+            for &ei in &due {
+                if let Some(CTrigger::On(src)) = &self.cm.events[ei].trigger {
+                    self.payloads[ei] = carried[*src].clone();
+                }
+            }
+            for (ei, p) in &requested {
+                self.payloads[*ei] = p.clone();
+            }
             // Step 2: enabling conditions.
             let vals = self.vals.clone();
             due.retain(|&ei| match &self.cm.events[ei].enable {
+                Some(c) => matches!(c.eval(&self.ctx(&vals)), Ok(Value::Bool(true))),
+                None => true,
+            });
+            // A requested event obeys its enabling condition as any other (MK-15.5).
+            requested.retain(|(ei, _)| match &self.cm.events[*ei].enable {
                 Some(c) => matches!(c.eval(&self.ctx(&vals)), Ok(Value::Bool(true))),
                 None => true,
             });
@@ -681,20 +717,32 @@ impl<'a> Engine<'a> {
                     handled.push((ei, false, false));
                 }
             }
-            for &ei in &requested {
-                ops.extend(self.cm.events[ei].handler.clone());
-                handled.push((ei, false, true));
+            for (ei, _) in &requested {
+                ops.extend(self.cm.events[*ei].handler.clone());
+                handled.push((*ei, false, true));
             }
             let emitted = self.transition(&ops, false)?;
             for &(ei, z, rq) in &handled {
                 if matches!(self.cm.events[ei].trigger, Some(CTrigger::Crossing { .. })) {
                     self.record_occurrence(ei);
                 }
-                self.run.log.push(LogEntry { event: ei, name: self.cm.events[ei].name.clone(), t: self.t, n: self.n, zeno: z, requested: rq });
+                let payload = self.payloads[ei].clone();
+                self.run.log.push(LogEntry { event: ei, name: self.cm.events[ei].name.clone(), t: self.t, n: self.n, zeno: z, requested: rq, payload });
             }
             // Next microstep: `on(E)` for each E that occurred or was emitted at this one
-            // (MK-15.3, MK-15.10, D-041), and crossings caused by jumps (RC-8.5).
+            // (MK-15.3, MK-15.10, D-041), and crossings caused by jumps (RC-8.5). An event
+            // carries its occurrence's payload, or the payload it was emitted with (D-050).
             let occurred: Vec<usize> = handled.iter().map(|h| h.0).collect();
+            carried = vec![None; self.cm.events.len()];
+            for &ei in &occurred {
+                carried[ei] = self.payloads[ei].clone();
+            }
+            for (ei, p) in &emitted {
+                if p.is_some() {
+                    carried[*ei] = p.clone();
+                }
+            }
+            let emitted: Vec<usize> = emitted.into_iter().map(|e| e.0).collect();
             let mut next: Vec<usize> = (0..self.cm.events.len())
                 .filter(|&j| matches!(self.cm.events[j].trigger, Some(CTrigger::On(src)) if emitted.contains(&src) || occurred.contains(&src)))
                 .collect();
@@ -718,9 +766,10 @@ impl<'a> Engine<'a> {
     }
 
     /// One transition (MK-16.3): conflicts, proposed state, constraints, commit.
-    /// Returns the events emitted. For interventions, a `reject` violation is returned as an
-    /// error with category `Intervention`.
-    fn transition(&mut self, ops: &[COp], intervention: bool) -> Result<Vec<usize>, RunDiag> {
+    /// Returns the events emitted, with their payloads. For interventions, a `reject`
+    /// violation is returned as an error with category `Intervention`.
+    #[allow(clippy::type_complexity)]
+    fn transition(&mut self, ops: &[COp], intervention: bool) -> Result<Vec<(usize, Option<Value>)>, RunDiag> {
         let mut targets: Vec<(usize, Option<usize>)> = vec![];
         let mut proposed = self.vals.clone();
         let mut emitted = vec![];
@@ -744,7 +793,13 @@ impl<'a> Engine<'a> {
                         }
                     }
                 }
-                COp::Emit { event } => emitted.push(*event),
+                COp::Emit { event, payload } => {
+                    let p = match payload {
+                        Some(c) => Some(c.eval(&self.ctx(&self.vals)).map_err(|s| self.diag(Category::Model, s.cause, None))?),
+                        None => None,
+                    };
+                    emitted.push((*event, p));
+                }
             }
         }
         self.cm.update_derived(&mut proposed, self.t, self.cfg.t0).map_err(|s| self.diag(Category::Model, s.cause, None))?;
@@ -775,9 +830,15 @@ impl<'a> Engine<'a> {
                 match self.transition(&cops, true) {
                     Ok(emitted) => {
                         let due = (0..self.cm.events.len())
-                            .filter(|&j| matches!(self.cm.events[j].trigger, Some(CTrigger::On(src)) if emitted.contains(&src)))
+                            .filter(|&j| matches!(self.cm.events[j].trigger, Some(CTrigger::On(src)) if emitted.iter().any(|e| e.0 == src)))
                             .collect();
-                        self.iterate(due, vec![])
+                        let mut carried = vec![None; self.cm.events.len()];
+                        for (ei, p) in emitted {
+                            carried[ei] = p;
+                        }
+                        let r = self.iterate_with(due, vec![], carried);
+                        self.payloads = vec![None; self.cm.events.len()];
+                        r
                     }
                     Err(d) if d.category == Category::Intervention => {
                         self.run.rejected.push(d);
@@ -786,7 +847,30 @@ impl<'a> Engine<'a> {
                     Err(d) => Err(d),
                 }
             }
-            Action::Request(id) => {
+            Action::Input(id, e) => {
+                let reject = |s: &mut Self, msg: String| {
+                    let rd = s.diag(Category::Intervention, msg, Some(id));
+                    s.run.rejected.push(rd);
+                    Ok(())
+                };
+                let Some(&i) = self.cm.index.get(id) else { return reject(self, format!("unknown input `{id}`")) };
+                if self.cm.bindings[i].role != Role::Input {
+                    return reject(self, format!("`{}` is not an input (RC-11.6)", self.cm.bindings[i].name));
+                }
+                // The environment's value reads nothing of the model but its constants.
+                let value = match compile_expr(self.cm, e, Some(&self.cm.bindings[i].ty)) {
+                    Ok((c, _)) => c.eval(&Ctx { vals: &self.cm.constant_values(), der: None, t: self.t, t0: self.cfg.t0, args: &[], payloads: &[] }),
+                    Err(d) => return reject(self, format!("the value of `{}`: {}", self.cm.bindings[i].name, d.iter().map(|x| x.message.clone()).collect::<Vec<_>>().join("; "))),
+                };
+                let v = match value {
+                    Ok(v) => v,
+                    Err(s) => return reject(self, format!("the value of `{}`: {}", self.cm.bindings[i].name, s.cause)),
+                };
+                self.transition(&[COp::Set { binding: i, component: None, value: CExpr::Const(v) }], false)?;
+                let due = (0..self.cm.events.len()).filter(|&j| matches!(self.cm.events[j].trigger, Some(CTrigger::Input(b)) if b == i)).collect();
+                self.iterate(due, vec![])
+            }
+            Action::Request(id) | Action::RequestWith(id, _) => {
                 let Some(ei) = self.cm.events.iter().position(|e| &e.id == id) else {
                     let rd = self.diag(Category::Intervention, format!("unknown event `{id}`"), None);
                     self.run.rejected.push(rd);
@@ -797,7 +881,41 @@ impl<'a> Engine<'a> {
                     self.run.rejected.push(rd);
                     return Ok(());
                 }
-                self.iterate(vec![], vec![ei])
+                // D-050: a request supplies the payload the event declares, of its type.
+                let declared = self.cm.ir.events[ei].payload.clone();
+                let payload = match (action, declared) {
+                    (Action::Request(_), None) => None,
+                    (Action::RequestWith(_, e), Some(p)) => match compile_expr(self.cm, e, Some(&p.ty)) {
+                        Ok((c, _)) => match c.eval(&Ctx { vals: &self.vals, der: None, t: self.t, t0: self.cfg.t0, args: &[], payloads: &[] }) {
+                            Ok(v) => Some(v),
+                            Err(s) => {
+                                let rd = self.diag(Category::Intervention, format!("the payload of `{}`: {}", self.cm.events[ei].name, s.cause), Some(id));
+                                self.run.rejected.push(rd);
+                                return Ok(());
+                            }
+                        },
+                        Err(d) => {
+                            let msg = d.iter().map(|x| x.message.clone()).collect::<Vec<_>>().join("; ");
+                            let rd = self.diag(Category::Intervention, format!("the payload of `{}`: {msg}", self.cm.events[ei].name), Some(id));
+                            self.run.rejected.push(rd);
+                            return Ok(());
+                        }
+                    },
+                    (Action::Request(_), Some(p)) => {
+                        let rd = self.diag(Category::Intervention, format!("a request of `{}` supplies its payload `{}`", self.cm.events[ei].name, p.name), Some(id));
+                        self.run.rejected.push(rd);
+                        return Ok(());
+                    }
+                    (Action::RequestWith(..), None) => {
+                        let rd = self.diag(Category::Intervention, format!("`{}` declares no payload", self.cm.events[ei].name), Some(id));
+                        self.run.rejected.push(rd);
+                        return Ok(());
+                    }
+                    (Action::Intervene(_) | Action::Input(..), _) => unreachable!(),
+                };
+                let r = self.iterate_with(vec![], vec![(ei, payload)], vec![None; self.cm.events.len()]);
+                self.payloads = vec![None; self.cm.events.len()];
+                r
             }
         }
     }
@@ -825,7 +943,7 @@ impl Run {
 
     fn eval_on(&self, c: &CExpr, vals: &[Value], t: f64) -> Result<Value, Status> {
         let der = self.model.der_values(vals, t, self.config.t0).ok();
-        c.eval(&Ctx { vals, der: der.as_deref(), t, t0: self.config.t0, args: &[] })
+        c.eval(&Ctx { vals, der: der.as_deref(), t, t0: self.config.t0, args: &[], payloads: &[] })
     }
 
     /// The state at time `t`: the final microstep at an event time (RC-4.3), otherwise the

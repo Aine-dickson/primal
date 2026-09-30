@@ -41,6 +41,8 @@ pub(crate) struct Tc<'a, 'b> {
     /// While checking a declared function's body: its name. The body reads only its
     /// parameters, constants and other declared functions (MK-10.3).
     closed: Option<String>,
+    /// While checking an event with a payload: its identity, index and payload type (D-050).
+    pub payload: Option<(Id, usize, Type)>,
 }
 
 type Typed = Option<(CExpr, Type)>;
@@ -60,7 +62,7 @@ fn is_dimensioned(t: &Type) -> bool {
 
 impl<'a, 'b> Tc<'a, 'b> {
     pub fn new(scope: &'b Scope<'a>, diags: &'b mut Vec<Diagnostic>, element: &str) -> Self {
-        Tc { scope, diags, element: element.to_string(), lambda: vec![], closed: None }
+        Tc { scope, diags, element: element.to_string(), lambda: vec![], closed: None, payload: None }
     }
 
     /// MK-E18: a declared function's body reads something other than its parameters,
@@ -144,6 +146,10 @@ impl<'a, 'b> Tc<'a, 'b> {
                 },
             },
             Expr::Match { r#match, arms } => self.match_expr(r#match, arms, exp),
+            Expr::Payload { payload } => match &self.payload {
+                Some((id, i, t)) if id == payload => Some((CExpr::Payload(*i), t.clone())),
+                _ => self.err("MK-E01", format!("the payload of `{}` is read only in that event's condition and handler", payload.rsplit('.').next().unwrap_or(payload))),
+            },
             Expr::Builtin { .. } | Expr::Der { .. } if self.closed.is_some() => self.open_read("the simulation's time or a derivative"),
             Expr::Param { param } => match self.lambda.last().and_then(|p| p.get(*param)) {
                 Some(t) => Some((CExpr::Arg(*param), t.clone())),
@@ -787,6 +793,19 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
             Trigger::Request => Some(CTrigger::Request),
             Trigger::Input { binding } => index.get(binding).map(|&i| CTrigger::Input(i)),
         };
+        // D-050: an event with a payload gets it from a request, or from the event it
+        // follows, which carries a payload of the same type.
+        if let Some(p) = &e.payload {
+            let source_ok = match &e.trigger {
+                Trigger::Request => true,
+                Trigger::On { event } => model.events.iter().find(|x| &x.id == event).and_then(|x| x.payload.as_ref()).is_some_and(|q| q.ty == p.ty),
+                _ => false,
+            };
+            if !source_ok {
+                tc.err("MK-E24", format!("the payload `{}` of `{}` has no source: it comes from a request (`on request`) or from an event that carries a payload of the same type (`on E`)", p.name, e.name));
+            }
+        }
+        tc.payload = e.payload.as_ref().map(|p| (e.id.clone(), cevents.len(), p.ty.clone()));
         let enable = e.enable.as_ref().and_then(|x| tc.expect(x, &Type::Boolean));
         let handler = check_ops(&mut tc, model, &index, &e.handler, false);
         let zeno = match &e.zeno {
@@ -943,8 +962,22 @@ fn check_ops(tc: &mut Tc, model: &Model, index: &HashMap<Id, usize>, ops: &[Op],
                     out.push(COp::Set { binding: bi, component: target.component, value: v });
                 }
             }
-            Op::Emit { event, .. } => match model.events.iter().position(|e| &e.id == event) {
-                Some(i) => out.push(COp::Emit { event: i }),
+            // An emitted payload has the type the emitted event declares (D-050).
+            Op::Emit { event, payload } => match model.events.iter().position(|e| &e.id == event) {
+                Some(i) => match (&model.events[i].payload, payload) {
+                    (None, None) => out.push(COp::Emit { event: i, payload: None }),
+                    (Some(p), Some(v)) => {
+                        if let Some(c) = tc.expect(v, &p.ty) {
+                            out.push(COp::Emit { event: i, payload: Some(c) });
+                        }
+                    }
+                    (Some(p), None) => {
+                        tc.err("MK-E01", format!("`emit {}` needs its payload `{}`", model.events[i].name, p.name));
+                    }
+                    (None, Some(_)) => {
+                        tc.err("MK-E01", format!("`{}` declares no payload", model.events[i].name));
+                    }
+                },
                 None => {
                     tc.err("MK-E00", format!("unknown event `{event}`"));
                 }

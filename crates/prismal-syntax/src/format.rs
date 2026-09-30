@@ -305,6 +305,7 @@ impl<'a> Printer<'a> {
             }
             Expr::Lambda { lambda } => self.expr_p(&lambda.body, &lambda.names),
             Expr::Otherwise { otherwise, default } => format!("{} otherwise {}", w(otherwise, P_OR), w(default, P_OR)),
+            Expr::Payload { payload } => self.model.events.iter().find(|e| &e.id == payload).and_then(|e| e.payload.as_ref()).map(|p| p.name.clone()).unwrap_or_else(|| "payload".into()),
             Expr::Fn { r#fn } => self.model.function(r#fn).map(|f| f.name.clone()).unwrap_or_else(|| r#fn.rsplit('.').next().unwrap_or(r#fn).to_string()),
             Expr::Match { r#match, arms } => {
                 format!("match {} {{ {} }}", p(r#match), arms.iter().map(|a| format!("{} => {}", a.case, p(&a.value))).collect::<Vec<_>>().join(", "))
@@ -556,6 +557,9 @@ impl<'a> Printer<'a> {
         let mut s = String::new();
         notes(&mut s, &ind, &e.notes);
         let _ = write!(s, "{ind}event {} on {}", e.name, self.trigger(&e.trigger));
+        if let Some(p) = &e.payload {
+            let _ = write!(s, "({}: {})", p.name, self.ty(&p.ty));
+        }
         if let Some(c) = &e.enable {
             let _ = write!(s, " if {}", self.expr(c));
         }
@@ -878,7 +882,10 @@ impl<'a> Printer<'a> {
             Action::Reset => "reset".into(),
             Action::Branch => "branch".into(),
             Action::Intervene { ops } => format!("intervene {}", block(ops.iter().map(|o| self.op(o)).collect())),
-            Action::Request { event } => format!("request {}", self.event_name(event)),
+            Action::Request { event, payload } => match payload {
+                Some(p) => format!("request {}({})", self.event_name(event), self.expr(p)),
+                None => format!("request {}", self.event_name(event)),
+            },
             Action::Wait { duration } => format!("wait {}", self.expr(duration)),
             Action::WaitUntil { event } => format!("wait until {}", self.event_name(event)),
             Action::Explore { limit, keep, controls, fallback } => {
@@ -912,6 +919,17 @@ impl<'a> Printer<'a> {
         if !r.params.is_empty() {
             let items: Vec<String> = r.params.iter().map(|o| format!("{} = {}", self.binding_name(&o.binding), self.expr(&o.value))).collect();
             let _ = writeln!(s, "{INDENT}param {{ {} }}", items.join("; "));
+        }
+        if !r.inputs.is_empty() {
+            let items: Vec<String> = r
+                .inputs
+                .iter()
+                .map(|i| {
+                    let at = i.at.as_ref().map(|a| format!(" at {}", self.expr(a))).unwrap_or_default();
+                    format!("{} = {}{at}", self.binding_name(&i.binding), self.expr(&i.value))
+                })
+                .collect();
+            let _ = writeln!(s, "{INDENT}input {{ {} }}", items.join("; "));
         }
         let mut cfg = vec![];
         if let Some(sv) = &r.config.solver {

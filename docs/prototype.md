@@ -15,6 +15,7 @@ The first implementation of Prismal's core semantics, built kernel-first (D-002)
 | `crates/prismal-present` | `03-presentation-kernel.md`, `04-ir.md` section 7 | Presentation checks, observation, expectations, projection and frame descriptions, formula typesetting for every medium (`math.rs`, D-046), interaction, the explanation timeline |
 | `crates/prismal-host` | `05-host-interface.md` | The host interface: an engine of documents (from text or the IR, updated with identities kept) and instances (sessions and lessons), with a Rust API and the JSON protocol |
 | `crates/prismal-web` and `web/` | D-018, `03-presentation-kernel.md` section 12 | The web player: the host interface compiled to WebAssembly and a browser front end that renders frame descriptions |
+| `crates/prismal-stdio` | `05-host-interface.md` HI-6.4 | The host interface as a process: the JSON protocol over standard input and output, one request and one response per line, with request ids; a Python host (`client.py`) |
 | `crates/prismal-svg` | `03-presentation-kernel.md` section 12, `05-host-interface.md` section 5 | The SVG renderer: frame descriptions drawn as standalone SVG documents with no browser, for still images, vector documents and image sequences |
 | `crates/prismal-runtime` | `02-runtime-contract.md` | Runs, `dopri5` and `rk4` with dense output, crossing detection and location, event iteration in superdense time, Zeno detection, constraints and equation checks, interventions and requests, time events, observation, an interactive session with undo and redo |
 
@@ -62,7 +63,7 @@ bad.prismal:4:22: MK-E01: type or dimension mismatch: found Quantity<L T^-1>, ex
 | SX-E03 | unknown name, event, space or component |
 | SX-E04 | unknown type or dimension |
 | SX-E05 | unknown unit (including `px` in a model) |
-| SX-E06 | construct not in the v0 IR (`object`, collections, payloads) |
+| SX-E06 | construct not in the v0 IR (`object`, collections) |
 | SX-E07 | reserved word used as a name (D-040) |
 | SX-E08 | form not allowed here (presentation forms in a model, `origin` without a default space, a range on a non-parameter, arity) |
 | SX-E09 | duplicate declaration (spaces, models, processes, events, equations, constraints; duplicate bindings are the kernel's MK-E22) |
@@ -223,6 +224,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - **Native and WebAssembly runs differ in the last digits.** Comparing the renderers, RP-08's ball at rest after landing is at `y = -7.06e-10 m` natively and `-1.06e-10 m` in the browser: the elementary functions of the two builds round differently. This is the tolerance-equivalence across platforms that D-015 allows; the comparison checks numbers in text alternatives to 1e-6.
 - **Italic correction.** Superscripts and closing parentheses touched the slanted top of italic letters in formula layouts (`v²`, `f(x)`). An italic run now takes 0.06 em more room after it (`math.rs`); renderers draw layouts with serif faces that have true italics, whose widths the layout approximates.
 - **Input belonged to each host.** The host interface took only semantic inputs, so each host had to hit-test, map screen positions to view coordinates and keep focus, and the web player's framing (extent, growth, camera, zoom and pan) had to be copied into the SVG renderer. The host now captures and forwards input and the engine interprets it (D-047); both renderers draw with the viewport in the frame. A session's framing now grows to fit each frame on its own, where the web player's used to keep the growth of earlier frames, so the same instant always gives the same frame.
+- **Requests ignored enabling conditions.** A requested event ran its handler even when its `if` condition was false, contrary to MK-15.5; found with payloads (`on request(j: Momentum) if j > 0 kg*m/s`). Requests now obey their conditions (RC-11.6b).
 - **Constants in constant expressions.** Case parameters and expected values were evaluated with no binding values at all, so a declared function that reads a constant (`apex(10 m/s)` reading `g`) could not be called there. Constant expressions now see the model's constants (`CModel::constant_values`).
 - **Expected cases need a type.** `(phase on top) == sinking` compiled the expected side with no expected type, and a case has none of its own; an expected value now takes the enumeration of its subject.
 - **Products of words.** `0.5 * mass * speed^2` was typeset `0.5massspeed²`; a thin space now separates a name of more than one letter from its neighbours in a product.
@@ -239,9 +241,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
 | Video files and raster images: the SVG renderer writes vector frames and image sequences, and encoding them is left to external tools | PK section 12 |
-| Inputs (`input` bindings, `on input`) | RC section 11.2 |
 | Snapshots and backward seek within a dynamic run (undo recomputes from the start) | RC section 14.1 |
-| Payloads of requested and emitted events | MK-15.1 |
 | `contribute` operations on discrete state; collections and relations | MK sections 8, 16 |
 | Failure policy `pause` (interactive) | RC-10.3 |
 | Frames of spaces (D-022), affine temperature units | MK sections 3.4, 4 |
@@ -260,6 +260,8 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 `group` (D-043), with members placed in model space; frame tests of the animations; the web player's animations checked in headless Edge.
 - 2026-09-30 host interface (`prismal-host`, D-044, D-045): the web player's logic moved into an engine any host embeds; sessions and playbacks own their model; the JSON protocol exported to JavaScript.
 - 2026-09-30 formulas typeset for every medium (D-046): math box tree and layout in frame descriptions; labels, drag parts and control symbols and units in the core frame; MathML only in the browser binding.
+- 2026-09-30 `prismal-stdio`: the protocol over standard input and output for hosts in any language (HI-6.4); `tests/process.rs` drives the running binary; `client.py` feeds an input from Python.
+- 2026-09-30 event payloads (D-050) and inputs (D-051): runtime, syntax, run cases, host `set_input`; `prismal-present/tests/payloads_inputs.rs`.
 - 2026-09-30 declared functions (D-048) and enumerations with `match` (D-049): IR, checker (MK-E17, MK-E18, MK-E23), syntax, formatter, identities, text and formula output; guide sections in chapters 2 and 5; `prismal-syntax/tests/functions_enums.rs`.
 - 2026-09-30 raw input and viewports (D-047): the host captures, the engine targets, pans, zooms and keeps focus; frames carry viewports; the web player forwards raw events, checked with real events in headless Edge (`web/check-input.mjs`).
 - 2026-09-30 SVG renderer (`prismal-svg`): frames as standalone SVG documents and image sequences, compared with the web player's drawing in a browser; italic correction in formula layouts; the player's address selects a presentation and instant.

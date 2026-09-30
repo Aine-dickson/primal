@@ -350,7 +350,10 @@ impl PresCx<'_, '_> {
                 }
                 ast::Action::Wait(e) => out.push(Action::Wait { duration: self.expr(e) }),
                 ast::Action::WaitUntil(e) => out.push(Action::WaitUntil { event: self.cx.event_id(e) }),
-                ast::Action::Request(e) => out.push(Action::Request { event: self.cx.event_id(e) }),
+                ast::Action::Request(e, p) => {
+                    let payload = p.as_ref().map(|v| self.expr(v));
+                    out.push(Action::Request { event: self.cx.event_id(e), payload })
+                }
             }
         }
         out
@@ -457,6 +460,7 @@ pub(crate) fn run(
     map.insert(id.clone(), r.span);
     let mut cx = ModelCx::scope(model, spaces, diags, map);
     let params = r.params.iter().map(|(n, v)| Override { binding: cx.binding(n), value: cx.expr(v, &[]) }).collect();
+    let inputs = r.inputs.iter().map(|(n, v, at)| InputValue { binding: cx.binding(n), value: cx.expr(v, &[]), at: at.as_ref().map(|a| cx.expr(a, &[])) }).collect();
     let mut config = RunConfig::default();
     for (k, v) in &r.config {
         match k.text.as_str() {
@@ -590,6 +594,7 @@ pub(crate) fn run(
         model: model.id.clone(),
         presentation: pres.map(|p| p.id.clone()),
         params,
+        inputs,
         config,
         end,
         learner,

@@ -183,6 +183,8 @@ pub enum CExpr {
     Otherwise(Box<CExpr>, Box<CExpr>),
     /// The value of the arm of the scrutinee's case, arms in case order (D-049).
     Match(Box<CExpr>, Vec<CExpr>),
+    /// The payload of the occurrence of event `i` being handled (D-050).
+    Payload(usize),
 }
 
 /// The environment of an evaluation.
@@ -194,6 +196,9 @@ pub struct Ctx<'a> {
     pub t: f64,
     pub t0: f64,
     pub args: &'a [Value],
+    /// The payloads of the occurrences being handled, by event index (D-050); empty outside
+    /// event handling.
+    pub payloads: &'a [Option<Value>],
 }
 
 fn finite(x: f64, what: &str) -> EvalResult {
@@ -284,7 +289,7 @@ impl CExpr {
                 Func(body) => {
                     let vals: Result<std::vec::Vec<Value>, Status> = args.iter().map(|a| a.eval(c)).collect();
                     let vals = vals?;
-                    let inner = Ctx { vals: c.vals, der: c.der, t: c.t, t0: c.t0, args: &vals };
+                    let inner = Ctx { vals: c.vals, der: c.der, t: c.t, t0: c.t0, args: &vals, payloads: c.payloads };
                     body.eval(&inner)
                 }
                 v => Err(Status::invalid(format!("{v} is not a function"))),
@@ -317,6 +322,7 @@ impl CExpr {
                 Ok(v) => Ok(v),
                 Err(_) => d.eval(c),
             },
+            CExpr::Payload(i) => c.payloads.get(*i).cloned().flatten().ok_or_else(|| Status::invalid("no payload for this occurrence".to_string())),
             CExpr::Match(e, arms) => match e.eval(c)? {
                 Case(i) => arms.get(i as usize).ok_or_else(|| Status::invalid(format!("no arm for case {i}")))?.eval(c),
                 v => Err(Status::invalid(format!("{v} is not a case"))),

@@ -69,6 +69,8 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-047 | Input: the host captures and forwards, the engine interprets (targeting, viewports, zoom and pan, focus); raw and semantic inputs | Accepted |
 | D-048 | Declared functions in v0: model-level `fn`, closed, non-recursive, in the IR as `functions` and `{"fn": id}` | Accepted |
 | D-049 | Enumerations in v0: model-level `enum`, nominal by identity, cases typed by context, `match` with one arm per case | Accepted |
+| D-050 | Event payloads in v0: declared where they enter (`on request(p: T)`, `on E(p: T)`), supplied by requests and `emit E(v)` | Accepted |
+| D-051 | Inputs in v0: optional defaults, starting values from the run, piecewise-constant changes from runs and hosts (`set_input`) | Accepted |
 
 ---
 
@@ -899,5 +901,37 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30; payloads deferred. Cases have no order and no arithmetic (`==`, `!=` only). Cases share the namespace of bindings and functions. `enum` and `match` become reserved words; `=>` is added to the operators. The self-retriggering analysis of D-038 decides `phase == c` and `phase != c` on the cases a handler sets.
 - **Reason:** gives modes names a learner can read in text alternatives and formulas (`phase = sinking`, one typeset row per case), and makes forgetting a case a static error.
 - **Consequences:** MK-2.2a, MK-10.3a (match), MK-E17 and MK-E22 for enumerations; 04-ir sections 3, 5.5 and 6; working syntax `enum`, `match`, `=>`; `CExpr::Match`; expectations type an expected case from their subject; formatter, identity matching and rename for enumerations; guide chapter 5 (Modes with more than two values).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-050: Event payloads in v0
+
+- **Status:** Accepted
+- **Original position:** MK-15.1 gives events an optional typed payload, readable by `on(E)` triggers and supplied by requests and `emit(E, payload)`; the IR listed a payload type and the working syntax `on request (payload: T)`, but nothing said how a handler names the payload, where an event that is not requested gets one, and the parser rejected payloads (SX-E06).
+- **Raised by:** the language completeness step after D-049.
+- **Builds on:** MK-15.1, MK-15.3, MK-15.10, D-027, D-041.
+- **Question:** Where is a payload declared, where does it come from, and how is it read?
+- **Options considered:**
+  1. **A payload per event, readable anywhere as `E.payload`.** Simple to write, but a crossing event has no value to carry, and reading `E.payload` elsewhere has no meaning between occurrences.
+  2. **A payload declared where it enters the event, with a name.** `on request(j: Momentum)` receives it from the request; `on E(j: Momentum)` receives the payload `E` occurred or was emitted with. The name is read in the event's condition and handler only. `emit E(v)` supplies the payload of `E`'s followers. An event with a payload and no such source is MK-E24.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30. Requests obey enabling conditions (they did not before, contrary to MK-15.5), supply the payload the event declares, and are rejected otherwise. The event log records each occurrence's payload. Hosts request with a payload through the runtime's `RequestWith` action and timelines with `request E(v)`; buttons request without one.
+- **Reason:** every payload has a source a reader can find in the text, types are checked where the value enters, and nothing is readable where it has no value.
+- **Consequences:** MK-15.1a, MK-E24, RC-11.6b; 04-ir payload forms; `CExpr::Payload`, `Ctx::payloads`; runtime event iteration carries payloads between microsteps; guide chapter 5.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-051: Inputs in v0
+
+- **Status:** Accepted
+- **Original position:** MK-6 and RC-11.6 define `input` bindings, supplied by the environment, piecewise constant, `unavailable` until supplied, with `on input(i)` triggers. The prototype refused any model with an input, and MK-6.7 forbids an input an initial definition, so a model with an input could not start until something outside supplied every input at the start.
+- **Raised by:** the language completeness step after D-049; the host interface (D-044, D-045), whose hosts are the environment of an embedded model.
+- **Builds on:** MK-6.7, MK-17.3, RC-11.6, RC-11.7, D-045.
+- **Question:** How does an input get its first value, how do runs and hosts change it, and what is due when it changes?
+- **Options considered:**
+  1. **As specified: unavailable until supplied.** Every expression reading an input would be `unavailable` at the start, so derived bindings and flows could not be evaluated and the run could not begin without an explicit starting value for every input.
+  2. **An optional default in the model, a starting value from the run configuration, and logged changes.** `input { thrust: Force = 0 N }`; a run's `input { thrust = 4 N; thrust = 0 N at t0 + 1 s }`; a host's `set_input`. A value supplied at a later instant is a change and makes `on input(i)` due; the starting value is not a change.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30; a departure from MK-6.7, recorded as MK-6.7a. Without a default or a starting value the run does not start, with a message naming the input. Values are evaluated against the input's type and read only constants; a wrong type or a binding that is not an input is rejected and logged. Inputs stay outside interventions: no control, handler or intervention sets them.
+- **Reason:** a model can be written, checked and run standalone with sensible defaults, and the same model embedded in a host receives the host's values; each change is logged, so runs replay without the host (RC-11.7).
+- **Consequences:** MK-6.7a, RC-11.6a; the runtime's `Input` action; 04-ir run `inputs`; HI-4.3a `set_input`; guide chapter 5.
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.

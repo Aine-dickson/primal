@@ -283,7 +283,10 @@ impl Player {
                 self.branch(p);
             }
             TAction::Intervene { ops } => self.modify(p, Action::Intervene(ops.clone())),
-            TAction::Request { event } => self.modify(p, Action::Request(event.clone())),
+            TAction::Request { event, payload } => match payload {
+                Some(v) => self.modify(p, Action::RequestWith(event.clone(), v.clone())),
+                None => self.modify(p, Action::Request(event.clone())),
+            },
             _ => unreachable!("not run-directing"),
         }
     }

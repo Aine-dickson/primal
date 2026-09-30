@@ -35,7 +35,7 @@ Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit de
 
 Expressions add `match e { a => x, b => y }` (one arm per case, arms separated by commas or lines) to the shared sublanguage.
 
-Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E`, `on start`, `on input(i)`, `on request [(payload: T)]`. Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`.
+Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E [(p: T)]`, `on start`, `on input(i)`, `on request [(p: T)]`; `(p: T)` names the payload the occurrence receives (D-050). `emit E(v)` supplies a payload. `input { x: T [= default] }` declares an input with an optional default (D-051). Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`.
 
 ### 1.2 Presentation
 
@@ -56,7 +56,7 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 
 ### 1.3 Runs
 
-`run Name of Model with Presentation { param { ... } config { ... } until τ; learner { ... } expect { ... } }`.
+`run Name of Model with Presentation { param { ... } input { x = v; x = v at τ } config { ... } until τ; learner { ... } expect { ... } }`. `input` gives inputs their starting values and later changes (D-051). A timeline's `request E(v)` supplies a payload (D-050).
 
 ### 1.4 Canonical printing (C4)
 
@@ -519,6 +519,7 @@ run A_keep of Projectile with ProjectileLesson {
 
 - 2026-09-29 written after D-028 was accepted with amendment.
 - 2026-09-30 zero vectors written `0` (D-030); `sequence` dropped where D-033 orders run-directing actions; reference programs converted.
+- 2026-09-30 payloads (`on E(p: T)`, `request E(v)`) and inputs (defaults, a run's `input` block) implemented (D-050, D-051).
 - 2026-09-30 `enum`, `fn` and `match` implemented (D-048, D-049); `enum` and `match` reserved; `=>` added.
 - 2026-09-30 implemented by the text parser. Lexical rules made precise (units without spaces, names after numbers, statement separators, `in` after a declaration's value, `inf`); reserved words split into reserved words and contextual keywords (D-040); `π` kept by name (D-039); RP-07 observation `state` renamed `values`.
 - 2026-09-30 sampled sources (`expr every Δ`) and plot axes with dimensions, from the web player.

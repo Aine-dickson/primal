@@ -32,9 +32,11 @@ Each block keyword also has a one-line form: `param g: Acceleration = 9.81 m/s^2
 
 **Modifiers:** `symbol "θ"` (display symbol), `unit deg` (display unit of an angle), `intervenable` (state the learner may change), `private`.
 
-**Triggers:** `rising(g)`, `falling(g)`, `crossing(g)` (zero crossings of `g`), `at τ`, `every Δ [from τ0]`, `start`, `request`, `E` (after event `E` occurs or is emitted), `input(i)`.
+**Triggers:** `rising(g)`, `falling(g)`, `crossing(g)` (zero crossings of `g`), `at τ`, `every Δ [from τ0]`, `start`, `request`, `E` (after event `E` occurs or is emitted), `input(i)`. `request(p: T)` and `E(p: T)` receive a payload named `p` (chapter 5).
 
-**Operations:** `set x = e`, `emit E`, `contribute x += e` (contributions to discrete state are not implemented by the prototype, MK-E11).
+**Inputs:** `input { x: T [= default] }`, values from the environment; a case supplies them with `input { x = v; x = v at τ }` (chapter 5).
+
+**Operations:** `set x = e`, `emit E`, `emit E(v)` (with a payload), `contribute x += e` (contributions to discrete state are not implemented by the prototype, MK-E11).
 
 ## Types and values
 
@@ -123,6 +125,7 @@ run Name of Model with Presentation {
 | MK-E21 | tuple used as a vector where no vector is expected |
 | MK-E22 | target or case defined twice |
 | MK-E23 | declared function calls itself |
+| MK-E24 | event payload with no source |
 
 **Presentation** (`PK`): E01 broken reference, E02 expression does not check (the kernel's message is quoted), E03 control or action targets something the learner may not change, E04 missing or wrong scale or axis dimension, E05 representation unsuited to its sources or view, E06 representation kind not implemented.
 
