@@ -575,6 +575,81 @@ run with_arrow of Dropped with ArrowLesson {
 
 The run-directing actions, `seek` then `run`, apply first, in order (D-033); the arrow appears as the replay starts.
 
+**Exercise 3.** RP-08 with a learner who sets 30 degrees. Until the explore beat nothing changes. The learner continues at 25 s, so `b7` ends there; `b8` relaunches at 30 degrees and runs until the landing, which takes `T30 = 2 v sin(30°) / g = 20 / 9.81 = 2.03873598 s`. So `b8` ends at `27.0387359836901 s`. The range is `v^2 sin(60°) / g = 35.3119 m`, the same as at 60 degrees: complementary angles reach equally far, and the narration's "compare the distance" has a surprise in it.
+
+```text
+space Plane = euclidean(2)
+
+model Launch in Plane {
+  param {
+    g:     Acceleration = 9.81 m/s^2
+    speed: Velocity     = 20 m/s   where speed > 0 m/s
+    angle: Angle        = 45 deg   in (0 deg, 90 deg)   unit deg
+  }
+  state {
+    pos: Point            = origin
+    vel: Vector<Velocity> = speed * (cos(angle), sin(angle))
+  }
+  discrete { flying: Boolean = true }
+  flow {
+    der(pos) = if flying then vel else 0
+    der(vel) = if flying then (0, -g) else 0
+  }
+  event landed on falling(pos.y) { set flying = false; set vel = 0 }
+  event relaunch on request {
+    set pos    = origin
+    set vel    = speed * (cos(angle), sin(angle))
+    set flying = true
+  }
+}
+
+presentation Relaunch for Launch {
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    axes
+    marker(pos) as ball
+  }
+  observe {
+    times  = elapsed on landed
+    ranges = pos.x on landed
+  }
+  timeline {
+    scene launch {
+      beat b1 { narrate "A ball is launched at 45 degrees." for 4 s }
+      beat b2 { run rate 1 until landed }
+      beat b3 { hold; narrate "It lands here. Why this distance?" for 3 s }
+      beat b4 { seek t0; narrate "Watch the horizontal speed." for 3 s }
+      beat b5 { run rate 0.5 until landed }
+    }
+    scene try_it {
+      beat b6 { hold; narrate "Choose your own angle." for 3 s }
+      beat b7 {
+        explore limit 60 s keep angle {
+          slider(angle, range: [10 deg, 80 deg])
+        } fallback {
+          sequence { intervene { set angle = 60 deg }; wait 3 s }
+        }
+      }
+      beat b8 { request relaunch; run rate 1 until landed }
+      beat b9 { narrate "Compare the distance with the first launch." for 3 s }
+    }
+  }
+}
+```
+
+```cases
+run thirty of Launch with Relaunch {
+  learner {
+    at 23 s: set slider angle = 30 deg
+    at 25 s: continue
+  }
+  expect {
+    end of b8 == 27.0387359836901 s within 1e-8 s
+    times[2]  == 4.92194406192272 s within 1e-8 s     // T45 + T30
+    ranges[2] == 35.3119430697019 m within 1e-6 m     // as at 60 degrees
+  }
+}
+```
+
 ## Chapter 9
 
 **Exercise 1.** A fourth ball: `row: Ball[4]`. The new ball starts at `(4 m, 4 m)`, so it is the highest: `top` changes at 0.2 s (from 2.8038 m to 3.8038 m), and `rested` at 10 s becomes 4. A ball from 4 m bounces for about 8 s in all (`sqrt(2 × 3.9 m / g) × (1 + 0.8) / (1 - 0.8)`), so it rests before 10 s. `second` does not change:
