@@ -688,3 +688,122 @@ run pairs of Fountain2 with Spray2 {
   }
 }
 ```
+
+**Exercise 3.** Three beads on a line joined by springs of rest length `L`. Each bead is given its number, `n = index`; the force on bead `b` sums over the other beads whose number differs by one. The spring to a neighbour `o` pulls with `k` times its stretch, `(o.x - b.x) - (o.n - b.n) L`:
+
+```text
+model Chain {
+  object Bead {
+    param { n: Real = 0 }
+    state {
+      x: Length   = 0 m
+      v: Velocity = 0
+    }
+    flow { der(x) = v }
+  }
+  param {
+    k: Quantity<M/T^2> = 4 N/m
+    m: Mass            = 1 kg
+    L: Length          = 1 m
+    a: Length          = 0.1 m
+  }
+  parts {
+    beads: Bead[3] {
+      n = index
+      x = (index - 1) * L + (if index == 1 then -a else if index == 3 then a else 0 m)
+    }
+  }
+  flow {
+    for b in beads {
+      der(b.v) = sum(k * ((o.x - b.x) - (o.n - b.n) * L) for o in beads if abs(o.n - b.n) == 1) / m
+    }
+  }
+}
+
+presentation ChainChecks for Chain {
+  observe {
+    middle = beads[2].x at t0 + 1 s
+    last   = beads[3].x at t0 + 1 s
+  }
+}
+```
+
+```cases
+run stretched of Chain with ChainChecks {
+  until t0 + 2 s
+  expect {
+    middle == 1 m within 1e-9 m
+    last   == 1.95838531634529 m within 1e-6 m     // 2 m + a cos(2 t)
+  }
+}
+```
+
+With both end beads pulled out by `a`, the middle bead feels equal and opposite pulls and stays put. Each end bead then swings on one spring against a fixed point, at `sqrt(k / m) = 2 /s`. A relation set (the chapter's springs) says the same with the springs as values of their own; the filter is the way when neighbours follow from numbers.
+
+**Exercise 5.** A second marker above each planet requests `kick` for it. A lesson requests the same event to check it; with `mu = 0` there is no sun, so a kicked planet moves in a straight line:
+
+```text
+space Plane = euclidean(2)
+
+model Kicks in Plane {
+  object Planet {
+    state {
+      pos: Point            = origin + (1 m, 0 m) intervenable
+      vel: Vector<Velocity> = (0 m/s, 1 m/s)
+    }
+    flow { der(pos) = vel }
+  }
+  param { mu: Quantity<L^3/T^2> = 1 m^3/s^2 }
+  parts {
+    planets: Planet[2, max 6] {
+      pos = origin + (index * 1 m, 0 m)
+      vel = (0 m/s, sqrt(mu / (index * 1 m)))
+    }
+  }
+  flow {
+    for p in planets {
+      der(p.vel) = -mu * (p.pos - origin) / |p.pos - origin|^3
+    }
+  }
+  event kick on request(p in planets, j: Vector<Momentum>) { set p.vel = p.vel + j / 1 kg }
+}
+
+presentation KickSky for Kicks {
+  view sky: spatial(Plane, scale: 1 m -> 80 px, y: up) {
+    marker(origin) as sun
+    for p in planets {
+      marker(p.pos) as planet { on drag as q { propose p.pos = q } }
+      marker(p.pos + (0 m, 0.2 m), color: orange) as kicker {
+        on click request kick(p, (0 kg*m/s, 0.5 kg*m/s))
+      }
+    }
+  }
+}
+
+presentation KickTour for Kicks {
+  view sky: spatial(Plane, scale: 1 m -> 80 px, y: up) {
+    for p in planets { marker(p.pos) as planet }
+  }
+  observe {
+    x1 = planets[1].pos.x at t0 + 1 s
+    y2 = planets[2].pos.y at t0 + 1 s
+  }
+  timeline {
+    scene only {
+      beat kick_one { request kick(planets[1], (0.5 kg*m/s, 0 kg*m/s)); run rate 1; wait 1 s }
+    }
+  }
+}
+```
+
+```cases
+run straight of Kicks with KickTour {
+  param { mu = 0 m^3/s^2 }
+  expect {
+    x1 == 1.5 m within 1e-9 m     // from 1 m at 0.5 m/s
+    y2 == 0 m within 1e-9 m       // not kicked, and at rest without a sun
+  }
+}
+```
+
+The kicker is a separate marker because a representation has one click; the planet keeps its drag. The orange color tells the two apart, and the names `planet` and `kicker` say so in the text alternatives (D-061).
