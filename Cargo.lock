@@ -75,6 +75,7 @@ version = "0.1.0"
 dependencies = [
  "prismal-ir",
  "prismal-kernel",
+ "serde_json",
 ]
 
 [[package]]

@@ -92,7 +92,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 
 ## Next steps
 
-**Next session starts here:** the owner learns the language from `docs/guide/` and reviews by writing programs (see Working process); earlier work to review: the overnight work, the text parser, the presentation prototype and the web player (session log 2026-09-30, `docs/prototype.md` sections "Text parser", "Presentation prototype", "Web player" and "Findings", register D-035 to D-040, 03 elaborations PK-8.2a to PK-12.1a and section 16). To try the player: `web/README.md`. Then, in order: the formatter (canonical printing, working syntax 1.4) with identity matching against a previous IR (D-036); the remaining representations and timeline actions (`docs/prototype.md`, "Not implemented").
+**Next session starts here:** the owner learns the language from `docs/guide/` and reviews by writing programs (see Working process); earlier work to review: the overnight work, the text parser, the presentation prototype and the web player (session log 2026-09-30, `docs/prototype.md` sections "Text parser", "Presentation prototype", "Web player" and "Findings", register D-035 to D-040, 03 elaborations PK-8.2a to PK-12.1a and section 16). To try the player: `web/README.md`. Then, in order: the remaining representations and timeline actions (`docs/prototype.md`, "Not implemented"): `table`, `equation`, `button`, `polyline`, `polygon`, `group`; `animate`, `camera`, `reveal`, `hide`; then the Mava Studio groundwork (D-019): an editor protocol over the IR (edit operations, `rename`, `reconcile`, `format`).
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances confirmed by the prototype and fixed.
@@ -103,7 +103,8 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 7. Web player: done for the first slice (D-018); RP-06 to RP-08 in a browser, cases of every program.
 8. Dynamic interactive sessions and lab presentations: done.
 9. Language guide: done (`docs/guide/`, 18 programs, 67 expectations checked).
-10. Next: formatter.
+10. Formatter and identities (D-036): done.
+11. Next: remaining representations and timeline actions; see Next steps.
 
 ## Session log
 
@@ -121,6 +122,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 | 2026-09-30 | Web player (D-018): `crates/prismal-web` (player logic tested natively, MathML typesetting of formulas from the IR, embedded reference programs, `wasm-bindgen` exports) and `web/` (SVG and HTML renderer of frame descriptions, drags and keyboard, lesson transport with beats, explore controls and continue, video medium, source editor with located diagnostics, observations, cases, text alternatives). Lessons are replayed from recorded learner inputs (PK-8.7). Driven in headless Edge: RP-08's learner relaunch at 60 deg lands at R60. Findings: display units were ignored (RP-01 `angle` now `unit deg`, kernel text uses display units, PK-11.1); arrow heads had no keyboard operation (PK-11.2). |
 | 2026-09-30 | Dynamic interactive sessions: display clock on `Interactive` (seek, reset, interventions at the instant shown, RC-11.2), `trace` and `series_plot` with sampled sources `expr every Δ` (syntax, IR `sampled` argument, PK-6.3a), plot axes with dimensions (PK-7.3a). Lab presentations added to RP-01, RP-03, RP-04, RP-05; the player plays them with a session transport, holds the run during drags (PK-10.9) and shows run diagnostics. Equation diagnostics print the instant and residual. |
 | 2026-09-30 | Language guide `docs/guide/` (README, chapters 1 to 8, reference card): every program compiled and every case run by `prismal-web/tests/guide.rs`, error examples checked against their codes; the player lists the guide's programs. Found: D-041 (`on(E)` follows an occurrence, not only an emission; MK-15.3 against MK-15.10 and RC 8.1), a kernel panic when the player logged a drag proposal that reads bindings (`constant` now refuses such expressions; the log evaluates them on the run), session horizon extended to the presentation's longest time axis. Register index gained D-039 to D-041. |
+| 2026-09-30 | Formatter `prismal-syntax/src/format.rs` (canonical printing, working syntax 1.4) and identities across edits `identity.rs` (D-036: `reconcile`, `rename`, `diff`); every reference and guide program round-trips; `fmt` example; Format button in the player. One-sided intervals lower as `where` does, so both spellings give one IR. |
 
 ## Working process
 

@@ -69,7 +69,9 @@ fn ranges_lower_to_reject_constraints() {
     assert_eq!(m.constraints.len(), 2);
     let k = &m.constraints[0];
     assert_eq!((k.name.as_str(), k.policy, k.attached_to.as_deref()), ("k_range", Policy::Reject, Some("M.k")));
-    assert_eq!(k.cond, le(lit(0.0), r("M.k")), "an unbounded end gives a one-sided range");
+    assert_eq!(k.cond, ge(r("M.k"), lit(0.0)), "an unbounded end gives a one-sided range");
+    let w = model("model M { param { k: Real = 0 where k >= 0 } }");
+    assert_eq!(w.constraints[0].cond, k.cond, "`in [0, inf)` and `where k >= 0` are one IR (section 1.4)");
     let other = model("model M { param { x: Real = 1 }; constraint x < 2 }");
     assert_eq!(other.constraints[0].policy, Policy::Report, "MK-12.4: other constraints default to `report`");
     assert_eq!(other.constraints[0].name, "c1");

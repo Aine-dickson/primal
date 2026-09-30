@@ -24,6 +24,9 @@ impl WebPlayer {
     pub fn new(src: &str) -> Result<WebPlayer, JsValue> {
         Player::load(src).map(WebPlayer).map_err(|d| JsValue::from_str(&d.to_string()))
     }
+    pub fn formatted(&self) -> String {
+        self.0.formatted()
+    }
     pub fn catalogue(&self) -> String {
         s(self.0.catalogue())
     }

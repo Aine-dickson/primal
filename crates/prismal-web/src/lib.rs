@@ -88,6 +88,11 @@ impl Player {
         Ok(Player { prog: Box::leak(Box::new(prog)), source_map: map, mode: Mode::Closed })
     }
 
+    /// The program in the canonical form (working syntax section 1.4).
+    pub fn formatted(&self) -> String {
+        prismal_syntax::format(&self.prog.doc)
+    }
+
     /// The presentations and cases of the program.
     pub fn catalogue(&self) -> Json {
         let doc = &self.prog.doc;

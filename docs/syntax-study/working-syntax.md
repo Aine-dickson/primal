@@ -28,7 +28,7 @@ Candidate A amended as accepted in D-028: A's keyword-led statements, with group
 
 Every block keyword also has a one-line form for a single declaration (`param g: Acceleration = 9.81 m/s^2`, `flow der(x) = v`). Both parse to the same IR; the formatter prints blocks.
 
-**Intervals** are the one range notation: `[a, b]`, `(a, b)`, `[a, b)`, `(a, b]`, with `inf` for an unbounded end. `x in [a, b)` is the constraint `a <= x < b`; an unbounded end gives a one-sided comparison (`in [0, inf)` is `0 <= x`). After a declaration's value, `in` starts the declaration's range; a membership test used as a value is written in parentheses: `ok: Boolean = (x in [0, 1))`. The formatter prints a parameter's `reject` constraint as an interval when it bounds only that parameter from both sides, as `where` otherwise.
+**Intervals** are the one range notation: `[a, b]`, `(a, b)`, `[a, b)`, `(a, b]`, with `inf` for an unbounded end. `x in [a, b)` is the constraint `a <= x < b`; an unbounded end gives a one-sided comparison (`in [0, inf)` is `x >= 0`, the same as `where x >= 0`). After a declaration's value, `in` starts the declaration's range; a membership test used as a value is written in parentheses: `ok: Boolean = (x in [0, 1))`. The formatter prints a parameter's `reject` constraint as an interval when it bounds only that parameter from both sides, as `where` otherwise.
 
 Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit deg`.
 
@@ -55,7 +55,7 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 
 ### 1.4 Canonical printing (C4)
 
-The formatter prints, from the IR: declarations grouped in blocks by role, in the order kind (const, param, input, state, discrete, derived), then flows, processes, events, equations, constraints; parameter ranges as intervals when two-sided on that parameter alone; `run ... until` when a beat holds exactly those two actions; representations inside their views. Everything else prints in its only form.
+The formatter prints, from the IR: declarations grouped in blocks by role, in the order kind (const, param, input, state, discrete, derived), then flows, processes, events, equations, constraints; parameter ranges as intervals when two-sided on that parameter alone; `run ... until` when a beat holds exactly those two actions; representations inside their views. Everything else prints in its only form. Author notes print as `///` comments before their element; other comments are not in the IR and are not printed (D-036). Implemented by `prismal_syntax::format`; `cargo run -p prismal-syntax --example fmt -- FILE` prints a program in this form.
 
 ### 1.5 Lexical rules and reserved words (D-035)
 
@@ -515,3 +515,4 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-30 zero vectors written `0` (D-030); `sequence` dropped where D-033 orders run-directing actions; reference programs converted.
 - 2026-09-30 implemented by the text parser. Lexical rules made precise (units without spaces, names after numbers, statement separators, `in` after a declaration's value, `inf`); reserved words split into reserved words and contextual keywords (D-040); `π` kept by name (D-039); RP-07 observation `state` renamed `values`.
 - 2026-09-30 sampled sources (`expr every Δ`) and plot axes with dimensions, from the web player.
+- 2026-09-30 canonical printing implemented (`prismal-syntax/src/format.rs`); a one-sided interval lowers as the comparison `where` writes (`x >= lo`), so both spellings give one IR.

@@ -581,7 +581,15 @@ impl<'a> ModelCx<'a> {
         let hi_cmp = |hi: Expr| if i.hi_closed { build::le(x.clone(), hi) } else { build::lt(x.clone(), hi) };
         match (lo, hi) {
             (Some(l), Some(h)) => build::and(lo_cmp(l), hi_cmp(h)),
-            (Some(l), None) => lo_cmp(l),
+            // One-sided: the value on the left, as `where x >= lo` writes it, so that both
+            // spellings give one IR (working syntax section 1.4).
+            (Some(l), None) => {
+                if i.lo_closed {
+                    build::ge(x.clone(), l)
+                } else {
+                    build::gt(x.clone(), l)
+                }
+            }
             (None, Some(h)) => hi_cmp(h),
             (None, None) => {
                 self.err("SX-E08", "an interval needs at least one finite bound", i.span);

@@ -105,6 +105,19 @@ async function main() {
   $('#presentation').addEventListener('change', () => openPresentation());
   $('#medium').addEventListener('change', () => openPresentation());
   $('#compile').addEventListener('click', compileSource);
+  $('#format').addEventListener('click', () => {
+    // Formatting prints from the IR: the program must compile. Comments that are not
+    // notes before a declaration are not kept (D-036).
+    try {
+      const p = new WebPlayer($('#source').value);
+      $('#source').value = p.formatted();
+      p.free();
+      $('#program').value = '';
+      status('Formatted. Only comments directly before a declaration are kept.');
+    } catch (e) {
+      compileSource();
+    }
+  });
   $('#source').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); compileSource(); }
   });

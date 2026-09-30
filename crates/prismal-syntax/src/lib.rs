@@ -3,14 +3,19 @@
 //! `parse` turns source text into a syntax tree (`ast`); `lower` turns its spaces and models
 //! into the semantic IR (`docs/spec/04-ir.md`), with a source map from IR identities back to
 //! the text; `check` also runs the model kernel's static checks and reports their
-//! diagnostics at the declarations they concern.
+//! diagnostics at the declarations they concern. `format` prints an IR document back as
+//! canonical text, and `identity` keeps identities across edits (D-036).
 
 pub mod ast;
+pub mod format;
+pub mod identity;
 pub mod lexer;
 pub mod lower;
 mod lower_present;
 pub mod parser;
 
+pub use format::format;
+pub use identity::{diff, reconcile, rename, IdentityDiff};
 pub use lower::{lower_expr, SourceMap};
 
 use prismal_ir::{Document, Model};

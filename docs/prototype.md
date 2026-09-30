@@ -77,6 +77,16 @@ The reference programs are read from their documents in `docs/spec/reference-pro
 
 RP-01.D1 is not covered by text: it is stored in IR form because the working syntax has no level-style trigger.
 
+### Formatter and identities
+
+`prismal_syntax::format` prints an IR document in the canonical form of working syntax section 1.4: declarations in blocks by role with aligned columns, then flows, processes, events, equations and constraints; parameter ranges as intervals when two-sided, as `where` otherwise; `run rate r until E`; representations in their views; author notes as `///` comments. Dimensions print as authors write them (`Quantity<1/L>`, `Quantity<M/T^2>`), a dimensionless binding with an angle display unit as `Angle`.
+
+`prismal_syntax::identity` implements D-036. `reconcile(new, prev)` gives each element of a newly lowered document the identity it had in the previous IR, matched by declaration path (by name within its container; flows by target, kind, process and position), restores the previous order of every list with new elements appended (IR-1.7), and gives an unmatched element whose path identity a renamed element holds a fresh one (`Model.speed~2`). `rename(doc, id, name)` is a tool rename that keeps the identity (a parameter's range constraint follows it). `diff(prev, new)` lists removed and added identities: a rename made in plain text shows as both.
+
+`cargo run -p prismal-syntax --example fmt -- FILE [--previous IR.json] [--ir OUT.json]` prints the canonical form, matching and reporting identities against a previous IR. The web player's Source tab has a Format button.
+
+Acceptance (`prismal-web/tests/format.rs`): every reference program and every program of the guide (26) goes from text to IR to canonical text to IR and gives back the same IR after `reconcile`, and printing it again gives the same text; RP-01's canonical form; a tool rename of `speed` in RP-08 prints the new name at every reference and keeps the identity through another round trip; a plain-text rename in RP-06 is reported by `diff`.
+
 ## Presentation prototype
 
 `crates/prismal-present` implements the presentation kernel (`03-presentation-kernel.md`) over the runtime, and the presentation and run IR (04-ir section 7), which the text parser now lowers.
@@ -180,7 +190,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 
 | Item | Where specified |
 |---|---|
-| Formatter (canonical printing) and matching identities against a previous IR (the parser assigns path identities afresh) | working syntax section 1.4, D-036 |
+| Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
 | Declared functions (`fn`), contained objects (`object`), enumeration types and cases: no IR form or no spelling yet | MK-10.3, MK section 7, 04-ir section 3 |
 | Representations `table`, `polyline`, `polygon`, `group`, `equation`, `button`; sampled sources `over I` | PK-6.3 |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
@@ -202,3 +212,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 web player (`prismal-web`, `web/`): RP-06 to RP-08 interactive in a browser, cases of every program; display units in text alternatives (RP-01 `angle` in degrees); keyboard steps for arrow heads.
 - 2026-09-30 dynamic interactive sessions (display clock, interventions at the instant shown, reset); `trace` and `series_plot` with sampled sources; plot axes with dimensions; lab presentations for RP-01, RP-03, RP-04 and RP-05, played in the web player.
 - 2026-09-30 language guide (`docs/guide/`) checked by `prismal-web/tests/guide.rs`; D-041; `constant` guarded against expressions that read state.
+- 2026-09-30 formatter and identities across edits (D-036); one-sided intervals lower as `where` does.
