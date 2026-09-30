@@ -8,13 +8,13 @@
 
 ## 1. Principles
 
-- **Decisions:** D-018, D-019, D-036, D-037, D-044, D-045.
+- **Decisions:** D-018, D-019, D-036, D-037, D-044, D-045, D-047.
 - **Prior art:** follows the Language Server Protocol (one JSON protocol, transport left to the host, capabilities declared) and FMI (a simulation unit embedded by any tool through a small, versioned interface). Follows embeddable engines such as SQLite and Lua in keeping storage, files and user interface with the host.
 
 - **HI-1.1** A **host** is any system that embeds Prismal: an authoring studio, a learning platform, a document viewer, a test harness, a command-line tool. Prismal knows no particular host (D-044). The reference web player (`web/`) is a host like any other and uses only this interface.
 - **HI-1.2** The interface has three layers: **authoring** (programs as text or IR, checked and identified, section 3), **execution** (presentations opened as instances, driven by the learner's inputs and the host's clock, section 4) and **output** (layouts, frame descriptions and observations, section 5).
 - **HI-1.3** Authoring by text and authoring by a visual tool are equal (D-019, D-036). A host may send source text, an IR document, or both over time; Prismal returns the IR, the canonical text and diagnostics either way.
-- **HI-1.4** **Division of responsibility.** The host owns storage, files, projects, assets, the editor and its edit history, users and collaboration, and the choice of renderer. Prismal owns the meaning of programs: checking, identities, runs, sessions (including undo of the learner's interventions, RC section 11), lesson playback and frame descriptions.
+- **HI-1.4** **Division of responsibility.** The host owns storage, files, projects, assets, the editor and its edit history, users and collaboration, the choice of renderer, its windows and the capture of input from its devices (pointer, touch, keyboard). Prismal owns the meaning of programs: checking, identities, runs, sessions (including undo of the learner's interventions, RC section 11), lesson playback, frame descriptions, and the interpretation of the input the host forwards (HI-4.5): what a gesture targets, how a view is framed, zoomed and panned, and which representation has keyboard focus. Prismal never attaches to a host's event loop or registers listeners in it.
 - **HI-1.5** The same operations are offered through every binding (section 6), with the same data. A host never needs a binding-specific feature.
 
 ---
@@ -43,6 +43,13 @@
 - **HI-4.2** The host owns the clock. A lesson is asked for the frame at a presentation instant; an interactive session is told which simulation instant to show (`seek`, RC section 12). Frames are deterministic (PK-8.7): the same instant gives the same frame.
 - **HI-4.3** Learner inputs name representations by identity or author name: set a control, press a button, pointer down, move and up on a draggable representation, a keyboard step (PK-11.2), cancel, undo and redo. In a lesson, inputs carry their presentation instant and are refused outside explore beats (D-025, PK-9.8a). Each answers with what happened: applied, previewed (with validity and reason, PK-10.6) or refused (with reason).
 - **HI-4.4** `restart` replays a lesson without the learner's inputs; `reset` starts an interactive session's run again with an empty log.
+- **HI-4.5** **Raw input** (D-047). A host that does not target input itself forwards what it captured, in its own terms, and the engine interprets it the same way for every host:
+  - `pointer`: a phase (`down`, `move`, `up`, `cancel`), the view, the position in pixels from the top left of the view as the host drew it, the size it drew the view at (`width`, `height`), and the kind of pointer (`mouse`, `pen`, `touch`; a finger reaches farther, PK-10.2a). Pressing on a draggable part starts a drag (in an interactive session); pressing elsewhere pans a spatial view if the presentation permits `pan`; moving without a gesture answers what is under the pointer (`hover`), so that the host can show that it can be grabbed.
+  - `wheel`: a scroll step (`delta`, pixels, positive away) over a view zooms a spatial view about the pointer if the presentation permits `zoom`. `view_reset` returns a view to its own framing.
+  - `key_down`: a key named as in the W3C `KeyboardEvent.key` values, with `shift`. `Tab` moves keyboard focus through the focus order (PK-11.2b) and gives focus back to the host past either end; arrow keys step the focused representation or control (PK-11.2); `Enter` and space press a focused button or flip a focused toggle; `Escape` cancels a drag or a pan. `focus` sets or clears focus directly, for a host whose own focus system moves it (a browser's, a screen reader's).
+  - Each answers whether the engine `handled` it, the `action` taken (`drag`, `pan`, `zoom`, `focus`, `step`, `press`, `toggle`, `cancel`), its `target`, and the outcome as the semantic inputs answer it. An input the engine does not use is answered `handled: false`, so that the host may use it (play and pause on the space bar, for example).
+  - In a lesson, raw input carries its presentation instant (`time`); drags are not offered (D-025), and keyboard steps of explore controls are lesson inputs (PK-9.8a).
+  - Raw and semantic inputs (HI-4.3) may be mixed: a host may target its own native widgets (a slider, an accessibility tree) and forward the rest raw.
 
 ---
 
@@ -50,6 +57,7 @@
 
 - **HI-5.1** A **layout** lists an instance's views with their coordinate systems (spatial scale and orientation, plot ranges and units), the extent of their content over the run (for an initial viewport), the learner's permissions, and for a lesson its beats, captions and explore windows.
 - **HI-5.2** A **frame** is the frame description of PK-12.1, which holds everything any renderer needs to draw it without the model (PK-12.1a): labels, the part a representation is dragged by, a control's symbol and display unit, and for formulas and equations the symbolic IR and a layout drawable with text and lines (PK-6.5a, D-046). The host interface adds nothing specific to one medium; a binding for a medium may add to frames what that medium uses (the WebAssembly binding adds MathML).
+- **HI-5.2a** **Viewports** (D-047). Each view of a frame carries the viewport every renderer draws it with, and the engine maps raw input with: `box` (x, y, width, height in view coordinates) and `size` (its natural drawn size in pixels). A spatial view's box is its framing (the extent of its content with room around it; in a session grown to keep what it shows in view), changed by the learner's zoom and pan, or the timeline's camera (D-042); it is fitted into the drawn area, uniformly scaled and centred. A plot's box is its ranges, filling the drawn area less `margin` pixels on every side, `y` upwards. A frame also names the representation with keyboard focus (`focus`).
 - **HI-5.3** A host may draw frames with its own renderer, or use a reference renderer: `web/` draws frames in any web view, interactively; `prismal-svg` draws each frame as a standalone SVG document (still images, vector documents, image sequences for video). A renderer needs only layouts and frames.
 - **HI-5.4** **Observations** (PK section 3) of an instance's current run are available by name, as values and as text.
 
@@ -68,7 +76,7 @@
 
 - **HI-6.3** **WebAssembly.** The `prismal-web` crate exports the engine's protocol to JavaScript, for browsers and web views.
 - **HI-6.4** Further bindings (a C ABI for other languages, a standalone process speaking the protocol on standard input and output) are added when a host needs them; they carry the protocol unchanged.
-- **HI-6.5** **Versions.** Requests carry the protocol version. `capabilities` answers the protocol and IR versions (D-037), the representation kinds and timeline actions the implementation supports, and its limits, so that a host can adapt without trial and error.
+- **HI-6.5** **Versions.** Requests carry the protocol version. `capabilities` answers the protocol and IR versions (D-037), the representation kinds and timeline actions the implementation supports, the input it takes (semantic and raw operations, pointer kinds, keys), and its limits, so that a host can adapt without trial and error.
 
 ### 6.1 Operations
 
@@ -86,6 +94,11 @@
 | `layout`, `frame` | `instance`, `time`?, `dt`? | the layout, the frame |
 | `seek`, `reset`, `restart` | `instance`, `time`? | the clock or the layout |
 | `set_control`, `press`, `key`, `pointer_down`, `pointer_move`, `pointer_up`, `cancel`, `undo`, `redo`, `continue` | `instance`, `rep`, value, `time` in a lesson | the outcome |
+| `pointer` | `instance`, `phase`, `view`, `x`, `y`, `width`?, `height`?, `pointer`?, `time` in a lesson | `handled`, `action`, `target` or `hover`, the outcome |
+| `wheel` | `instance`, `view`, `x`, `y`, `width`?, `height`?, `delta`, `time` in a lesson | `handled`, `action` |
+| `key_down` | `instance`, `key`, `shift`?, `time` in a lesson | `handled`, `action`, `focus` or `target`, the outcome |
+| `focus` | `instance`, `rep` or null, `time`? | `focus` |
+| `view_reset` | `instance`, `view` | `handled` |
 | `observations` | `instance` | observations by name |
 
 ### 6.2 Diagnostics of the interface
@@ -103,3 +116,4 @@
 - 2026-09-30 written with D-044 and D-045.
 - 2026-09-30 HI-5.2: frames carry formula layouts; MathML moved to the WebAssembly binding (D-046).
 - 2026-09-30 HI-5.3: the SVG renderer named as a second reference renderer.
+- 2026-09-30 HI-1.4, HI-4.5, HI-5.2a, HI-6.5: the host captures input and Prismal interprets it; raw input, viewports and focus in frames (D-047).

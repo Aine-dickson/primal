@@ -66,6 +66,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-044 | Prismal is a general embeddable system; Mava Studio is one consumer among others | Accepted |
 | D-045 | Host interface: an engine with handles, a Rust API and one JSON protocol offered by every binding | Accepted |
 | D-046 | Formulas typeset for every medium: a math box tree and its layout in frames; MathML only in the browser binding | Accepted |
+| D-047 | Input: the host captures and forwards, the engine interprets (targeting, viewports, zoom and pan, focus); raw and semantic inputs | Accepted |
 
 ---
 
@@ -847,3 +848,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** PK-6.5a, PK-12.1a, HI-5.2; `prismal-present/src/math.rs`; `prismal-web/src/mathml.rs` renders the box tree; `prismal-present/tests/math.rs` checks layouts and writes them as SVG for inspection. Layout metrics are approximate: a renderer with a different font fits each run to its width.
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-047: The host captures input; the engine interprets it
+
+- **Status:** Accepted
+- **Original position:** HI-4.3 offered only semantic inputs: `pointer_down(rep, part)`, `pointer_move(x, y)` in view coordinates, `key(rep, direction)`. The host had to find what a pointer was over, convert screen positions to view coordinates, and keep keyboard focus. The web player did so with the browser's DOM, and framed its views (extent, growth to fit, camera, zoom and pan) in its own code, which the SVG renderer then had to copy.
+- **Raised by:** the SVG renderer (a second renderer duplicated the framing logic), and the owner's question of how hosts other than browsers handle input, with the concern that Prismal must not take over the capture of events.
+- **Builds on:** D-025, D-026, D-042, D-044, D-045, PK-10.2, PK-11.2, PK-12.2.
+- **Question:** Who targets input, frames views and keeps focus: each host, or the engine?
+- **Options considered:**
+  1. **Each host** (the position before). Every host re-implements hit testing, viewport mapping, zoom and pan and focus order from the frame; the same lesson then behaves differently in each host, and PK-12.2 (a renderer defines no representation semantics) is broken in practice, since what can be grabbed and how is a presentation rule.
+  2. **Prismal captures input** (listeners registered in the host's event loop). Couples Prismal to every windowing system and toolkit, and takes control a host must keep (HI-1.4).
+  3. **The host captures and forwards; the engine interprets.** The host catches pointer, wheel and key events in its own layer and forwards them in its own terms (pixels of a view as it drew it, the drawn size, the pointer kind, W3C key names). The engine targets them (PK-10.2a), runs drags, pans and zooms, keeps focus (PK-11.2b), and answers what it did and whether it used the input, so that the host can use what it did not. Frames carry each view's viewport, which every renderer draws with. Semantic inputs stay for hosts that target input themselves (native widgets, accessibility trees).
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30, after the owner confirmed that the host keeps the capture of events. Protocol operations `pointer`, `wheel`, `key_down`, `focus` and `view_reset` (HI-4.5); viewports in frames (HI-5.2a). Panels (controls, buttons, formulas outside a view's coordinates) are laid out by the host, so pointers on them are the host's widgets' input, forwarded semantically; keyboard focus reaches them through the focus order.
+- **Reason:** one interpretation of input for every host keeps behavior identical across media and moves the hard part (targeting, viewport mapping, focus) out of every integrator's hands, while the host keeps its event loop and its devices.
+- **Consequences:** HI-1.4, HI-4.5, HI-5.2a, HI-6.5; PK-10.2a, PK-11.2b; `prismal-host/src/input.rs` and the raw operations of `Instance`; the web player forwards raw events and draws with the frame's viewport (its own framing, hit testing and zoom and pan code removed); the SVG renderer draws with the frame's viewport. A session's framing grows to fit each frame without memory of earlier frames, so the same instant gives the same frame (HI-4.2).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30, after the owner's direction: "my worry was us doing the actual event catching".

@@ -8,10 +8,11 @@
 //! process on standard input and output) carries unchanged.
 
 pub mod document;
+pub mod input;
 pub mod instance;
 
 pub use document::{Content, Diagnostic, Document, Span};
-pub use instance::Instance;
+pub use instance::{Instance, PointerEvent};
 
 use serde_json::{json, Value as Json};
 use std::collections::BTreeMap;
@@ -37,6 +38,13 @@ pub fn capabilities() -> Json {
         "representations": KINDS,
         "actions": ACTIONS,
         "media": ["interactive", "video"],
+        // Raw input (HI-4.5, D-047): what the host forwards and the keys the engine uses.
+        "input": {
+            "semantic": ["set_control", "press", "key", "pointer_down", "pointer_move", "pointer_up", "cancel", "undo", "redo"],
+            "raw": ["pointer", "wheel", "key_down", "focus", "view_reset"],
+            "pointers": ["mouse", "pen", "touch"],
+            "keys": ["Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape"],
+        },
         "limits": ["an engine is used from one thread at a time (HI-2.3)", "drags on members of a group are not implemented (D-043)"],
     })
 }
@@ -205,6 +213,8 @@ fn instance_op(i: &mut Instance, op: &str, r: &Json, s: Field<&str>, n: Field<f6
         }
     };
     let time = || r.get("time").and_then(Json::as_f64).unwrap_or(0.0);
+    // Raw input to a lesson carries the presentation instant it happened at.
+    let lesson_time = || if lesson { n("time") } else { Ok(time()) };
     match op {
         "layout" => Ok(i.layout()),
         "frame" => Ok(i.frame(time(), r.get("dt").and_then(Json::as_f64).unwrap_or(0.0))),
@@ -247,6 +257,22 @@ fn instance_op(i: &mut Instance, op: &str, r: &Json, s: Field<&str>, n: Field<f6
             only(false)?;
             Ok(i.pointer_up())
         }
+        "pointer" => {
+            let e = PointerEvent {
+                phase: s("phase")?,
+                view: s("view")?,
+                x: n("x")?,
+                y: n("y")?,
+                size: drawn_size(r),
+                pointer: r.get("pointer").and_then(Json::as_str).unwrap_or("mouse"),
+                time: lesson_time()?,
+            };
+            Ok(i.pointer(&e))
+        }
+        "wheel" => Ok(i.wheel(s("view")?, n("x")?, n("y")?, drawn_size(r), n("delta")?, lesson_time()?)),
+        "key_down" => Ok(i.key_down(s("key")?, r.get("shift").and_then(Json::as_bool).unwrap_or(false), lesson_time()?)),
+        "focus" => Ok(i.set_focus(r.get("rep").and_then(Json::as_str), lesson_time()?)),
+        "view_reset" => Ok(i.view_reset(s("view")?)),
         "cancel" | "undo" | "redo" => {
             only(false)?;
             match op {
@@ -258,6 +284,11 @@ fn instance_op(i: &mut Instance, op: &str, r: &Json, s: Field<&str>, n: Field<f6
         }
         _ => Err(err("HI-E01", format!("unknown operation `{op}`"))),
     }
+}
+
+/// The size a raw input says the host drew its view at (`width`, `height` in pixels).
+fn drawn_size(r: &Json) -> Option<[f64; 2]> {
+    Some([r.get("width")?.as_f64()?, r.get("height")?.as_f64()?])
 }
 
 /// Diagnostics the instance answers as JSON (`[{code, message, element}]` or a message).

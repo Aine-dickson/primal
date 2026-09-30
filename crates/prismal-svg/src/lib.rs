@@ -8,8 +8,9 @@
 //! instant (a lesson's export, a session's run) an image sequence for video. Formulas are
 //! drawn from their layouts (D-046), so no math engine is needed.
 //!
-//! The drawing follows the web player (`web/player.js`): the same view boxes, scales, ticks,
-//! marks, colors and sizes, so a frame drawn by either renderer shows the same geometry in
+//! Each view is drawn with the viewport the frame gives (D-047), as every renderer draws it.
+//! The drawing follows the web player (`web/player.js`): the same scales, ticks, marks,
+//! colors and sizes, so a frame drawn by either renderer shows the same geometry in
 //! the same view coordinates. Where the browser lays out HTML (panels, controls, tables,
 //! captions), this renderer stacks the same items as SVG. Colors are written as presentation
 //! attributes, not style sheets, so that any SVG consumer draws them.
@@ -108,7 +109,7 @@ pub fn render(layout: &Json, frame: &Json, opts: &Options) -> String {
     for vf in arr(&frame["views"]) {
         let Some(vl) = arr(&layout["views"]).iter().find(|v| v["id"] == vf["id"]) else { continue };
         clip += 1;
-        blocks.push(view_block(vl, vf, lesson, clip, opts));
+        blocks.push(view_block(vl, vf, clip, opts));
     }
     let overlay = arr(&frame["overlay"]);
     if !overlay.is_empty() {
@@ -248,37 +249,28 @@ impl Map {
 
 const DRAWN: [&str; 6] = ["point", "arrow", "segment", "polyline", "polygon", "group"];
 
-fn view_block(vl: &Json, vf: &Json, lesson: bool, clip: usize, opts: &Options) -> Block {
+fn view_block(vl: &Json, vf: &Json, clip: usize, opts: &Options) -> Block {
     let th = &opts.theme;
     let kind = s(&vl["kind"]);
     let reps = arr(&vf["reps"]);
     let mut parts: Vec<Block> = vec![text_block(&format!("{} ({})", s(&vl["name"]), kind), 12.0, false, th.muted)];
     let mut panel: Vec<Block> = vec![];
     if kind == "spatial" || kind == "plot" {
+        // The engine gives the box of view coordinates the view shows (its framing, the
+        // learner's zoom and pan, a timeline camera) and its natural size (D-047).
+        let bx: Vec<f64> = arr(&vf["box"]).iter().map(f).collect();
+        let bx = if bx.len() == 4 { [bx[0], bx[1], bx[2], bx[3]] } else { [0.0, 0.0, 320.0, 220.0] };
         let (map, dw, dh, view_box, u) = if kind == "spatial" {
-            // The view's framing from the extent of its content (the web player's).
-            let e = arr(&vl["extent"]);
-            let e: Vec<f64> = e.iter().map(f).collect();
-            let (x0, y0, x1, y1) = (e[0], e[1], e[2], e[3]);
-            let pad = 40.0;
-            let w = (x1 - x0 + 2.0 * pad).max(320.0);
-            let h = (y1 - y0 + 2.0 * pad).max(220.0);
-            let base = [(x0 + x1) / 2.0 - w / 2.0, (y0 + y1) / 2.0 - h / 2.0, w, h];
-            // A session grows its framing to keep what it shows in view; a lesson keeps its
-            // framing and moves only by the camera.
-            let vb = if lesson { base } else { grow_to_fit(base, reps) };
-            let bx = camera_box(base, vb, &vf["camera"]);
-            let dw = vb[2].min(opts.max_view_width);
-            let dh = vb[3] * dw / vb[2];
-            (Map::Spatial, dw, dh, bx, bx[2] / dw)
+            let size = pt(&vf["size"]);
+            let size = if size[0] > 0.0 && size[1] > 0.0 { size } else { [bx[2], bx[3]] };
+            let dw = size[0].min(opts.max_view_width);
+            let dh = size[1] * dw / size[0];
+            (Map::Spatial, dw, dh, bx, (bx[2] / dw).max(bx[3] / dh))
         } else {
             let w = opts.plot_width;
             let h = (w * 0.62).min(420.0).round();
-            let r = |k: &str| {
-                let a = arr(&vl[k]);
-                (f(&a[0]), f(&a[1]))
-            };
-            (Map::Plot { x: r("x"), y: r("y"), w, h, m: 44.0 }, w, h, [0.0, 0.0, w, h], 1.0)
+            let m = vf["margin"].as_f64().unwrap_or(44.0);
+            (Map::Plot { x: (bx[0], bx[0] + bx[2]), y: (bx[1], bx[1] + bx[3]), w, h, m }, w, h, [0.0, 0.0, w, h], 1.0)
         };
         let mut body = String::new();
         let _ = write!(
@@ -340,69 +332,6 @@ fn view_block(vl: &Json, vf: &Json, lesson: bool, clip: usize, opts: &Options) -
         parts.push(stack(panel, 8.0));
     }
     framed(stack(parts, 6.0), 8.0, 8.0, th)
-}
-
-/// The framing grown to keep every point, arrow and segment at least 30 px inside it (the
-/// web player's `growToFit`).
-fn grow_to_fit(vb: [f64; 4], reps: &[Json]) -> [f64; 4] {
-    fn collect(reps: &[Json], pts: &mut Vec<[f64; 2]>) {
-        for r in reps {
-            match s(&r["shape"]) {
-                "point" => pts.push(pt(&r["at"])),
-                "arrow" | "segment" => {
-                    pts.push(pt(&r["from"]));
-                    pts.push(pt(&r["to"]));
-                }
-                "group" => collect(arr(&r["members"]), pts),
-                _ => {}
-            }
-        }
-    }
-    let mut pts = vec![];
-    collect(reps, &mut pts);
-    let [mut x, mut y, mut w, mut h] = vb;
-    let pad = 30.0;
-    for [px, py] in pts {
-        if !(px.is_finite() && py.is_finite()) {
-            continue;
-        }
-        if px - pad < x {
-            w += x - (px - pad);
-            x = px - pad;
-        }
-        if py - pad < y {
-            h += y - (py - pad);
-            y = py - pad;
-        }
-        if px + pad > x + w {
-            w = px + pad - x;
-        }
-        if py + pad > y + h {
-            h = py + pad - y;
-        }
-    }
-    [x, y, w, h]
-}
-
-/// The view box shown: the view's framing, or the timeline's camera (D-042) moving from
-/// the centre of the base framing to its centre, `blend` of the way, at its zoom.
-fn camera_box(base: [f64; 4], vb: [f64; 4], cam: &Json) -> [f64; 4] {
-    if !cam.is_object() {
-        return vb;
-    }
-    let [x, y, w, h] = base;
-    let c0 = [x + w / 2.0, y + h / 2.0];
-    let blend = f(&cam["blend"]);
-    let c = match cam["center"].as_array() {
-        Some(_) => {
-            let t = pt(&cam["center"]);
-            [c0[0] + (t[0] - c0[0]) * blend, c0[1] + (t[1] - c0[1]) * blend]
-        }
-        None => c0,
-    };
-    let zoom = f(&cam["zoom"]);
-    let (cw, ch) = (w / zoom, h / zoom);
-    [c[0] - cw / 2.0, c[1] - ch / 2.0, cw, ch]
 }
 
 fn spatial_chrome(out: &mut String, vl: &Json, reps: &[Json], bx: [f64; 4], u: f64, th: &Theme) {

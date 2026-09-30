@@ -60,6 +60,25 @@ impl WebPlayer {
     pub fn pointer_up(&mut self) -> String {
         s(self.0.pointer_up())
     }
+    /// A raw pointer event (HI-4.5, D-047): position in pixels of the view as drawn, which is
+    /// `width` by `height` pixels large.
+    #[allow(clippy::too_many_arguments)]
+    pub fn pointer(&mut self, phase: &str, view: &str, x: f64, y: f64, width: f64, height: f64, pointer: &str, time: f64) -> String {
+        let e = prismal_host::PointerEvent { phase, view, x, y, size: Some([width, height]), pointer, time };
+        s(self.0.pointer(&e))
+    }
+    pub fn wheel(&mut self, view: &str, x: f64, y: f64, width: f64, height: f64, delta: f64, time: f64) -> String {
+        s(self.0.wheel(view, x, y, Some([width, height]), delta, time))
+    }
+    pub fn key_down(&mut self, key: &str, shift: bool, time: f64) -> String {
+        s(self.0.key_down(key, shift, time))
+    }
+    pub fn focus(&mut self, rep: Option<String>, time: f64) -> String {
+        s(self.0.set_focus(rep.as_deref(), time))
+    }
+    pub fn view_reset(&mut self, view: &str) -> String {
+        s(self.0.view_reset(view))
+    }
     pub fn cancel(&mut self) {
         self.0.cancel()
     }

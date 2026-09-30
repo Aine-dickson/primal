@@ -21,6 +21,8 @@ Then open `http://localhost:8000/`. A program can be chosen in the address: `#rp
 
 The same frames can be drawn without a browser by the SVG renderer (`crates/prismal-svg`); `node crates/prismal-svg/compare.mjs` checks that both renderers draw them alike.
 
+The player catches pointer, wheel and key events and forwards them to the engine as raw input (D-047, `docs/spec/05-host-interface.md` HI-4.5); the engine decides what they target, runs drags, zoom and pan, and keeps keyboard focus, and each frame gives the box every view shows. The player's own HTML controls (sliders, toggles, buttons) send their values directly. `node web/check-input.mjs` drives the player with real mouse, wheel and key events in a headless browser.
+
 ## What the player does
 
 | Presentation | Mode | The learner can |

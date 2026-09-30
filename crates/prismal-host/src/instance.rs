@@ -15,7 +15,8 @@ use prismal_ir::present::{Action as TAction, LearnerInput, Observation, Schedule
 use prismal_ir::Op;
 use prismal_kernel::{compile_expr, CModel};
 use prismal_present::data::Data;
-use prismal_present::frame::{CKind, CRep, Frame, Shape, ViewCtx};
+use crate::input::{focus_order, hit, tolerance, Target, ViewKind, ViewState, Viewport, PLOT_MARGIN};
+use prismal_present::frame::{CKind, CRep, Frame, RepFrame, Shape, ViewCtx};
 use prismal_present::interact::{si_literal, Interactive, Key};
 use prismal_present::text::{fmt_binding, fmt_num, fmt_value, print, symbol, unit_text};
 use prismal_present::timeline::{play, Input, Medium, Playback};
@@ -55,12 +56,58 @@ fn pdiags(_prog: &Program, ds: &[prismal_present::PDiag]) -> Json {
 pub struct Instance {
     prog: Rc<Program>,
     mode: Mode,
+    /// The views of the open presentation, with the learner's zoom and pan (D-047).
+    views: Vec<ViewState>,
+    /// A drag or a pan in progress, begun by a raw pointer event.
+    gesture: Option<Gesture>,
+    /// The representation with keyboard focus (PK-11.2).
+    focus: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+enum Gesture {
+    Drag { view: usize },
+    /// A pan from pixel `from` of the framing `shown`, drawn at `scale` pixels per view
+    /// unit; `before` is the learner's framing to restore on cancel.
+    Pan { view: usize, from: [f64; 2], shown: [f64; 4], scale: f64, before: Option<[f64; 4]> },
+}
+
+/// A pointer event as the host captured it (HI-4.5): its phase (`down`, `move`, `up`,
+/// `cancel`), the view it happened in (identity or name), its position in pixels from the
+/// top left of the view as the host drew it, the size the host drew the view at (`None`:
+/// as last given, else the view's natural size), the kind of pointer (`mouse`, `touch`,
+/// `pen`) and, in a lesson, the presentation instant.
+#[derive(Clone, Debug)]
+pub struct PointerEvent<'a> {
+    pub phase: &'a str,
+    pub view: &'a str,
+    pub x: f64,
+    pub y: f64,
+    pub size: Option<[f64; 2]>,
+    pub pointer: &'a str,
+    pub time: f64,
+}
+
+/// Adds the fields of `extra` to the object `base`.
+fn merge(mut base: Json, extra: Json) -> Json {
+    if let (Some(b), Json::Object(e)) = (base.as_object_mut(), extra) {
+        b.extend(e);
+    }
+    base
+}
+
+fn target_json(t: &Target) -> Json {
+    json!({ "rep": t.rep, "part": t.part })
+}
+
+fn unhandled() -> Json {
+    json!({ "handled": false, "action": null })
 }
 
 impl Instance {
     /// An instance with no presentation open yet.
     pub fn new(prog: Rc<Program>) -> Instance {
-        Instance { prog, mode: Mode::Closed }
+        Instance { prog, mode: Mode::Closed, views: vec![], gesture: None, focus: None }
     }
 
     /// `closed`, `interactive` or `lesson` (HI-4.1).
@@ -103,7 +150,11 @@ impl Instance {
             let i = Interactive::new(&self.prog, &pres.id, Config::until(horizon)).map_err(|ds| pdiags(&self.prog, &ds))?;
             Mode::Interactive(Box::new(i))
         };
-        Ok(self.layout())
+        let layout = self.layout();
+        self.views = layout["views"].as_array().into_iter().flatten().map(view_state).collect();
+        self.gesture = None;
+        self.focus = None;
+        Ok(layout)
     }
 
     fn find_presentation(&self, name: &str) -> Result<prismal_ir::present::Presentation, Json> {
@@ -271,7 +322,36 @@ impl Instance {
             }
             Mode::Lesson(l) => l.pb.frame(p, dt),
         };
-        serde_json::to_value(&frame).expect("frame description")
+        let mut out = serde_json::to_value(&frame).expect("frame description");
+        self.decorate(&frame, &mut out);
+        out
+    }
+
+    /// Adds to a frame what every renderer draws it with (D-047): each view's viewport
+    /// (`box`, the view coordinates shown; `size`, its natural drawn size in pixels; for a
+    /// plot, `margin`) and the representation with keyboard focus.
+    fn decorate(&self, frame: &Frame, out: &mut Json) {
+        let grow = self.mode() == "interactive";
+        for (vf, vj) in frame.views.iter().zip(out["views"].as_array_mut().into_iter().flatten()) {
+            let Some(vs) = self.views.iter().find(|v| v.id == vf.id) else { continue };
+            match vs.viewport(vf, grow) {
+                Some(Viewport::Spatial { r#box, size, .. }) => {
+                    vj["box"] = json!(r#box);
+                    vj["size"] = json!(size);
+                }
+                Some(vp @ Viewport::Plot { x, y }) => {
+                    vj["box"] = json!([x.0, y.0, x.1 - x.0, y.1 - y.0]);
+                    vj["size"] = json!(vp.natural_size());
+                    vj["margin"] = json!(PLOT_MARGIN);
+                }
+                None => {}
+            }
+        }
+        if let Some(f) = &self.focus {
+            if focus_order(frame).iter().any(|r| &r.id == f) {
+                out["focus"] = json!(f);
+            }
+        }
     }
 
     /// The math box tree of a formula or equation representation (D-046), for a medium
@@ -413,6 +493,232 @@ impl Instance {
         }
     }
 
+    // ------------------------------------------------------------ raw input (HI-4.5, D-047)
+
+    /// The frame the learner sees: the session's current frame, or the lesson's at `time`.
+    fn current_frame(&self, time: f64) -> Option<Frame> {
+        match &self.mode {
+            Mode::Closed => None,
+            Mode::Interactive(i) => Some(i.frame()),
+            Mode::Lesson(l) => Some(l.pb.frame(time, 0.0)),
+        }
+    }
+
+    fn permits(&self, what: &str) -> bool {
+        let pres = match &self.mode {
+            Mode::Closed => return false,
+            Mode::Interactive(i) => &i.pres,
+            Mode::Lesson(l) => &l.pb.pres,
+        };
+        pres.permissions.iter().any(|p| p.allows.iter().any(|a| a == what))
+    }
+
+    fn view_index(&self, view: &str) -> Option<usize> {
+        self.views.iter().position(|v| v.id == view || v.name == view)
+    }
+
+    /// A pointer event the host captured (HI-4.5). The engine finds its target: pressing on
+    /// a draggable part starts a drag (sessions only, PK-10.5); pressing elsewhere pans a
+    /// spatial view when the presentation permits `pan`. Moving without a gesture reports
+    /// what is under the pointer (`hover`), so that the host can show that it can be
+    /// grabbed. Answers `handled`, the `action` (`drag`, `pan`, `cancel` or null), the
+    /// `target`, and for a drag its outcome as the semantic inputs answer it.
+    pub fn pointer(&mut self, e: &PointerEvent) -> Json {
+        let Some(vi) = self.view_index(e.view) else { return merge(unhandled(), json!({ "message": format!("no view `{}`", e.view) })) };
+        if let Some(size) = e.size {
+            self.views[vi].size = Some(size);
+        }
+        let Some(frame) = self.current_frame(e.time) else { return unhandled() };
+        let Some(vf) = frame.views.iter().find(|v| v.id == self.views[vi].id) else { return unhandled() };
+        let session = self.mode() == "interactive";
+        let Some(vp) = self.views[vi].viewport(vf, session) else { return unhandled() };
+        let map = vp.map(self.views[vi].size.unwrap_or(vp.natural_size()));
+        let p = [e.x, e.y];
+        match e.phase {
+            "down" => {
+                if self.gesture.is_some() {
+                    return merge(unhandled(), json!({ "message": "a gesture is already in progress" }));
+                }
+                if session {
+                    if let Some(t) = hit(vf, &map, p, tolerance(e.pointer)) {
+                        let r = self.pointer_down(&t.rep, t.part.as_deref());
+                        if r["ok"] == true {
+                            self.gesture = Some(Gesture::Drag { view: vi });
+                            self.focus = Some(t.rep.clone());
+                        }
+                        return merge(r, json!({ "handled": true, "action": "drag", "target": target_json(&t) }));
+                    }
+                }
+                match vp {
+                    Viewport::Spatial { shown, .. } if self.permits("pan") => {
+                        self.gesture = Some(Gesture::Pan { view: vi, from: p, shown, scale: map.scale(), before: self.views[vi].user });
+                        json!({ "handled": true, "action": "pan", "target": null })
+                    }
+                    _ => unhandled(),
+                }
+            }
+            "move" => match self.gesture.clone() {
+                Some(Gesture::Drag { view }) if view == vi => {
+                    let q = map.to_view(p);
+                    merge(self.pointer_move(q[0], q[1]), json!({ "handled": true, "action": "drag" }))
+                }
+                Some(Gesture::Pan { view, from, shown, scale, .. }) if view == vi => {
+                    self.views[vi].user = Some([shown[0] - (p[0] - from[0]) / scale, shown[1] - (p[1] - from[1]) / scale, shown[2], shown[3]]);
+                    json!({ "handled": true, "action": "pan" })
+                }
+                Some(_) => unhandled(),
+                None => {
+                    let over = if session { hit(vf, &map, p, tolerance(e.pointer)) } else { None };
+                    json!({ "handled": false, "action": null, "hover": over.as_ref().map(target_json) })
+                }
+            },
+            "up" => match self.gesture.take() {
+                Some(Gesture::Drag { .. }) => merge(self.pointer_up(), json!({ "handled": true, "action": "drag" })),
+                Some(Gesture::Pan { .. }) => json!({ "handled": true, "action": "pan" }),
+                None => unhandled(),
+            },
+            "cancel" => self.cancel_gesture(),
+            other => merge(unhandled(), json!({ "message": format!("unknown pointer phase `{other}`") })),
+        }
+    }
+
+    /// Ends a drag without committing it, or returns a pan to where it began.
+    fn cancel_gesture(&mut self) -> Json {
+        match self.gesture.take() {
+            Some(Gesture::Drag { .. }) => self.cancel(),
+            Some(Gesture::Pan { view, before, .. }) => self.views[view].user = before,
+            None => return unhandled(),
+        }
+        json!({ "handled": true, "action": "cancel" })
+    }
+
+    /// A wheel step over a view (HI-4.5): zooms a spatial view about the pointer when the
+    /// presentation permits `zoom`. `delta` is the vertical scroll in pixels (positive: out).
+    pub fn wheel(&mut self, view: &str, x: f64, y: f64, size: Option<[f64; 2]>, delta: f64, time: f64) -> Json {
+        let Some(vi) = self.view_index(view) else { return unhandled() };
+        if let Some(size) = size {
+            self.views[vi].size = Some(size);
+        }
+        if !self.permits("zoom") {
+            return unhandled();
+        }
+        let Some(frame) = self.current_frame(time) else { return unhandled() };
+        let Some(vf) = frame.views.iter().find(|v| v.id == self.views[vi].id) else { return unhandled() };
+        let Some(vp @ Viewport::Spatial { shown, .. }) = self.views[vi].viewport(vf, self.mode() == "interactive") else { return unhandled() };
+        let q = vp.map(self.views[vi].size.unwrap_or(vp.natural_size())).to_view([x, y]);
+        let k = (delta * 0.0015).exp();
+        self.views[vi].user = Some([q[0] - (q[0] - shown[0]) * k, q[1] - (q[1] - shown[1]) * k, shown[2] * k, shown[3] * k]);
+        json!({ "handled": true, "action": "zoom" })
+    }
+
+    /// Returns a view to its own framing, undoing the learner's zoom and pan.
+    pub fn view_reset(&mut self, view: &str) -> Json {
+        match self.view_index(view) {
+            Some(vi) => {
+                self.views[vi].user = None;
+                json!({ "handled": true, "action": "view_reset" })
+            }
+            None => unhandled(),
+        }
+    }
+
+    /// Gives keyboard focus to a representation, or takes it away (`None`), for hosts whose
+    /// own focus system moves focus (HI-4.5).
+    pub fn set_focus(&mut self, rep: Option<&str>, time: f64) -> Json {
+        let Some(rep) = rep else {
+            self.focus = None;
+            return json!({ "handled": true, "action": "focus", "focus": null });
+        };
+        let frame = self.current_frame(time);
+        let found = frame.as_ref().and_then(|f| focus_order(f).into_iter().find(|r| r.id == rep || r.name.as_deref() == Some(rep)).map(|r| r.id.clone()));
+        match found {
+            Some(id) => {
+                self.focus = Some(id.clone());
+                json!({ "handled": true, "action": "focus", "focus": id })
+            }
+            None => json!({ "handled": false, "action": null, "ok": false, "message": format!("`{rep}` does not take focus") }),
+        }
+    }
+
+    /// A key the host captured, named as in the W3C `KeyboardEvent.key` values (HI-4.5):
+    /// `Tab` (with `shift`, backwards) moves focus through the focus order and gives it back
+    /// to the host past either end; arrow keys step the focused draggable representation or
+    /// control (PK-11.2); `Enter` and space press a focused button or flip a focused toggle;
+    /// `Escape` cancels a gesture. A key the engine does not use is answered
+    /// `handled: false`, for the host's own use (play and pause, for example).
+    pub fn key_down(&mut self, key: &str, shift: bool, time: f64) -> Json {
+        let Some(frame) = self.current_frame(time) else { return unhandled() };
+        let order: Vec<RepFrame> = focus_order(&frame).into_iter().cloned().collect();
+        let focused = self.focus.as_ref().and_then(|f| order.iter().position(|r| &r.id == f));
+        let session = self.mode() == "interactive";
+        match key {
+            "Tab" => {
+                let next = match (focused, shift) {
+                    (None, false) => Some(0).filter(|_| !order.is_empty()),
+                    (None, true) => order.len().checked_sub(1),
+                    (Some(i), false) => Some(i + 1).filter(|&j| j < order.len()),
+                    (Some(i), true) => i.checked_sub(1),
+                };
+                self.focus = next.map(|i| order[i].id.clone());
+                json!({ "handled": self.focus.is_some(), "action": "focus", "focus": self.focus })
+            }
+            "Escape" => self.cancel_gesture(),
+            "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown" => {
+                let Some(r) = focused.map(|i| &order[i]) else { return unhandled() };
+                let dir = &key[5..].to_lowercase();
+                let toggle_or_button = matches!(r.shape, Shape::Button { .. }) || matches!(&r.shape, Shape::Control { control, .. } if control == "toggle");
+                if toggle_or_button {
+                    return unhandled();
+                }
+                if session {
+                    return merge(self.key(&r.id, dir), json!({ "handled": true, "action": "step", "target": { "rep": r.id } }));
+                }
+                match &r.shape {
+                    Shape::Control { value, min, max, step, .. } => {
+                        let step = step.or(min.zip(*max).map(|(a, b)| (b - a) / 100.0)).unwrap_or(1.0);
+                        let sign = if dir == "right" || dir == "up" { 1.0 } else { -1.0 };
+                        let v = (value + sign * step).clamp(min.unwrap_or(f64::MIN), max.unwrap_or(f64::MAX));
+                        let id = r.id.clone();
+                        self.lesson_step(time, &id, v)
+                    }
+                    _ => json!({ "handled": true, "action": "step", "ok": false, "message": "in a lesson the learner acts through the controls of explore beats (D-025)" }),
+                }
+            }
+            "Enter" | " " => {
+                let Some(r) = focused.map(|i| &order[i]) else { return unhandled() };
+                let id = r.id.clone();
+                match &r.shape {
+                    Shape::Button { .. } if session => merge(self.press(&id), json!({ "handled": true, "action": "press", "target": { "rep": id } })),
+                    Shape::Button { .. } => json!({ "handled": true, "action": "press", "ok": false, "message": "buttons act in labs; in a lesson the timeline requests events" }),
+                    Shape::Control { control, value, .. } if control == "toggle" => {
+                        let v = if *value != 0.0 { 0.0 } else { 1.0 };
+                        if session {
+                            merge(self.set_control(&id, v), json!({ "handled": true, "action": "toggle", "target": { "rep": id } }))
+                        } else {
+                            self.lesson_step(time, &id, v)
+                        }
+                    }
+                    _ => unhandled(),
+                }
+            }
+            _ => unhandled(),
+        }
+    }
+
+    /// A control set from the keyboard in a lesson, answered as the raw inputs are.
+    fn lesson_step(&mut self, time: f64, rep: &str, value: f64) -> Json {
+        match self.lesson_set_control(time, rep, value) {
+            Ok(info) => {
+                let refused = info["refusals"].as_array().into_iter().flatten().find(|r| r["at"].as_f64() == Some(time)).map(|r| r["reason"].clone());
+                match refused {
+                    Some(reason) => json!({ "handled": true, "action": "step", "ok": false, "message": reason, "lesson": info }),
+                    None => json!({ "handled": true, "action": "step", "ok": true, "lesson": info }),
+                }
+            }
+            Err(e) => json!({ "handled": true, "action": "step", "ok": false, "message": e }),
+        }
+    }
+
     // ------------------------------------------------------------ lesson mode
 
     fn lesson_input(&mut self, input: Input) -> Result<Json, Json> {
@@ -472,6 +778,18 @@ fn control_type<'a>(cm: &CModel, reps: impl Iterator<Item = &'a CRep>, rep: &str
     prismal_ir::Type::real()
 }
 
+
+/// A view's coordinate system from its entry in the layout.
+fn view_state(v: &Json) -> ViewState {
+    let (id, name) = (v["id"].as_str().unwrap_or_default(), v["name"].as_str().unwrap_or_default());
+    let n = |k: &str, i: usize| v[k][i].as_f64().unwrap_or(0.0);
+    let kind = match v["kind"].as_str() {
+        Some("spatial") => return ViewState::spatial(id, name, [n("extent", 0), n("extent", 1), n("extent", 2), n("extent", 3)]),
+        Some("plot") => ViewKind::Plot { x: (n("x", 0), n("x", 1)), y: (n("y", 0), n("y", 1)) },
+        _ => ViewKind::Panel,
+    };
+    ViewState { id: id.into(), name: name.into(), kind, user: None, size: None }
+}
 
 /// The extent `[xmin, ymin, xmax, ymax]` of shapes in view coordinates, including the origin.
 fn extent<'a>(shapes: impl Iterator<Item = &'a Shape>) -> [f64; 4] {

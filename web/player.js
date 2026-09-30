@@ -20,7 +20,7 @@ const st = {
   speed: 1,
   lastTick: null,
   views: {},       // per view id: { kind, svg, panel, vb, base }
-  drag: null,      // { rep, part, view, pointerId }
+  gesture: null,   // a drag or pan in progress: { action, view, pointerId, resume }
   focus: null,     // { rep } of the focused draggable, restored after each render
   items: new Map() // keyed HTML items (controls, formulas, labels) by rep id
 };
@@ -286,22 +286,15 @@ function buildViews() {
     fig.append(cap);
     const entry = { ...v, fig, panel: el('div', { class: 'view-panel' }) };
     if (v.kind === 'spatial') {
-      const [x0, y0, x1, y1] = v.extent;
-      const pad = 40;
-      let w = Math.max(x1 - x0 + 2 * pad, 320);
-      let h = Math.max(y1 - y0 + 2 * pad, 220);
-      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-      entry.base = [cx - w / 2, cy - h / 2, w, h];
-      entry.vb = [...entry.base];
+      // The engine frames the view (D-047); each frame gives the box it shows.
       entry.svg = svg('svg', { role: 'group', 'aria-label': `${v.name}: spatial view` });
       if (st.layout.permits.includes('zoom') || st.layout.permits.includes('pan')) {
         const reset = el('button', { type: 'button', class: 'hint', text: 'Reset view' });
-        reset.addEventListener('click', () => { entry.vb = [...entry.base]; render(st.frame); });
+        reset.addEventListener('click', () => { st.player.view_reset(v.id); refresh(); });
         cap.append(reset);
-        enableZoomPan(entry);
       }
       // A wide scene spans the row; a small one sits beside the other views.
-      if (w > 480) fig.classList.add('wide');
+      if (v.extent[2] - v.extent[0] + 80 > 480) fig.classList.add('wide');
     } else if (v.kind === 'plot') {
       entry.W = 560; entry.H = 360; entry.m = 44;
       entry.svg = svg('svg', { viewBox: `0 0 ${entry.W} ${entry.H}`, role: 'group', 'aria-label': `${v.name}: plot` });
@@ -316,30 +309,30 @@ function buildViews() {
   }
 }
 
-/// View coordinates of a plot view to SVG coordinates, and back.
+/// View coordinates of a plot view to SVG coordinates: the frame's box (the plot's ranges)
+/// fills the drawn area less its margin (D-047).
 function plotMap(v) {
-  const [x0, x1] = v.x, [y0, y1] = v.y;
-  const sx = (v.W - 2 * v.m) / (x1 - x0), sy = (v.H - 2 * v.m) / (y1 - y0);
-  return {
-    to: ([x, y]) => [v.m + (x - x0) * sx, v.H - v.m - (y - y0) * sy],
-    from: ([X, Y]) => [x0 + (X - v.m) / sx, y0 + (v.H - v.m - Y) / sy],
-  };
+  const [x0, y0, bw, bh] = v.box || [v.x[0], v.y[0], v.x[1] - v.x[0], v.y[1] - v.y[0]];
+  const sx = (v.W - 2 * v.m) / bw, sy = (v.H - 2 * v.m) / bh;
+  return { to: ([x, y]) => [v.m + (x - x0) * sx, v.H - v.m - (y - y0) * sy] };
 }
 
 function mapFor(v) {
   if (v.kind === 'plot') return plotMap(v);
-  return { to: (p) => p, from: (p) => p };
+  return { to: (p) => p };
 }
 
-/// SVG user units per screen pixel, to keep strokes and handles a constant size.
+/// SVG user units per screen pixel, to keep strokes and handles a constant size. The box is
+/// fitted into the element, so the larger ratio applies.
 function unitsPerPx(v) {
-  const w = v.svg.clientWidth || v.svg.getBoundingClientRect().width || 600;
-  if (v.kind === 'spatial') return (v.box || v.vb)[2] / w;
+  const r = v.svg.getBoundingClientRect();
+  const w = r.width || 600;
+  if (v.kind === 'spatial') return Math.max(v.box[2] / w, r.height ? v.box[3] / r.height : 0);
   return v.W / w;
 }
 
 function drawSpatialChrome(v, g, reps, u) {
-  const [x, y, w, h] = v.box || v.vb;
+  const [x, y, w, h] = v.box;
   const step = niceStep((60 * u) / v.px_per_m) * v.px_per_m; // at least ~60 screen px
   const metres = step / v.px_per_m;
   const hasGrid = reps.some((r) => r.kind === 'grid');
@@ -501,13 +494,17 @@ function drawRep(v, g, r, u, colorIndex) {
     focusable.setAttribute('aria-label', `${r.text}. Arrow keys move it.`);
     focusable.classList.add('rep');
     focusable.dataset.rep = r.id;
-    focusable.addEventListener('keydown', (e) => onRepKey(e, r.id));
-    focusable.addEventListener('focus', () => { st.focus = { rep: r.id }; });
+    // The browser moves focus (Tab), for assistive technology; the engine is told, and
+    // keys are forwarded to it (D-047).
+    focusable.addEventListener('keydown', onRepKey);
+    focusable.addEventListener('focus', () => {
+      st.focus = { rep: r.id };
+      st.player.focus(r.id, st.p);
+    });
     focusable.addEventListener('blur', () => {
       // Re-rendering replaces the element; its focus is restored after the render.
       if (!st.rendering && st.focus && st.focus.rep === r.id) st.focus = null;
     });
-    grp.addEventListener('pointerdown', (e) => startDrag(e, v, r));
   }
 }
 
@@ -704,11 +701,13 @@ function renderFrame(frame) {
     const v = st.views[vf.id];
     if (!v) continue;
     if (v.svg) {
+      // The engine gives the box of view coordinates each view shows: its framing, the
+      // learner's zoom and pan, the timeline's camera (D-047).
+      v.box = vf.box;
       if (v.kind === 'spatial') {
-        if (!st.lesson) growToFit(v, vf.reps);
-        v.box = cameraBox(v, vf.camera);
         v.svg.setAttribute('viewBox', v.box.join(' '));
       } else {
+        v.m = vf.margin;
         // A plot is drawn at its rendered size, so that text and margins stay readable.
         const w = Math.max(240, Math.round(v.svg.clientWidth || 560));
         if (w !== v.W) {
@@ -754,6 +753,8 @@ function renderFrame(frame) {
   const caps = $('#captions');
   caps.replaceChildren(...(frame.captions || []).map((c) => el('span', { text: c })));
   for (const a of frame.announcements || []) announce(`${a} at ${fmt(frame.t)} s`);
+  // The engine's focus (a grabbed representation takes it, D-047), else the browser's.
+  if (frame.focus) st.focus = { rep: frame.focus };
   if (st.focus) {
     const f = document.querySelector(`[tabindex][data-rep="${CSS.escape(st.focus.rep)}"]`);
     if (f && document.activeElement !== f) f.focus({ preventScroll: true });
@@ -761,40 +762,8 @@ function renderFrame(frame) {
   renderDescription(frame);
 }
 
-/// The view box of a spatial view: the view's own framing, or the timeline's camera
-/// (D-042) moving from it to its centre and zoom.
-function cameraBox(v, cam) {
-  if (!cam) return v.vb;
-  const [x, y, w, h] = v.base;
-  const c0 = [x + w / 2, y + h / 2];
-  const c = cam.center ? [c0[0] + (cam.center[0] - c0[0]) * cam.blend, c0[1] + (cam.center[1] - c0[1]) * cam.blend] : c0;
-  const [cw, ch] = [w / cam.zoom, h / cam.zoom];
-  return [c[0] - cw / 2, c[1] - ch / 2, cw, ch];
-}
-
 function cssId(id) {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_');
-}
-
-function growToFit(v, reps) {
-  const pts = [];
-  const collect = (rs) => {
-    for (const r of rs) {
-      if (r.shape === 'point') pts.push(r.at);
-      else if (r.shape === 'arrow' || r.shape === 'segment') pts.push(r.from, r.to);
-      else if (r.shape === 'group') collect(r.members);
-    }
-  };
-  collect(reps);
-  let [x, y, w, h] = v.vb;
-  const pad = 30;
-  for (const [px, py] of pts) {
-    if (px - pad < x) { w += x - (px - pad); x = px - pad; }
-    if (py - pad < y) { h += y - (py - pad); y = py - pad; }
-    if (px + pad > x + w) w = px + pad - x;
-    if (py + pad > y + h) h = py + pad - y;
-  }
-  v.vb = [x, y, w, h];
 }
 
 let lastDescription = 0;
@@ -845,112 +814,100 @@ function renderObservations() {
 
 // ------------------------------------------------------------------ pointer and keyboard
 
-function toView(v, e) {
-  const pt = v.svg.createSVGPoint();
-  pt.x = e.clientX; pt.y = e.clientY;
-  const q = pt.matrixTransform(v.svg.getScreenCTM().inverse());
-  return mapFor(v).from([q.x, q.y]);
+// The player catches the browser's events and forwards them to the engine, which targets
+// them, runs drags, pans and zooms, and keeps keyboard focus (D-047, HI-4.5). Positions are
+// pixels of the view as drawn: screen pixels in a spatial view, whose box the engine fits
+// into the element, and the plot's own drawing units in a plot.
+function drawnPoint(v, e) {
+  if (v.kind === 'plot') {
+    const pt = v.svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const q = pt.matrixTransform(v.svg.getScreenCTM().inverse());
+    return { x: q.x, y: q.y, width: v.W, height: v.H };
+  }
+  const r = v.svg.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top, width: r.width, height: r.height };
 }
 
-function startDrag(e, v, r) {
-  if (st.lesson) return;
-  const part = r.drag === 'body' ? null : r.drag;
-  if (part && e.target.dataset.part !== part) return;
-  e.preventDefault();
-  e.stopPropagation();
-  const res = JSON.parse(st.player.pointer_down(r.id, part));
-  if (!res.ok) { report(res); return; }
-  // Drag mode `hold`: the run pauses while dragging and resumes after the commit (PK-10.9).
-  const resume = st.playing;
-  stop();
-  st.drag = { rep: r.id, view: v, pointerId: e.pointerId, resume };
-  v.svg.setPointerCapture(e.pointerId);
+function forward(v, phase, e) {
+  const p = drawnPoint(v, e);
+  return JSON.parse(st.player.pointer(phase, v.id, p.x, p.y, p.width, p.height, e.pointerType || 'mouse', st.p));
 }
 
 function setupPointer(v) {
+  v.svg.addEventListener('pointerdown', (e) => {
+    if (st.gesture) return;
+    const res = forward(v, 'down', e);
+    if (!res.handled) return;
+    e.preventDefault();
+    if (res.action === 'drag' && !res.ok) { report(res); return; }
+    // Drag mode `hold`: the run pauses while dragging and resumes after the commit (PK-10.9).
+    st.gesture = { action: res.action, view: v, pointerId: e.pointerId, resume: res.action === 'drag' && st.playing };
+    if (res.action === 'drag') stop();
+    v.svg.setPointerCapture(e.pointerId);
+  });
   v.svg.addEventListener('pointermove', (e) => {
-    if (!st.drag || st.drag.pointerId !== e.pointerId) return;
-    const [x, y] = toView(v, e);
-    const res = JSON.parse(st.player.pointer_move(x, y));
-    status(res.ok ? '' : `Not valid here: ${res.message || 'rejected'}`, !res.ok);
+    const g = st.gesture;
+    if (g && g.pointerId !== e.pointerId) return;
+    const res = forward(v, 'move', e);
+    if (!g) {
+      // Hovering: show what can be grabbed.
+      v.svg.style.cursor = res.hover ? 'grab' : '';
+      return;
+    }
+    if (res.action === 'drag') status(res.ok ? '' : `Not valid here: ${res.message || 'rejected'}`, !res.ok);
     render(JSON.parse(st.player.frame(st.p, 0)));
   });
-  const end = (e) => {
-    if (!st.drag || st.drag.pointerId !== e.pointerId) return;
-    const resume = st.drag.resume;
-    st.drag = null;
-    const res = JSON.parse(st.player.pointer_up());
+  v.svg.addEventListener('pointerup', (e) => {
+    const g = st.gesture;
+    if (!g || g.pointerId !== e.pointerId) return;
+    st.gesture = null;
+    const res = forward(v, 'up', e);
+    if (res.action !== 'drag') { refresh(); return; }
     if (!res.ok) report(res);
     else if (!res.committed) status('Nothing committed: no valid position during the drag.', true);
     else status('');
     afterSessionAction();
-    if (resume) togglePlay();
-  };
-  v.svg.addEventListener('pointerup', end);
+    if (g.resume) togglePlay();
+  });
   v.svg.addEventListener('pointercancel', (e) => {
-    if (!st.drag) return;
-    st.drag = null;
-    st.player.cancel();
+    if (!st.gesture) return;
+    st.gesture = null;
+    forward(v, 'cancel', e);
     refresh();
   });
+  v.svg.addEventListener('wheel', (e) => {
+    const p = drawnPoint(v, e);
+    const res = JSON.parse(st.player.wheel(v.id, p.x, p.y, p.width, p.height, e.deltaY, st.p));
+    if (!res.handled) return;
+    e.preventDefault();
+    refresh();
+  }, { passive: false });
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && st.drag) {
-    st.drag = null;
-    st.player.cancel();
+  if (e.key === 'Escape' && st.gesture) {
+    st.gesture = null;
+    JSON.parse(st.player.key_down('Escape', false, st.p));
     status('Drag cancelled.');
     refresh();
   }
-  if (e.key === ' ' && clocked() && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName)) {
+  if (e.key === ' ' && clocked() && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName) && !document.activeElement.dataset.rep) {
     e.preventDefault();
     togglePlay();
   }
 });
 
-function onRepKey(e, id) {
-  const keys = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
-  const k = keys[e.key];
-  if (!k || st.lesson) return;
+/// Keys on a focused representation in a view go to the engine, which steps what has focus
+/// (PK-11.2); the browser keeps moving focus with Tab.
+function onRepKey(e) {
+  if (e.key === 'Tab') return;
+  const res = JSON.parse(st.player.key_down(e.key, e.shiftKey, st.p));
+  if (!res.handled) return;
   e.preventDefault();
-  const res = JSON.parse(st.player.key(id, k));
-  report(res);
-  st.focus = { rep: id };
+  if (res.ok === false) report(res);
+  else status('');
   afterSessionAction();
-}
-
-function enableZoomPan(v) {
-  const canZoom = st.layout.permits.includes('zoom');
-  const canPan = st.layout.permits.includes('pan');
-  if (canZoom) {
-    v.svg.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const pt = v.svg.createSVGPoint();
-      pt.x = e.clientX; pt.y = e.clientY;
-      const q = pt.matrixTransform(v.svg.getScreenCTM().inverse());
-      const k = Math.exp(e.deltaY * 0.0015);
-      const [x, y, w, h] = v.vb;
-      v.vb = [q.x - (q.x - x) * k, q.y - (q.y - y) * k, w * k, h * k];
-      render(st.frame);
-    }, { passive: false });
-  }
-  if (canPan) {
-    let pan = null;
-    v.svg.addEventListener('pointerdown', (e) => {
-      if (st.drag || e.target.closest('.draggable')) return;
-      pan = { x: e.clientX, y: e.clientY, vb: [...v.vb], id: e.pointerId };
-      v.svg.setPointerCapture(e.pointerId);
-    });
-    v.svg.addEventListener('pointermove', (e) => {
-      if (!pan || pan.id !== e.pointerId) return;
-      const u = unitsPerPx(v);
-      v.vb = [pan.vb[0] - (e.clientX - pan.x) * u, pan.vb[1] - (e.clientY - pan.y) * u, pan.vb[2], pan.vb[3]];
-      render(st.frame);
-    });
-    const endPan = () => { pan = null; };
-    v.svg.addEventListener('pointerup', endPan);
-    v.svg.addEventListener('pointercancel', endPan);
-  }
 }
 
 // ------------------------------------------------------------------ lesson transport
