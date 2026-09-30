@@ -692,10 +692,11 @@ impl<'a> Engine<'a> {
                 }
                 self.run.log.push(LogEntry { event: ei, name: self.cm.events[ei].name.clone(), t: self.t, n: self.n, zeno: z, requested: rq });
             }
-            // Next microstep: `on(E)` for each emitted E (MK-15.10), and crossings caused by
-            // jumps (RC-8.5).
+            // Next microstep: `on(E)` for each E that occurred or was emitted at this one
+            // (MK-15.3, MK-15.10, D-041), and crossings caused by jumps (RC-8.5).
+            let occurred: Vec<usize> = handled.iter().map(|h| h.0).collect();
             let mut next: Vec<usize> = (0..self.cm.events.len())
-                .filter(|&j| matches!(self.cm.events[j].trigger, Some(CTrigger::On(src)) if emitted.contains(&src)))
+                .filter(|&j| matches!(self.cm.events[j].trigger, Some(CTrigger::On(src)) if emitted.contains(&src) || occurred.contains(&src)))
                 .collect();
             for ei in 0..self.cm.events.len() {
                 if let Some(CTrigger::Crossing { dir, .. }) = &self.cm.events[ei].trigger {
@@ -957,6 +958,22 @@ mod tests {
         assert_eq!(out.times("once"), vec![0.25]);
         assert_eq!(out.final_value("T.n").num(), 11.0);
         assert!((out.at(0.25, &r(&x)).num() - 0.25).abs() < 1e-15);
+    }
+
+    /// `on(E)` is due at the microstep after `E` occurs, without an `emit` (D-041).
+    #[test]
+    fn on_follows_occurrence() {
+        let mut b = ModelBuilder::new("O");
+        let x = b.state("x", Type::qty("L"), num(1.0, "m"));
+        b.flow(&x, num(-1.0, "m/s"));
+        let n = b.discrete("n", Type::real(), lit(0.0));
+        b.event("cross", falling(r(&x)), vec![]);
+        b.event("after", Trigger::On { event: "O.event.cross".into() }, vec![set(&n, r(&n) + lit(1.0))]);
+        let cm = check_model(&[], &b.finish()).unwrap();
+        let out = run(&cm, Config::until(2.0));
+        let names: Vec<(&str, u32)> = out.log.iter().map(|l| (l.name.as_str(), l.n)).collect();
+        assert_eq!(names, vec![("cross", 1), ("after", 2)]);
+        assert_eq!(out.final_value("O.n").num(), 1.0);
     }
 
     /// Two events setting one binding at the same instant are a conflict (MK-16.4, RC-10.2).

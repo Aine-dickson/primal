@@ -170,7 +170,7 @@ produce the trajectory S (committed states), the event log E and diagnostics D
 
 At an event time `t`, starting from `(t, 0)`:
 
-1. Collect every event **due** at the current microstep `(t, n)`: located crossings (at `n = 0`), time events (at `n = 0`), `on start` (at `(t0, 0)`), `on(E)` for each `E` emitted at `n - 1`, crossings caused by jumps at `n - 1` (RC-8.5), and `on input(i)` for inputs changed at this instant.
+1. Collect every event **due** at the current microstep `(t, n)`: located crossings (at `n = 0`), time events (at `n = 0`), `on start` (at `(t0, 0)`), `on(E)` for each `E` that occurred or was emitted at `n - 1` (D-041), crossings caused by jumps at `n - 1` (RC-8.5), and `on input(i)` for inputs changed at this instant.
 2. Discard events whose enabling condition is false on the state at `(t, n)`.
 3. If none remain, the iteration ends. The final state is `(t, n)`.
 4. Otherwise, form **one transition** from the operations of all remaining handlers (MK-16.3). Every handler reads the state at `(t, n)` (MK-15.7).

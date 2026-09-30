@@ -26,7 +26,7 @@ use prismal_present::data::Data;
 use prismal_present::expect::run_case;
 use prismal_present::frame::{CKind, CRep, Frame, Shape, ViewCtx};
 use prismal_present::interact::{si_literal, Interactive, Key};
-use prismal_present::text::{fmt_num, fmt_value, print, symbol, unit_text};
+use prismal_present::text::{fmt_binding, fmt_num, fmt_value, print, symbol, unit_text};
 use prismal_present::timeline::{play, Input, Medium, Playback};
 use prismal_present::{Program, LESSON_HORIZON};
 use prismal_runtime::{Action, Config};
@@ -39,7 +39,7 @@ fn located(code: &str, message: &str, span: Option<prismal_syntax::Span>) -> Jso
     json!({ "code": code, "message": message, "line": s.line, "col": s.col, "start": s.start, "end": s.end })
 }
 
-/// Simulated span of an interactive session of a dynamic model.
+/// Least simulated span of an interactive session of a dynamic model.
 pub const SESSION_HORIZON: f64 = LESSON_HORIZON;
 
 enum Mode {
@@ -120,8 +120,21 @@ impl Player {
             let medium = if video { Medium::Video } else { Medium::Interactive };
             Mode::Lesson(Box::new(Lesson::replay(self.prog, &pres.id, medium, vec![])?))
         } else {
-            // A dynamic model runs to the session horizon; a static one has one instant.
-            let i = Interactive::new(self.prog, &pres.id, Config::until(SESSION_HORIZON)).map_err(|ds| pdiags(self.prog, &ds))?;
+            // A dynamic model runs to the session horizon, or to the end of the longest time
+            // axis the presentation plots; a static one has one instant.
+            let cm = self.prog.model(&pres.model);
+            let horizon = match prismal_present::frame::Projector::new(cm, pres) {
+                Ok(pj) => pj
+                    .views
+                    .iter()
+                    .filter_map(|(_, ctx, _)| match ctx {
+                        ViewCtx::Plot { x, dims, .. } if dims.0 == prismal_ir::Dim::time() => Some(x.1),
+                        _ => None,
+                    })
+                    .fold(SESSION_HORIZON, f64::max),
+                Err(_) => SESSION_HORIZON,
+            };
+            let i = Interactive::new(self.prog, &pres.id, Config::until(horizon)).map_err(|ds| pdiags(self.prog, &ds))?;
             Mode::Interactive(Box::new(i))
         };
         Ok(self.layout())
@@ -314,7 +327,7 @@ impl Player {
             Mode::Interactive(i) => {
                 for o in &i.pres.observations {
                     let text = match i.observe(&o.name) {
-                        Ok(d) => fmt_data(i.cm, o, &d),
+                        Ok(d) => fmt_data(i.cm, &i.session.current, o, &d),
                         Err(e) => vec![e],
                     };
                     out.insert(o.name.clone(), json!(text));
@@ -568,12 +581,17 @@ fn obs_type(cm: &CModel, o: &Observation) -> Option<prismal_ir::Type> {
     }
 }
 
-fn fmt_op(cm: &CModel, op: &Op) -> String {
+fn fmt_op(cm: &CModel, run: &prismal_runtime::Run, t: f64, op: &Op) -> String {
     match op {
         Op::Set { target, value } => {
-            // A gesture's proposal is shown by its value, not the substituted expression.
-            let shown = match (prismal_present::constant(cm, value), cm.index.get(&target.binding)) {
-                (Ok(v), Some(&i)) => fmt_value(&v, &cm.bindings[i].ty),
+            // A proposal is shown by its value: a constant, or evaluated on the state from
+            // before the intervention at its instant (it may read other bindings).
+            let v = match prismal_present::constant(cm, value) {
+                Ok(v) => Some(v),
+                Err(_) => run.committed.iter().find(|c| c.t == t).and_then(|c| compile_expr(cm, value, None).ok().and_then(|(ce, _)| run.eval_state(&ce, &c.vals, t).ok())),
+            };
+            let shown = match (v, cm.index.get(&target.binding)) {
+                (Some(v), Some(&i)) => fmt_binding(cm, i, &v),
                 _ => print(value, cm, &[]),
             };
             format!("set {} = {shown}", symbol(cm, &target.binding))
@@ -583,7 +601,7 @@ fn fmt_op(cm: &CModel, op: &Op) -> String {
 }
 
 /// Observation data as text lines (PK-3.5).
-fn fmt_data(cm: &CModel, o: &Observation, d: &Data) -> Vec<String> {
+fn fmt_data(cm: &CModel, run: &prismal_runtime::Run, o: &Observation, d: &Data) -> Vec<String> {
     let ty = obs_type(cm, o);
     let v = |x: &prismal_kernel::Value| ty.as_ref().map(|t| fmt_value(x, t)).unwrap_or_else(|| x.to_string());
     match d {
@@ -594,7 +612,7 @@ fn fmt_data(cm: &CModel, o: &Observation, d: &Data) -> Vec<String> {
         Data::Interventions(is) => is
             .iter()
             .map(|s| match &s.action {
-                Action::Intervene(ops) => format!("at {} s: {}", fmt_num(s.t), ops.iter().map(|o| fmt_op(cm, o)).collect::<Vec<_>>().join("; ")),
+                Action::Intervene(ops) => format!("at {} s: {}", fmt_num(s.t), ops.iter().map(|o| fmt_op(cm, run, s.t, o)).collect::<Vec<_>>().join("; ")),
                 Action::Request(e) => format!("at {} s: request {}", fmt_num(s.t), e.rsplit('.').next().unwrap_or(e)),
             })
             .collect(),

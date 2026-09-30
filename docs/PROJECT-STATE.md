@@ -27,6 +27,7 @@ self-study, deep study, and syllabus-based educational content creation.
 | `docs/prototype.md` | Rust kernel prototype: structure, coverage of the reference programs, measured accuracy, gaps | Living |
 | `crates/` | Prototype source: `prismal-ir`, `prismal-kernel`, `prismal-runtime`, `prismal-syntax` (text parser), `prismal-present` (presentation kernel and timeline), `prismal-web` (web player logic and WASM bindings); `cargo test` runs the reference programs, from the IR API and from their text | Living |
 | `web/` | Web player front end; build and run in `web/README.md` | Living |
+| `docs/guide/` | Learn Prismal: a guide to writing programs in the working syntax, chapters 1 to 8 and a reference card; every program in it is compiled and its cases run by `cargo test` | Living |
 | `docs/syntax-study/` | Syntax study (D-006): candidates A, B, C with all reference programs, comparison, specification findings S-1 to S-12 | Study record, non-normative |
 | `docs/decisions/carried-forward.md` | Every resolution from the exploration record that is kept (R-01 to R-70), and where it lands | Living |
 | `docs/audit/2026-09-29-design-audit.md` | Audit of the exploration record: findings F-01 to F-15 | Fixed record |
@@ -81,6 +82,7 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-037:** the IR is serialized as versioned JSON.
 - **D-038:** an event is self-retriggering if its handler writes something its guard depends on through derived bindings or flows, with flows specialized on the discrete values the handler sets.
 - **D-039:** named mathematical constants are kept by name in the IR (`{"const": "pi"}`), so formulas show `2π`; `inf` is only an interval bound.
+- **D-041:** `on(E)` is due at the microstep after `E` occurs or is emitted.
 - **D-040:** only the words of the model language, expressions and top-level items are reserved; presentation, timeline and run words are contextual keywords (`process drag`, `view scene` are valid).
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
@@ -90,7 +92,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 
 ## Next steps
 
-**Next session starts here:** owner review of the overnight work, the text parser, the presentation prototype and the web player (session log 2026-09-30, `docs/prototype.md` sections "Text parser", "Presentation prototype", "Web player" and "Findings", register D-035 to D-040, 03 elaborations PK-8.2a to PK-12.1a and section 16). To try the player: `web/README.md`. Then, in order: a language guide that teaches the working syntax from the reference programs (the owner will review by writing programs from memory, see Working process); the formatter (canonical printing, working syntax 1.4) with identity matching against a previous IR (D-036); the remaining representations and timeline actions (`docs/prototype.md`, "Not implemented").
+**Next session starts here:** the owner learns the language from `docs/guide/` and reviews by writing programs (see Working process); earlier work to review: the overnight work, the text parser, the presentation prototype and the web player (session log 2026-09-30, `docs/prototype.md` sections "Text parser", "Presentation prototype", "Web player" and "Findings", register D-035 to D-040, 03 elaborations PK-8.2a to PK-12.1a and section 16). To try the player: `web/README.md`. Then, in order: the formatter (canonical printing, working syntax 1.4) with identity matching against a previous IR (D-036); the remaining representations and timeline actions (`docs/prototype.md`, "Not implemented").
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances confirmed by the prototype and fixed.
@@ -100,7 +102,8 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 6. Presentation prototype: done for the first slice; every expectation of RP-01 to RP-08 passes.
 7. Web player: done for the first slice (D-018); RP-06 to RP-08 in a browser, cases of every program.
 8. Dynamic interactive sessions and lab presentations: done.
-9. Next: language guide, formatter.
+9. Language guide: done (`docs/guide/`, 18 programs, 67 expectations checked).
+10. Next: formatter.
 
 ## Session log
 
@@ -117,6 +120,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 | 2026-09-30 | Presentation prototype `crates/prismal-present`: presentation and run IR (04-ir section 7, `prismal-ir/src/present.rs`) lowered by the parser; presentation checks (03 section 16, PK-E01 to PK-E06); observations; headless run cases; projection and frame descriptions with text alternatives and live formulas; interaction (controls, drag previews, keyboard, undo, refusals); the lesson player (time mapping, D-033 order, explore beats with and without `keep`, video fallback, captions, announcements, export). All 36 expectations written as cases pass; RP-06 E1 to E14, RP-07 E1 to E5 and RP-08 E1 to E16 pass through the presentation. Findings: RP-08 velocity arrows lacked scales (PK-5.5; program corrected); lambdas keep parameter names for formulas; a wait ends at the event's exact instant (PK-9.3a); timeline rules recorded as elaborations of 03. `cases` example runs a program's cases. |
 | 2026-09-30 | Web player (D-018): `crates/prismal-web` (player logic tested natively, MathML typesetting of formulas from the IR, embedded reference programs, `wasm-bindgen` exports) and `web/` (SVG and HTML renderer of frame descriptions, drags and keyboard, lesson transport with beats, explore controls and continue, video medium, source editor with located diagnostics, observations, cases, text alternatives). Lessons are replayed from recorded learner inputs (PK-8.7). Driven in headless Edge: RP-08's learner relaunch at 60 deg lands at R60. Findings: display units were ignored (RP-01 `angle` now `unit deg`, kernel text uses display units, PK-11.1); arrow heads had no keyboard operation (PK-11.2). |
 | 2026-09-30 | Dynamic interactive sessions: display clock on `Interactive` (seek, reset, interventions at the instant shown, RC-11.2), `trace` and `series_plot` with sampled sources `expr every Δ` (syntax, IR `sampled` argument, PK-6.3a), plot axes with dimensions (PK-7.3a). Lab presentations added to RP-01, RP-03, RP-04, RP-05; the player plays them with a session transport, holds the run during drags (PK-10.9) and shows run diagnostics. Equation diagnostics print the instant and residual. |
+| 2026-09-30 | Language guide `docs/guide/` (README, chapters 1 to 8, reference card): every program compiled and every case run by `prismal-web/tests/guide.rs`, error examples checked against their codes; the player lists the guide's programs. Found: D-041 (`on(E)` follows an occurrence, not only an emission; MK-15.3 against MK-15.10 and RC 8.1), a kernel panic when the player logged a drag proposal that reads bindings (`constant` now refuses such expressions; the log evaluates them on the run), session horizon extended to the presentation's longest time axis. Register index gained D-039 to D-041. |
 
 ## Working process
 

@@ -34,5 +34,5 @@ A lesson is recomputed from the learner's inputs each time one is added. Playbac
 ## Limits
 
 - Loading new source text keeps the previous program in memory until the page is reloaded.
-- A session's run is computed 60 s ahead; each intervention recomputes it from the start.
+- A session's run is computed 60 s ahead, or to the end of the longest time axis its plots show; each intervention recomputes it from the start.
 - Representations and timeline actions the prototype does not implement are listed in `docs/prototype.md`.

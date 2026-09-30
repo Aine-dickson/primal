@@ -172,6 +172,8 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - **Keyboard operation of arrow heads.** PK-11.2 requires every drag to be available from the keyboard; the kernel only moved markers. A keyboard step now moves the part a representation is dragged by (a marker, an arrow's head).
 - **Plots had no dimensions.** A plot's axes were bare numbers, so neither a scalar model (the bouncing ball's `y` is a length) nor a series against time could be drawn. Plot axes now take their dimension from their ranges (PK-7.3a), and `trace` and `series_plot` take sampled sources (PK-6.3a) with their syntax, `expr every Δ`, and IR form.
 - **Equation diagnostics.** A failed equation check printed its residual as `Some(0.0148...)`. The message now gives the instant and the residual.
+- **D-041.** Writing the guide, `event alarm on full` never happened: the runtime made `on(E)` due only after `emit E`, following RC section 8.1, while MK-15.3 says after `E` occurs. `on(E)` now follows both.
+- **Proposals that read bindings.** The player's intervention log evaluated a drag proposal (`speed = sqrt(p.x * 1 m * g / sin(2 * angle))`) as a constant, and the kernel indexed an empty state and panicked. `constant` now refuses expressions that read bindings or derivatives; the log evaluates proposals on the run's state at their instant.
 - **`emit` semantics.** A first version made the emitted event itself due; MK-15.10 makes the events triggered `on(E)` due. Fixed and covered by a unit test with the cascade limit (RC-8.3).
 
 ## Not implemented
@@ -199,3 +201,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 presentation prototype (`prismal-present`), presentation and run IR (04-ir section 7) and their lowering: every expectation of RP-01 to RP-08 checked; RP-08 arrows given scales; lambda parameter names; elaborations of 03 and its static diagnostics.
 - 2026-09-30 web player (`prismal-web`, `web/`): RP-06 to RP-08 interactive in a browser, cases of every program; display units in text alternatives (RP-01 `angle` in degrees); keyboard steps for arrow heads.
 - 2026-09-30 dynamic interactive sessions (display clock, interventions at the instant shown, reset); `trace` and `series_plot` with sampled sources; plot axes with dimensions; lab presentations for RP-01, RP-03, RP-04 and RP-05, played in the web player.
+- 2026-09-30 language guide (`docs/guide/`) checked by `prismal-web/tests/guide.rs`; D-041; `constant` guarded against expressions that read state.

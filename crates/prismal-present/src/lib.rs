@@ -88,6 +88,11 @@ impl Program {
 /// Evaluates an expression that reads no state (a literal, a time such as `t0 + 5 s`).
 /// Instants are seconds with `t0 = 0`.
 pub fn constant(cm: &CModel, e: &Expr) -> Result<Value, String> {
+    let mut reads = false;
+    e.walk(&mut |x| reads |= matches!(x, Expr::Ref { .. } | Expr::Der { .. }));
+    if reads {
+        return Err("the expression reads bindings of the model; it is not a constant".into());
+    }
     let (c, _) = compile_expr(cm, e, None).map_err(|d| d.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("; "))?;
     c.eval(&Ctx { vals: &[], der: None, t: 0.0, t0: 0.0, args: &[] }).map_err(|s| s.cause)
 }

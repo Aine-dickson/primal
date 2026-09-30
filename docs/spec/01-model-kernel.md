@@ -461,7 +461,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 - **MK-15.7** A handler is a set of operations (section 16). All reads in a handler see the state **before** the handler's operations (the committed state at the preceding microstep), whatever the order in which the operations are written (RUN-06). Modelica's `pre()` is therefore implicit.
 - **MK-15.8** A handler's operations commit together or not at all (R-25). An operation set with a conflict (section 16.3) does not commit, and the conflict is reported.
 - **MK-15.9** A **reset** is a `set` operation on continuous state in a handler. It is the only way a model itself replaces continuous state (D-004).
-- **MK-15.10** An `emit(E, payload)` operation makes `on(E)` triggers due at the next microstep `(t, n+1)`. A cascade longer than the declared maximum iteration count stops the run with a diagnostic (D-004; the default count is set in the runtime contract).
+- **MK-15.10** An `emit(E, payload)` operation makes `on(E)` triggers due at the next microstep `(t, n+1)`, as an occurrence of `E` does (MK-15.3, D-041); both at one microstep make each `on(E)` due once. A cascade longer than the declared maximum iteration count stops the run with a diagnostic (D-004; the default count is set in the runtime contract).
 
 ### 15.4 Zeno policy
 

@@ -58,6 +58,9 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-036 | Comments and identities across text and visual editing | Accepted |
 | D-037 | IR serialization: versioned JSON | Accepted |
 | D-038 | Self-retriggering decided through flows, specialized on the handler's discrete values | Accepted |
+| D-039 | Named mathematical constants kept by name in the IR | Accepted |
+| D-040 | Reserved words and contextual keywords | Accepted |
+| D-041 | `on(E)` follows an occurrence of `E` as well as an emission | Accepted |
 
 ---
 
@@ -739,3 +742,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** working syntax section 1.5 lists the two groups; RP-07 changed (recorded in its history); the parser implements the split (`crates/prismal-syntax/src/parser.rs`).
 - **History:**
   - 2026-09-30 found by the text parser, proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-041: `on(E)` follows an occurrence of `E` as well as an emission
+
+- **Status:** Accepted
+- **Original position:** MK-15.3 defines the trigger `on(E)` as due when "event `E` occurred at the previous microstep". MK-15.10 says `emit(E)` makes `on(E)` triggers due at the next microstep, and RC section 8.1 step 1 collects "`on(E)` for each `E` emitted at `n - 1`". The prototype implemented the runtime contract: `on(E)` followed only emissions.
+- **Raised by:** the language guide (`docs/guide/05-events-and-modes.md`). The tank's `event alarm on full` never happened: `full` occurred through its own trigger but was not emitted. The texts contradict each other for any event that occurs without being emitted.
+- **Builds on:** D-004 (cascades at one instant through superdense time), D-024 (ordering only by cascades), MK-15.10.
+- **Question:** When is `on(E)` due?
+- **Options considered:**
+  1. **Only after `emit(E)`** (the runtime contract). Chaining one event after another requires every handler to emit its own name (`event full ... { set pumping = false; emit full }`), which is redundant and easy to forget; MK-15.3 would be reworded.
+  2. **After `E` occurs or is emitted.** `on(E)` reads as written: after `E`. `emit(E)` remains the way to signal `E` from another handler without `E`'s own trigger. One occurrence and one emission at the same microstep make `on(E)` due once.
+  3. **`emit(E)` makes `E` itself occur** (with its handler), and `on(E)` follows occurrences only. Changes the meaning of `emit` established by MK-15.10 and the prototype's cascade tests, and runs `E`'s handler when another event only meant to signal it.
+- **Accepted position:** option 2.
+- **Reason:** it is the reading of MK-15.3 an author expects, it keeps MK-15.10, and it makes D-024's rule (order is expressed by cascades) usable without boilerplate.
+- **Consequences:** MK-15.10 and RC section 8.1 step 1 state both sources; the runtime collects `on(E)` for events handled or emitted at the previous microstep (`crates/prismal-runtime/src/run.rs`, test `on_follows_occurrence`). An event triggered on itself (`event a on a`) cascades until the cascade limit, as an endless chain of emissions already did.
+- **History:**
+  - 2026-09-30 found by the language guide, proposed and accepted under the owner's standing delegation of 2026-09-30.
