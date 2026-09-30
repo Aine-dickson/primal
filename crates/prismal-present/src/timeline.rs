@@ -132,9 +132,9 @@ pub struct Refusal {
 }
 
 /// The record of one playback of a timeline.
-pub struct Playback<'a> {
-    pub cm: &'a CModel,
-    pub pres: &'a Presentation,
+pub struct Playback {
+    pub cm: CModel,
+    pub pres: Presentation,
     pub projector: Projector,
     pub medium: Medium,
     pub runs: Vec<RunVersion>,
@@ -166,22 +166,21 @@ pub fn reading_time(text: &str) -> f64 {
     (text.split_whitespace().count() as f64 * 0.4).max(2.0)
 }
 
-struct Player<'a, 'b> {
-    pb: Playback<'a>,
+struct Player {
+    pb: Playback,
     inputs: Vec<(Input, bool)>,
     branches: usize,
     lesson: usize,
     open: Segment,
-    _p: std::marker::PhantomData<&'b ()>,
 }
 
-impl Player<'_, '_> {
+impl Player {
     fn cm(&self) -> &CModel {
-        self.pb.cm
+        &self.pb.cm
     }
 
     fn num(&mut self, e: &prismal_ir::Expr) -> f64 {
-        match number(self.pb.cm, e) {
+        match number(&self.pb.cm, e) {
             Ok(x) => x,
             Err(m) => {
                 self.pb.diagnostics.push(m);
@@ -307,7 +306,7 @@ impl Player<'_, '_> {
             TAction::Show { view, reps } => {
                 let ctx = self.pb.projector.ctx(view.as_deref());
                 for r in reps {
-                    match compile_rep(self.pb.cm, &ctx, r) {
+                    match compile_rep(&self.pb.cm, &ctx, r) {
                         Ok(c) => self.pb.shown.push(Shown { from: p, until: f64::INFINITY, view: view.clone(), rep: c, reveal: None }),
                         Err(d) => self.pb.diagnostics.extend(d.into_iter().map(|x| x.to_string())),
                     }
@@ -327,7 +326,7 @@ impl Player<'_, '_> {
                 let d = duration.as_ref().map(|d| self.num(d)).unwrap_or(1.0);
                 let ctx = self.pb.projector.ctx(view.as_deref());
                 for r in reps {
-                    match compile_rep(self.pb.cm, &ctx, r) {
+                    match compile_rep(&self.pb.cm, &ctx, r) {
                         Ok(c) => self.pb.shown.push(Shown { from: p, until: f64::INFINITY, view: view.clone(), rep: c, reveal: Some((*style, d)) }),
                         Err(e) => self.pb.diagnostics.extend(e.into_iter().map(|x| x.to_string())),
                     }
@@ -338,7 +337,7 @@ impl Player<'_, '_> {
                 let d = duration.as_ref().map(|d| self.num(d)).unwrap_or(1.0);
                 let z = zoom.as_ref().map(|z| self.num(z));
                 let c = match (center, self.pb.projector.ctx(Some(view))) {
-                    (Some(e), ViewCtx::Spatial { space, .. }) => match prismal_kernel::compile_expr(self.pb.cm, e, Some(&prismal_ir::Type::Point { space })) {
+                    (Some(e), ViewCtx::Spatial { space, .. }) => match prismal_kernel::compile_expr(&self.pb.cm, e, Some(&prismal_ir::Type::Point { space })) {
                         Ok((ce, _)) => Some(ce),
                         Err(ds) => {
                             self.pb.diagnostics.extend(ds.iter().map(|x| x.to_string()));
@@ -456,7 +455,7 @@ impl Player<'_, '_> {
             }
         };
         for c in controls {
-            match compile_rep(self.pb.cm, &ViewCtx::Panel, c) {
+            match compile_rep(&self.pb.cm, &ViewCtx::Panel, c) {
                 Ok(cr) => self.pb.shown.push(Shown { from: p, until: end, view: None, rep: cr, reveal: None }),
                 Err(d) => self.pb.diagnostics.extend(d.into_iter().map(|x| x.to_string())),
             }
@@ -483,7 +482,7 @@ fn describe(i: &LearnerInput) -> String {
 }
 
 /// Plays a presentation's timeline over a lesson run configured by `base` (PK-9.5).
-pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Medium, inputs: Vec<Input>) -> Result<Playback<'a>, Vec<PDiag>> {
+pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Medium, inputs: Vec<Input>) -> Result<Playback, Vec<PDiag>> {
     let pres = prog.presentation(presentation);
     let cm = prog.model(&pres.model);
     let projector = Projector::new(cm, pres)?;
@@ -495,8 +494,8 @@ pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Med
     let mut inputs: Vec<(Input, bool)> = inputs.into_iter().map(|i| (i, false)).collect();
     inputs.sort_by(|a, b| a.0.at.total_cmp(&b.0.at));
     let pb = Playback {
-        cm,
-        pres,
+        cm: cm.clone(),
+        pres: pres.clone(),
         projector,
         medium,
         runs: vec![RunVersion { lineage: "lesson".into(), config: base, run: lesson }],
@@ -516,7 +515,7 @@ pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Med
         end: 0.0,
     };
     // The lesson starts holding at t0 (PK-8.2).
-    let mut pl = Player { pb, inputs, branches: 0, lesson: 0, open: Segment { p0: 0.0, p1: f64::NAN, run: 0, s0: t0, rate: 0.0 }, _p: Default::default() };
+    let mut pl = Player { pb, inputs, branches: 0, lesson: 0, open: Segment { p0: 0.0, p1: f64::NAN, run: 0, s0: t0, rate: 0.0 } };
     let mut p = 0.0;
     for b in tl.scenes.iter().flat_map(|s| &s.beats) {
         let start = p;
@@ -544,7 +543,7 @@ pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Med
     Ok(pl.pb)
 }
 
-impl Playback<'_> {
+impl Playback {
     pub fn beat(&self, name: &str) -> &BeatTime {
         self.beats.iter().find(|b| b.name == name || b.id == name).unwrap_or_else(|| panic!("no beat {name}"))
     }
@@ -576,7 +575,7 @@ impl Playback<'_> {
         let v = &self.runs[ri];
         let vals: Vec<Value> = v.run.state_at(t);
         let extra: Vec<(Option<Id>, CRep)> = self.shown.iter().filter(|s| s.from <= p && p < s.until).map(|s| (s.view.clone(), s.rep.clone())).collect();
-        let (mut views, mut overlay) = self.projector.frame(self.cm, &v.run, &vals, t, &extra);
+        let (mut views, mut overlay) = self.projector.frame(&self.cm, &v.run, &vals, t, &extra);
         // Hidden representations: gone after their fade, fading during it.
         // Members of groups are found by the same rules (D-043).
         let gone: Vec<&Id> = self.hidden.iter().filter(|h| h.1 + h.2 <= p).map(|h| &h.0).collect();

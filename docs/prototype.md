@@ -13,7 +13,8 @@ The first implementation of Prismal's core semantics, built kernel-first (D-002)
 | `crates/prismal-kernel` | `01-model-kernel.md` | Type and dimension checking with expected-type propagation (D-030, D-032), static diagnostics MK-E01 to MK-E22, dependency analysis, compilation, evaluation with statuses |
 | `crates/prismal-syntax` | `docs/syntax-study/working-syntax.md`, `04-ir.md` | Lexer, parser to a syntax tree, lowering of spaces, models, presentations and runs to the IR with a source map, located diagnostics |
 | `crates/prismal-present` | `03-presentation-kernel.md`, `04-ir.md` section 7 | Presentation checks, observation, expectations, projection and frame descriptions, interaction, the explanation timeline |
-| `crates/prismal-web` and `web/` | D-018, `03-presentation-kernel.md` section 12 | The web player: the presentation kernel compiled to WebAssembly and a browser front end that renders frame descriptions |
+| `crates/prismal-host` | `05-host-interface.md` | The host interface: an engine of documents (from text or the IR, updated with identities kept) and instances (sessions and lessons), with a Rust API and the JSON protocol |
+| `crates/prismal-web` and `web/` | D-018, `03-presentation-kernel.md` section 12 | The web player: the host interface compiled to WebAssembly and a browser front end that renders frame descriptions |
 | `crates/prismal-runtime` | `02-runtime-contract.md` | Runs, `dopri5` and `rk4` with dense output, crossing detection and location, event iteration in superdense time, Zeno detection, constraints and equation checks, interventions and requests, time events, observation, an interactive session with undo and redo |
 
 The reference programs are in `crates/prismal-runtime/tests/common/mod.rs`, each mirroring its working-syntax text in `docs/spec/reference-programs/`. Each program has its own test file.
@@ -117,16 +118,30 @@ An interactive session has a display clock (RC section 12): its run is computed 
 | `prismal-present/tests/rp08.rs` | RP-08 cases A (keep), B (no keep), C (video) and D (restricted), E1 to E16, including bit-identical landings on replay, captions, announcements, two identical exports, and the fallback report |
 | `prismal-present/tests/checks.rs` | PK-E01 to PK-E06 on edits of RP-06, RP-07 and RP-08 |
 
-## Web player
+## Host interface
 
-`crates/prismal-web` wraps the presentation kernel for a browser (D-018); `web/` renders what it returns. Build and run instructions are in `web/README.md`.
+`crates/prismal-host` implements `docs/spec/05-host-interface.md` (D-044, D-045): the interface through which any system embeds Prismal.
 
 | Part | Content |
 |---|---|
-| `Player` (`prismal-web/src/lib.rs`) | compiles source text or a Markdown document, located diagnostics (parser, kernel and presentation checks mapped through the source map), a catalogue of presentations and cases, opening a presentation as a lesson or an interactive session, layout (views, coordinate systems, content extent, beats, captions, explore windows), frame descriptions, observations as text, gestures, lesson inputs, cases |
+| `Engine` (`lib.rs`) | documents and instances by handle; `load`, `open`, `close`; `handle`, the JSON protocol (HI-6.2) with `capabilities` and the interface diagnostics HI-E01 to HI-E03 |
+| `Document` (`document.rs`) | a program from source text, a Markdown document or the IR; loaded with its check diagnostics (by identity, located when from text); `update` with identities kept by `reconcile` and spans following them; `rename` keeping identity; IR, canonical text, catalogue, cases |
+| `Instance` (`instance.rs`) | a presentation opened as a lesson or an interactive session: layout (views, coordinate systems, content extent, beats, captions, explore windows), frame descriptions with labels, drag parts, control symbols and units and MathML, observations as text, gestures, lesson inputs |
 | `mathml` | formulas typeset as MathML from the IR (D-034): fractions, powers, roots, components as subscripts, function application, display symbols, units |
+
+Sessions and playbacks own their compiled model and presentation, and documents share their checked program with their instances by reference count, so closing a document or an instance frees it (HI-2.2); before, the web player kept every loaded program for the life of the page.
+
+Acceptance (`prismal-host/tests/protocol.rs`): capabilities and malformed requests; a document from text and the same document from its IR give the same catalogue, canonical text and frames; located syntax and check diagnostics; a tool rename kept through a later text update, with spans following; a plain-text rename that breaks references refused with the document unchanged; removed identities reported; an interactive session (seek, control, undo) and a lesson (refused and accepted explore input, continue, the second drop from 20 m); inputs of the wrong mode refused (HI-E03); programs freed when their instances and documents close.
+
+## Web player
+
+`crates/prismal-web` is the reference web host (D-018): the host interface compiled to WebAssembly; `web/` renders what it returns. Build and run instructions are in `web/README.md`.
+
+| Part | Content |
+|---|---|
+| `Player` (`prismal-web/src/lib.rs`) | one document and one instance, as the reference renderer uses them; source diagnostics as line and column |
 | `examples` | the reference programs embedded from their documents at build time, assembled as the acceptance tests read them |
-| `wasm` | JavaScript bindings (`wasm-bindgen`); values cross as JSON strings |
+| `wasm` | JavaScript bindings (`wasm-bindgen`): `WebPlayer` for the reference renderer, and `Engine`, the host protocol for any web host; values cross as JSON strings |
 | `web/player.js` | spatial views as SVG in view coordinates (grid and axes with ticks in metres, zoom and pan when permitted), plot views as SVG with their ranges, panels and overlays as HTML (sliders, number inputs, toggles, MathML formulas with live values, labels), drags with pointer capture, keyboard operation, lesson transport, captions, announcements, text alternatives |
 
 A lesson is replayed from the learner's recorded inputs whenever one is added (`timeline::play` with the inputs), which the determinism of playback (PK-8.7) makes safe: frames before the new input are unchanged, which a test checks. Zoom, pan, pause and seeking are the renderer's; they never reach the model.
@@ -216,3 +231,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 `button`, `equation`, `table`, `polyline`, `polygon`; `hide`; a series observation compared with a list (`drops == []`).
 - 2026-09-30 animations as named effects (D-042): `reveal`, `hide ... for`, `camera`.
 - 2026-09-30 `group` (D-043), with members placed in model space; frame tests of the animations; the web player's animations checked in headless Edge.
+- 2026-09-30 host interface (`prismal-host`, D-044, D-045): the web player's logic moved into an engine any host embeds; sessions and playbacks own their model; the JSON protocol exported to JavaScript.

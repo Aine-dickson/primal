@@ -94,3 +94,20 @@ impl WebPlayer {
         s(self.0.locate(element))
     }
 }
+
+/// The host interface's engine (D-045) for any web host: one JSON request in, one JSON
+/// response out (`docs/spec/05-host-interface.md`, HI-6.2, HI-6.3).
+#[wasm_bindgen]
+pub struct Engine(prismal_host::Engine);
+
+#[wasm_bindgen]
+impl Engine {
+    #[wasm_bindgen(constructor)]
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Engine {
+        Engine(prismal_host::Engine::new())
+    }
+    pub fn handle(&mut self, request: &str) -> String {
+        self.0.handle(request)
+    }
+}

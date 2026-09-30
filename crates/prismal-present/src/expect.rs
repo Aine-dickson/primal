@@ -19,15 +19,15 @@ pub struct ExpectResult {
     pub message: String,
 }
 
-pub struct CaseReport<'a> {
+pub struct CaseReport {
     pub case: Id,
     pub results: Vec<ExpectResult>,
     /// The run the expectations read (for a lesson, the run current at its end).
     pub run: Option<Run>,
-    pub playback: Option<Playback<'a>>,
+    pub playback: Option<Playback>,
 }
 
-impl CaseReport<'_> {
+impl CaseReport {
     pub fn failures(&self) -> Vec<&ExpectResult> {
         self.results.iter().filter(|r| !r.pass).collect()
     }
@@ -41,7 +41,7 @@ enum Got {
 struct Cx<'a, 'b> {
     cm: &'a CModel,
     run: &'b Run,
-    playback: Option<&'b Playback<'a>>,
+    playback: Option<&'b Playback>,
     pres: Option<&'a prismal_ir::present::Presentation>,
 }
 
@@ -50,7 +50,7 @@ impl Cx<'_, '_> {
         match s {
             Subject::Observation { observation, index } => {
                 let o = self.pres.and_then(|p| p.observations.iter().find(|o| &o.id == observation)).ok_or(format!("unknown observation `{observation}`"))?;
-                let data = observe(self.cm, self.run, o, &self.run.config.log)?;
+                let data = observe(&self.cm, self.run, o, &self.run.config.log)?;
                 match (data, index) {
                     (Data::Value(v), None) => Ok(Got::Values(flat(&v))),
                     (Data::Series(s), Some(k)) => s.get(k - 1).map(|x| Got::Values(flat(&x.1))).ok_or(format!("`{}` has {} values, not {k}", o.name, s.len())),
@@ -83,7 +83,7 @@ impl Cx<'_, '_> {
             },
             Check::Within { subject, lo, hi, lo_closed, hi_closed } => {
                 let Got::Values(v) = self.subject(subject)? else { return Err("not a value".into()) };
-                let (a, b) = (number(self.cm, lo)?, number(self.cm, hi)?);
+                let (a, b) = (number(&self.cm, lo)?, number(&self.cm, hi)?);
                 let x = *v.first().ok_or("no value")?;
                 let ok = (if *lo_closed { x >= a } else { x > a }) && (if *hi_closed { x <= b } else { x < b });
                 if ok {
@@ -96,8 +96,8 @@ impl Cx<'_, '_> {
                 // A series compared with a list is compared as a whole: `drops == []`.
                 if let (Subject::Observation { observation, index: None }, Operand::List { items }) = (subject, expected) {
                     let o = self.pres.and_then(|p| p.observations.iter().find(|o| &o.id == observation)).ok_or(format!("unknown observation `{observation}`"))?;
-                    if let Data::Series(series) = observe(self.cm, self.run, o, &self.run.config.log)? {
-                        return series_list(self.cm, &series, items, tolerance);
+                    if let Data::Series(series) = observe(&self.cm, self.run, o, &self.run.config.log)? {
+                        return series_list(&self.cm, &series, items, tolerance);
                     }
                 }
                 let got = self.subject(subject)?;
@@ -106,14 +106,14 @@ impl Cx<'_, '_> {
                     (Got::Data(_), _) => Err("a log is compared with a list".into()),
                     (Got::Values(g), Operand::List { .. }) => Err(format!("{g:?} is not a list")),
                     (Got::Values(g), Operand::Value { expr }) => {
-                        let mut w = flat(&constant(self.cm, expr)?);
+                        let mut w = flat(&constant(&self.cm, expr)?);
                         if w == [0.0] && g.len() > 1 {
                             w = vec![0.0; g.len()]; // `0` is the zero vector (D-030)
                         }
-                        compare(self.cm, &g, &w, tolerance)
+                        compare(&self.cm, &g, &w, tolerance)
                     }
                     (Got::Values(g), Operand::Subject { subject }) => match self.subject(subject)? {
-                        Got::Values(w) => compare(self.cm, &g, &w, tolerance),
+                        Got::Values(w) => compare(&self.cm, &g, &w, tolerance),
                         Got::Data(_) => Err("a value is compared with a log".into()),
                     },
                 }
@@ -187,7 +187,7 @@ fn compare(cm: &CModel, g: &[f64], w: &[f64], tol: &Tolerance) -> Result<(), Str
 }
 
 /// Runs a case and evaluates its expectations.
-pub fn run_case<'a>(prog: &'a Program, case: &RunCase) -> Result<CaseReport<'a>, String> {
+pub fn run_case<'a>(prog: &'a Program, case: &RunCase) -> Result<CaseReport, String> {
     let cm = prog.model(&case.model);
     let pres = case.presentation.as_ref().map(|p| prog.presentation(p));
     let lesson = pres.is_some_and(|p| p.timeline.is_some());

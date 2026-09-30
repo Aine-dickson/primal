@@ -11,7 +11,7 @@ use prismal_present::timeline::ease;
 use prismal_present::Program;
 use prismal_runtime::Config;
 
-fn lab<'a>(prog: &'a Program, name: &str) -> Interactive<'a> {
+fn lab<'a>(prog: &'a Program, name: &str) -> Interactive {
     Interactive::new(prog, name, Config::until(60.0)).unwrap_or_else(|d| panic!("{d:?}"))
 }
 

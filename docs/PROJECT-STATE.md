@@ -3,7 +3,7 @@
 **Read this first.** This file is the entry point for anyone resuming work on Prismal, in a new session or years later. It records where the project stands, what is decided, and what comes next. Update it at the end of every working session.
 
 - **Last updated:** 2026-09-30
-- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Syntax study done (`docs/syntax-study/`); D-028 accepted with amendment; working syntax written (`docs/syntax-study/working-syntax.md`); specification and reference programs converted to it; syntax study findings resolved (D-029 to D-034). Keyword pass (D-035), IR identities and comments (D-036), IR format (`docs/spec/04-ir.md`, D-037). Rust kernel prototype running the reference programs (`crates/`, `docs/prototype.md`); D-038 raised by it. Text parser for the working syntax (`crates/prismal-syntax`): reads all eight reference programs from their documents and lowers them to the IR; D-039 and D-040 raised by it. Presentation prototype (`crates/prismal-present`) with the presentation and run IR (04-ir section 7): every expectation of RP-01 to RP-08 is checked. Web player (D-018): the presentation kernel compiled to WebAssembly (`crates/prismal-web`) with a browser renderer (`web/`); RP-06 to RP-08 run interactively in a browser. Dynamic interactive sessions with a display clock, `trace` and `series_plot`; lab presentations for RP-01, RP-03, RP-04 and RP-05 play in the player. Animations (D-042) and groups (D-043) implemented and checked in a browser.
+- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Syntax study done (`docs/syntax-study/`); D-028 accepted with amendment; working syntax written (`docs/syntax-study/working-syntax.md`); specification and reference programs converted to it; syntax study findings resolved (D-029 to D-034). Keyword pass (D-035), IR identities and comments (D-036), IR format (`docs/spec/04-ir.md`, D-037). Rust kernel prototype running the reference programs (`crates/`, `docs/prototype.md`); D-038 raised by it. Text parser for the working syntax (`crates/prismal-syntax`): reads all eight reference programs from their documents and lowers them to the IR; D-039 and D-040 raised by it. Presentation prototype (`crates/prismal-present`) with the presentation and run IR (04-ir section 7): every expectation of RP-01 to RP-08 is checked. Web player (D-018): the presentation kernel compiled to WebAssembly (`crates/prismal-web`) with a browser renderer (`web/`); RP-06 to RP-08 run interactively in a browser. Dynamic interactive sessions with a display clock, `trace` and `series_plot`; lab presentations for RP-01, RP-03, RP-04 and RP-05 play in the player. Animations (D-042) and groups (D-043) implemented and checked in a browser. Host interface (D-044, D-045, `docs/spec/05-host-interface.md`): any system embeds Prismal through the `prismal-host` engine, as a Rust API or one JSON protocol; the web player is one host of it.
 
 ## What Prismal is
 
@@ -24,8 +24,9 @@ self-study, deep study, and syllabus-based educational content creation.
 | `docs/decisions/divergence-register.md` | Every departure from the exploration record, with reasons and status | Living, authoritative |
 | `docs/spec/` | Core semantics specification (model kernel, runtime contract and presentation kernel v0 drafts) | Living, normative |
 | `docs/spec/04-ir.md` | Semantic IR format (JSON, D-037) | Living, normative |
+| `docs/spec/05-host-interface.md` | Host interface: how any system embeds Prismal (D-044, D-045) | Living, normative |
 | `docs/prototype.md` | Rust kernel prototype: structure, coverage of the reference programs, measured accuracy, gaps | Living |
-| `crates/` | Prototype source: `prismal-ir`, `prismal-kernel`, `prismal-runtime`, `prismal-syntax` (text parser), `prismal-present` (presentation kernel and timeline), `prismal-web` (web player logic and WASM bindings); `cargo test` runs the reference programs, from the IR API and from their text | Living |
+| `crates/` | Prototype source: `prismal-ir`, `prismal-kernel`, `prismal-runtime`, `prismal-syntax` (text parser), `prismal-present` (presentation kernel and timeline), `prismal-host` (host interface: engine, documents, instances, JSON protocol), `prismal-web` (WASM bindings and the reference player); `cargo test` runs the reference programs, from the IR API and from their text | Living |
 | `web/` | Web player front end; build and run in `web/README.md` | Living |
 | `docs/guide/` | Learn Prismal: a guide to writing programs in the working syntax, chapters 1 to 8 and a reference card; every program in it is compiled and its cases run by `cargo test` | Living |
 | `docs/syntax-study/` | Syntax study (D-006): candidates A, B, C with all reference programs, comparison, specification findings S-1 to S-12 | Study record, non-normative |
@@ -86,6 +87,8 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-041:** `on(E)` is due at the microstep after `E` occurs or is emitted.
 - **D-040:** only the words of the model language, expressions and top-level items are reserved; presentation, timeline and run words are contextual keywords (`process drag`, `view scene` are valid).
 - **D-043:** `group(at: P, rotate: θ, scale: k) { members }` places its members by a shared rigid transform with scale, applied in model space, so text alternatives stay in the view's space.
+- **D-044 (owner):** Prismal is a general embeddable system; Mava Studio is one consumer (its new architecture is undecided), and other organizations may integrate Prismal into their systems. No interface assumes a particular host.
+- **D-045:** the host interface: an engine of documents and instances by handle, offered as a Rust API and as one JSON protocol carried unchanged by every binding (WebAssembly now; a C ABI or a standard-input process when a host needs one). Documents load from text or the IR and update by whole replacement with identities kept.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
@@ -96,11 +99,12 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 
 **Next session starts here:** (handover written 2026-09-30.)
 
-1. Mava Studio groundwork (D-019): an editor protocol over the IR. Edit operations (insert, remove, change an element, `rename`), each answered with the reconciled IR (`reconcile`, D-036), diagnostics located by identity, and the canonical text (`format`). Start with a short design note and a register entry; the prototype can live in `prismal-syntax` or a new crate, tested natively like `prismal-web`.
-2. The general `animate` (D-042 option 1) only when a program needs it; drags on members of a group (D-043, PK-E06 in the prototype) when a program needs one.
-3. The owner reviews by learning the language from `docs/guide/` and writing programs (see Working process). Keep the guide in step with every language change; `prismal-web/tests/guide.rs` enforces that its programs compile and pass.
+1. Mava Studio is not designed yet (D-044): do not design for it. Integration work goes into the general host interface (`docs/spec/05-host-interface.md`), driven by what any host needs.
+2. Host interface follow-ups, when a host needs them: a C ABI (`prismal-ffi`) or a process speaking the protocol on standard input and output (HI-6.4); fine-grained edit operations (D-045 option 2); introspection for editors (the bindings, types, units and representations available for a value, D-019) as protocol operations.
+3. Language and runtime items still open (`docs/prototype.md`, "Not implemented"): declared functions and enumerations, inputs (`on input`), backward seek within a run, event payloads. Each makes the IR more complete for every host.
+4. The owner reviews by learning the language from `docs/guide/` and writing programs (see Working process). Keep the guide in step with every language change; `prismal-web/tests/guide.rs` enforces that its programs compile and pass.
 
-How to verify the state quickly: `cargo test` at the root (79 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`.
+How to verify the state quickly: `cargo test` at the root (84 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`.
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances confirmed by the prototype and fixed.
@@ -115,7 +119,8 @@ How to verify the state quickly: `cargo test` at the root (79 tests pass as of t
 11. Representations `button`, `equation`, `table`, `polyline`, `polygon` and the action `hide`: done.
 12. Animations as named effects (D-042): `reveal`, `hide ... for`, `camera`; frame values tested, renderer checked in a browser.
 13. Groups (D-043): done, with a guide section (chapter 7, a rolling wheel).
-14. Next: see Next steps.
+14. Host interface (D-044, D-045): specified and implemented (`prismal-host`), exported to JavaScript.
+15. Next: see Next steps.
 
 ## Session log
 
@@ -137,6 +142,7 @@ How to verify the state quickly: `cargo test` at the root (79 tests pass as of t
 | 2026-09-30 | Representations `button` (requests an `on request` event), `equation` (typeset model equation, live values), `table` (sampled rows), `polyline`, `polygon`; timeline action `hide`; IR `element` argument; a series observation compared with a list. RP-05's lab shows its checked equation; guide chapter 8 gains a drop lab with a button and a table. |
 | 2026-09-30 | Animations (D-042): `reveal fade|draw`, `hide name for d`, `camera view to P zoom z` in syntax, IR, formatter, identity matching, lesson player (opacity, draw fraction, camera with easing) and web renderer; guide chapter 8 `DropMovie` with timed cases. Handover written in Next steps. |
 | 2026-09-30 | Frame tests for the animations (`DropMovie`: fade and draw fractions, camera blend, zoom and following, hide); the web renderer checked against them in headless Edge. `group` (D-043): syntax, IR `members`, formatter, identity matching, placement in model space with nested groups, timeline actions on members, text alternatives, diagnostics, web rendering; the view extent now covers polygons and groups. Guide chapter 7 gains Groups (a rolling wheel with a cycloid trace). |
+| 2026-09-30 | Owner direction D-044: Prismal is general and embeddable, Mava Studio one consumer with an undecided architecture. Host interface specified (`docs/spec/05-host-interface.md`, D-045) and implemented as `prismal-host`: engine with handles, documents from text or IR with identities kept across updates and renames, instances of sessions and lessons, the JSON protocol with HI-E01 to HI-E03, `capabilities`. Sessions and playbacks now own their model, so closed documents are freed. `prismal-web` reduced to the WASM bindings (`WebPlayer`, `Engine`) and the reference player, checked unchanged in headless Edge. |
 
 ## Working process
 

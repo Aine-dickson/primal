@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/prismal-ir", "crates/prismal-kernel", "crates/prismal-runtime", "crates/prismal-syntax", "crates/prismal-present", "crates/prismal-web"]
+members = ["crates/prismal-ir", "crates/prismal-kernel", "crates/prismal-runtime", "crates/prismal-syntax", "crates/prismal-present", "crates/prismal-host", "crates/prismal-web"]
 
 [workspace.package]
 edition = "2021"

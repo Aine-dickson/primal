@@ -276,6 +276,12 @@ fn reorder(doc: &mut Document, prev: &Document) {
 /// restores `prev`'s order. Elements `prev` does not have keep their path identities (made
 /// unique if a renamed element already holds one) and are appended.
 pub fn reconcile(new: Document, prev: &Document) -> Document {
+    reconcile_map(new, prev).0
+}
+
+/// [`reconcile`], also answering each identity of `new` that changed and the identity it
+/// took, so that data keyed by identity (a source map) can follow (HI-3.2).
+pub fn reconcile_map(new: Document, prev: &Document) -> (Document, HashMap<Id, Id>) {
     let mut map = match_ids(&new, prev);
     // An unmatched element whose path identity is held by another element of `prev` (one
     // renamed by a tool) gets a fresh identity.
@@ -302,7 +308,7 @@ pub fn reconcile(new: Document, prev: &Document) -> Document {
     remap(&mut v, &map);
     let mut doc: Document = serde_json::from_value(v).expect("remapped IR deserializes");
     reorder(&mut doc, prev);
-    doc
+    (doc, map)
 }
 
 /// Renames an element, keeping its identity: every reference, being by identity, follows.

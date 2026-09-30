@@ -66,9 +66,11 @@ pub fn si_literal(v: f64, ty: &Type) -> Expr {
 /// The session's run is computed to the configuration's end. `t` is the simulation instant
 /// on display (RC section 12): frames show it, and the learner's actions take effect at it
 /// (RC-11.2); the trajectory after it is recomputed. A static model has one instant.
-pub struct Interactive<'a> {
-    pub cm: &'a CModel,
-    pub pres: &'a Presentation,
+pub struct Interactive {
+    /// The model and presentation, owned so that an instance outlives its program's
+    /// document (HI-2.2).
+    pub cm: CModel,
+    pub pres: Presentation,
     pub projector: Projector,
     pub session: Session,
     /// The simulation instant on display.
@@ -81,11 +83,11 @@ pub struct Interactive<'a> {
     pub last_previews: Vec<Preview>,
 }
 
-impl<'a> Interactive<'a> {
-    pub fn new(prog: &'a Program, presentation: &str, cfg: Config) -> Result<Interactive<'a>, Vec<PDiag>> {
-        let pres = prog.presentation(presentation);
-        let cm = prog.model(&pres.model);
-        let projector = Projector::new(cm, pres)?;
+impl Interactive {
+    pub fn new(prog: &Program, presentation: &str, cfg: Config) -> Result<Interactive, Vec<PDiag>> {
+        let pres = prog.presentation(presentation).clone();
+        let cm = prog.model(&pres.model).clone();
+        let projector = Projector::new(&cm, &pres)?;
         let session = Session::new(cm.clone(), cfg.clone());
         let t = cfg.t0;
         Ok(Interactive { cm, pres, projector, session, t, cfg, drag: None, reports: vec![], last_previews: vec![] })
@@ -316,7 +318,7 @@ impl<'a> Interactive<'a> {
         let run = &self.session.current;
         let t = t.clamp(self.cfg.t0, run.end_time());
         let vals = run.state_at(t);
-        let (views, overlay) = self.projector.frame(self.cm, run, &vals, t, &[]);
+        let (views, overlay) = self.projector.frame(&self.cm, run, &vals, t, &[]);
         Frame { time: t, run: "session".into(), t, views, overlay, captions: vec![], announcements: vec![] }
     }
 
@@ -329,7 +331,7 @@ impl<'a> Interactive<'a> {
         };
         let t = self.t.min(run.end_time());
         let vals = run.state_at(t);
-        let (mut views, overlay) = self.projector.frame(self.cm, run, &vals, t, &[]);
+        let (mut views, overlay) = self.projector.frame(&self.cm, run, &vals, t, &[]);
         if let Some(d) = &self.drag {
             for r in views.iter_mut().flat_map(|v| v.reps.iter_mut()).filter(|r| r.id == d.rep) {
                 r.valid = valid;
@@ -341,7 +343,7 @@ impl<'a> Interactive<'a> {
     /// The current data of an observation of the presentation.
     pub fn observe(&self, name: &str) -> Result<Data, String> {
         let o = self.pres.observations.iter().find(|o| o.name == name).ok_or(format!("no observation `{name}`"))?;
-        observe(self.cm, &self.session.current, o, self.session.log())
+        observe(&self.cm, &self.session.current, o, self.session.log())
     }
 }
 

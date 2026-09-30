@@ -33,6 +33,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "prismal-host"
+version = "0.1.0"
+dependencies = [
+ "prismal-ir",
+ "prismal-kernel",
+ "prismal-present",
+ "prismal-runtime",
+ "prismal-syntax",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "prismal-ir"
 version = "0.1.0"
 dependencies = [
@@ -82,6 +95,7 @@ dependencies = [
 name = "prismal-web"
 version = "0.1.0"
 dependencies = [
+ "prismal-host",
  "prismal-ir",
  "prismal-kernel",
  "prismal-present",

@@ -63,6 +63,8 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-041 | `on(E)` follows an occurrence of `E` as well as an emission | Accepted |
 | D-042 | Animations in v0: named effects (`reveal`, `hide ... for`, `camera`) | Accepted |
 | D-043 | `group`: members placed by a shared rigid transform with scale, applied in model space | Accepted |
+| D-044 | Prismal is a general embeddable system; Mava Studio is one consumer among others | Accepted |
+| D-045 | Host interface: an engine with handles, a Rust API and one JSON protocol offered by every binding | Accepted |
 
 ---
 
@@ -374,7 +376,9 @@ The exploration documents are frozen. They are not edited to reflect later decis
   - Text and editor should be two views of the same model. Round-tripping between them is a design goal to evaluate in the syntax study (D-006).
   - Kernel APIs should expose what an editor needs: introspection of bindings, types, units, dependencies, diagnostics, and the representations available for a value.
   - The web player (D-018) should be embeddable in Mava Studio (Tauri renders web content).
-- **History:** 2026-09-29 accepted by the owner: "Mava is going to face a redesign soon, and chances are that that's where most non programmers will be reconciled from. This initiative is one of the prerequisites of the redevelopment of Mava Studio."
+- **History:**
+  - 2026-09-29 accepted by the owner: "Mava is going to face a redesign soon, and chances are that that's where most non programmers will be reconciled from. This initiative is one of the prerequisites of the redevelopment of Mava Studio."
+  - 2026-09-30 the redesigned Mava Studio's architecture is not decided (Tauri + Vue above describes the current tool). Integration is designed for any host, Mava Studio being one (D-044).
 
 ## D-020: Constraints checked, not enforced, in v1
 
@@ -793,5 +797,35 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 2. `at` is a point of the view's space (default: the group's `origin` stays where it is), `rotate` an angle (default 0, counterclockwise in the model), `scale` a positive number (default 1). A group belongs in a spatial view and holds markers, arrows, segments, polylines, polygons and groups; a sampled representation (`trace`) is drawn from a model point outside the group, since it samples over time while the transform is taken at the instant shown. Members may be named and targeted by timeline actions; `reveal draw` of a group draws its paths and fades in its markers. A drag on a member (an inverse through the transform) is specified by composing the member's inverse with the inverse transform, but not implemented by the prototype (PK-E06).
 - **Reason:** keeps members in the space the view shows, so text alternatives, frame values and tests agree with the model; reads as the placement of a body; covers rigid bodies with no new representation kinds.
 - **Consequences:** PK-6.3b; working syntax section 1.2; the IR `members` of a representation (04-ir section 7.1); the frame shape `group` with placed members; the web player draws groups; guide chapter 7 (Groups).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-044: Prismal is a general embeddable system
+
+- **Status:** Accepted
+- **Original position:** D-019 names Mava Studio as the editor for non-programmer authors and asks that the web player be embeddable in it. Nothing said whether Prismal's integration surface is designed for Mava Studio or for any system.
+- **Raised by:** the next step after D-043, "Mava Studio groundwork", which could not be designed without knowing Mava Studio's architecture.
+- **Builds on:** D-018, D-019, D-036, D-037.
+- **Question:** Who is Prismal's integration surface designed for?
+- **Accepted position (owner):** Mava Studio is a consumer of Prismal, and its new architecture is not decided (it will be a Rust stack; authors will work through a graphical interface or code, and output will render inside the studio, probably with the Prismal runtime embedded). Prismal's design is general, so that any system can plug it in and play: other organizations may integrate it into their own systems. No Prismal interface assumes a particular host.
+- **Reason:** the owner's direction; Mava Studio's design is open, and other integrators are expected.
+- **Consequences:** the host interface (`docs/spec/05-host-interface.md`, D-045); the web player becomes one host of that interface; D-019's consequences hold for every host, not only Mava Studio.
+- **History:**
+  - 2026-09-30 stated by the owner: "The design for prismal should simply be general for systems to plug and play since there could be other societies that would need to integrate into there systems not necessarily mava studio."
+
+## D-045: The host interface
+
+- **Status:** Accepted
+- **Original position:** the only integration surface was the web player's `Player` (`prismal-web`): one program from source text, one open presentation, JSON answers shaped for the reference renderer, and each loaded program kept in memory for the life of the page.
+- **Raised by:** D-044.
+- **Builds on:** D-036 (identities and `reconcile`), D-037 (JSON IR), PK-12.1 (frame descriptions), PK-8.7 (deterministic frames).
+- **Question:** What interface do hosts use, and through which bindings?
+- **Options considered:**
+  1. **A Rust library only.** Natural for Rust hosts; every other host (a browser, another language) would need its own wrapper, each exposing something slightly different.
+  2. **An editor protocol of fine-grained edit operations** (insert, move, change a field). Commits Prismal to one style of editor before any editor is designed; a host that edits text or rewrites the IR gains nothing from it.
+  3. **An engine with handles, offered as a Rust API and as one JSON protocol through every binding.** Documents are loaded from text or IR and updated by whole replacement, with identities kept by `reconcile` and an identity-keeping `rename`; presentations open as instances driven by the host's clock and the learner's inputs; answers are layouts, frame descriptions and observations. Bindings (in-process Rust, WebAssembly, later a C ABI or a process on standard input and output) carry the same protocol. Follows the Language Server Protocol and FMI.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30. Fine-grained edit operations (option 2) can be added to the protocol later if a host needs them; whole replacement with `reconcile` serves both text and visual editing now.
+- **Reason:** any host can embed Prismal without Prismal knowing it; one protocol keeps bindings identical; whole-document updates work for editors of any design.
+- **Consequences:** `docs/spec/05-host-interface.md` (HI-1 to HI-6, HI-E01 to HI-E03); the `prismal-host` crate; `prismal-web` reduced to the WebAssembly binding and the reference renderer; sessions and playbacks own their compiled model, so documents can be closed and freed.
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
