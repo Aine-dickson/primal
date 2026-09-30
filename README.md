@@ -60,20 +60,22 @@ Units are checked: writing `der(h) = g` is an error, because a length cannot cha
 ### 3. Run it
 
 ```sh
-cargo run -p prismal-present --example cases -- fall.prismal
+cargo run -p prismal-web --bin prismal -- cases fall.prismal
 ```
 
 Each expectation prints `pass` or `FAIL` with the reason. Errors in the program are printed with their line and column.
 
 ### 4. Run the examples
 
-The examples are the guide's programs and the reference programs (RP-01 to RP-08). A Markdown file with one program works as a program file: its `text` and `cases` blocks are read in order.
+The examples are the reference programs (`rp01` to `rp08`) and every program of the guide. List them, then run the cases of any one by name:
 
 ```sh
-cargo run -p prismal-present --example cases -- docs/guide/04-motion.md
+cargo run -p prismal-web --bin prismal -- list
+cargo run -p prismal-web --bin prismal -- cases rp03
+cargo run -p prismal-web --bin prismal -- cases g9-drops
 ```
 
-Chapters with several programs, and the reference programs, are easiest to run in the web player (next step), where each one is listed separately with a Cases tab. To run one of them from the command line, copy its blocks into a file of its own.
+The same command runs a file: `cases fall.prismal`, or a Markdown file whose `text` and `cases` blocks form one program.
 
 ### 5. See it in the browser
 
