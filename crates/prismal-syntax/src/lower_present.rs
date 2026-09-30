@@ -90,7 +90,10 @@ impl PresCx<'_, '_> {
                     Some(scale) => Arg::Scale { scale },
                     None => continue,
                 },
-                _ => Arg::Expr { expr: self.expr(&a.value) },
+                _ => match &a.every {
+                    Some(dt) => Arg::Sampled { expr: self.expr(&a.value), every: self.expr(dt) },
+                    None => Arg::Expr { expr: self.expr(&a.value) },
+                },
             };
             match &a.name {
                 None => sources.push(value),
@@ -118,7 +121,7 @@ impl PresCx<'_, '_> {
         let kind = match v.kind.text.as_str() {
             "spatial" => {
                 let space = match v.args.first() {
-                    Some(ast::Arg { name: None, value: ast::Expr { kind: ExprKind::Name(s), span } }) => match self.cx.space_by_name(s) {
+                    Some(ast::Arg { name: None, value: ast::Expr { kind: ExprKind::Name(s), span }, every: None }) => match self.cx.space_by_name(s) {
                         Some(id) => id,
                         None => {
                             self.err("SX-E03", format!("unknown space `{s}`"), *span);

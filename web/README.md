@@ -23,8 +23,9 @@ Then open `http://localhost:8000/`. A reference program can be chosen in the add
 | Presentation | Mode | The learner can |
 |---|---|---|
 | With a timeline (RP-08) | lesson | play, pause, seek by time or beat, change speed; in explore beats use the declared controls and continue; restart without inputs; choose the video medium, where explore beats play their fallbacks (PK-9.10); zoom and pan where the presentation permits them |
-| With views, no timeline (RP-06, RP-07) | interactive | use controls, drag representations that declare an inverse (previews marked valid or invalid, the runtime's reason shown), move them with the arrow keys (PK-11.2a), undo and redo |
-| Without views (RP-01 to RP-05) | - | run the program's cases in the Cases tab |
+| With views, no timeline, dynamic model (the labs of RP-01 to RP-05) | session | play, pause, seek and reset the run; change parameters while it runs (the change applies at the instant shown and the rest of the run is recomputed); undo and redo; a drag pauses the run until it is committed |
+| With views, no timeline, static model (RP-06, RP-07) | interactive | use controls, drag representations that declare an inverse (previews marked valid or invalid, the runtime's reason shown), move them with the arrow keys (PK-11.2a), undo and redo |
+| Without views (the checks presentations) | - | run the program's cases in the Cases tab |
 
 Every tab works on any program: the Source tab edits and recompiles the program (diagnostics are located in the text), Observations shows the presentation's observations, Cases runs every case headless and reports each expectation, Description lists the text alternatives of the frame shown (PK-11.1). Captions show narration; event occurrences are announced to assistive technology (PK-11.3a).
 
@@ -33,5 +34,5 @@ A lesson is recomputed from the learner's inputs each time one is added. Playbac
 ## Limits
 
 - Loading new source text keeps the previous program in memory until the page is reloaded.
-- Presentations without a timeline open on a session that does not advance in time; a dynamic model is shown at its initial state.
+- A session's run is computed 60 s ahead; each intervention recomputes it from the start.
 - Representations and timeline actions the prototype does not implement are listed in `docs/prototype.md`.

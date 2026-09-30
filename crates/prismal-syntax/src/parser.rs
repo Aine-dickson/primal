@@ -930,7 +930,8 @@ impl<'a> Parser<'a> {
                     None
                 };
                 let value = self.expr()?;
-                out.push(Arg { name, value });
+                let every = if self.eat_word("every") { Some(self.expr()?) } else { None };
+                out.push(Arg { name, value, every });
                 if !self.eat_punct(",") {
                     break;
                 }

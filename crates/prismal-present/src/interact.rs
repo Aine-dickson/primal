@@ -62,11 +62,18 @@ pub fn si_literal(v: f64, ty: &Type) -> Expr {
 }
 
 /// An interactive presentation of a model: one session, its views and its controls.
+///
+/// The session's run is computed to the configuration's end. `t` is the simulation instant
+/// on display (RC section 12): frames show it, and the learner's actions take effect at it
+/// (RC-11.2); the trajectory after it is recomputed. A static model has one instant.
 pub struct Interactive<'a> {
     pub cm: &'a CModel,
     pub pres: &'a Presentation,
     pub projector: Projector,
     pub session: Session,
+    /// The simulation instant on display.
+    pub t: f64,
+    cfg: Config,
     drag: Option<Drag>,
     /// Actions that did not take effect, in order.
     pub reports: Vec<Report>,
@@ -79,8 +86,33 @@ impl<'a> Interactive<'a> {
         let pres = prog.presentation(presentation);
         let cm = prog.model(&pres.model);
         let projector = Projector::new(cm, pres)?;
-        let session = Session::new(cm.clone(), cfg);
-        Ok(Interactive { cm, pres, projector, session, drag: None, reports: vec![], last_previews: vec![] })
+        let session = Session::new(cm.clone(), cfg.clone());
+        let t = cfg.t0;
+        Ok(Interactive { cm, pres, projector, session, t, cfg, drag: None, reports: vec![], last_previews: vec![] })
+    }
+
+    /// The end of the current run: the last instant that can be shown.
+    pub fn end_time(&self) -> f64 {
+        self.session.current.end_time()
+    }
+
+    /// Makes `t` the instant on display (`seek`, and `play` step by step), within the run.
+    /// Returns the instant shown. Never changes the trajectory (RC-12.2).
+    pub fn seek(&mut self, t: f64) -> f64 {
+        self.t = t.clamp(self.cfg.t0, self.end_time());
+        self.t
+    }
+
+    /// A new run with the same configuration and an empty log, shown at `t0` (RC section 12).
+    pub fn reset(&mut self) {
+        self.drag = None;
+        self.session = Session::new(self.cm.clone(), self.cfg.clone());
+        self.t = self.cfg.t0;
+    }
+
+    /// Names of the event occurrences in `(a, b]`, in order (announcements, PK-11.3a).
+    pub fn events_between(&self, a: f64, b: f64) -> Vec<String> {
+        self.session.current.log.iter().filter(|l| l.t > a && l.t <= b).map(|l| l.name.clone()).collect()
     }
 
     fn rep(&self, name: &str) -> Option<(ViewCtx, CRep)> {
@@ -101,7 +133,7 @@ impl<'a> Interactive<'a> {
     }
 
     fn commit(&mut self, action: Action) -> Result<(), Report> {
-        let t = self.session.now();
+        let t = self.t;
         match self.session.commit(t, action) {
             Ok(()) => Ok(()),
             Err(d) => self.report(Why::Rejected, d.message),
@@ -109,8 +141,7 @@ impl<'a> Interactive<'a> {
     }
 
     fn current_value(&self, idx: usize) -> Value {
-        let run = &self.session.current;
-        run.state_at(run.end_time())[idx].clone()
+        self.session.current.state_at(self.t)[idx].clone()
     }
 
     /// Sets a control to a value (a pointer on a slider, a typed number).
@@ -164,7 +195,7 @@ impl<'a> Interactive<'a> {
     /// an arrow's head.
     fn part_position(&self, ctx: &ViewCtx, r: &CRep) -> Option<[f64; 2]> {
         let run = &self.session.current;
-        let t = run.end_time();
+        let t = self.t;
         let vals = run.state_at(t);
         match &r.kind {
             CKind::Marker { pos, .. } => run.eval_state(pos, &vals, t).ok().map(|p| ctx.to_view(&crate::flat(&p))),
@@ -201,7 +232,7 @@ impl<'a> Interactive<'a> {
         let gesture = drag.ctx.pointer(p);
         let ops = inv.proposals.iter().map(|pr| Op::Set { target: Target { binding: pr.target.clone(), component: None }, value: subst(&pr.value, &gesture) }).collect();
         let action = Action::Intervene(ops);
-        let t = self.session.now();
+        let t = self.t;
         let result = self.session.propose(t, action.clone());
         let drag = self.drag.as_mut().unwrap();
         match result {
@@ -268,6 +299,20 @@ impl<'a> Interactive<'a> {
         self.commit(Action::Intervene(ops))
     }
 
+    /// The start of the session's runs.
+    pub fn cfg_t0(&self) -> f64 {
+        self.cfg.t0
+    }
+
+    /// The frame at another instant of the committed run, without changing the display.
+    pub fn frame_at(&self, t: f64) -> Frame {
+        let run = &self.session.current;
+        let t = t.clamp(self.cfg.t0, run.end_time());
+        let vals = run.state_at(t);
+        let (views, overlay) = self.projector.frame(self.cm, run, &vals, t, &[]);
+        Frame { time: t, run: "session".into(), t, views, overlay, captions: vec![], announcements: vec![] }
+    }
+
     /// The frame shown now: the committed state, or during a drag the last valid preview,
     /// with the dragged representation marked valid or invalid (PK-10.6).
     pub fn frame(&self) -> Frame {
@@ -275,7 +320,7 @@ impl<'a> Interactive<'a> {
             Some(d) => (d.last_valid.as_ref().map(|x| &x.1).unwrap_or(&self.session.current), d.previews.last().map(|p| p.valid)),
             None => (&self.session.current, None),
         };
-        let t = run.end_time();
+        let t = self.t.min(run.end_time());
         let vals = run.state_at(t);
         let (mut views, overlay) = self.projector.frame(self.cm, run, &vals, t, &[]);
         if let Some(d) = &self.drag {
@@ -283,7 +328,7 @@ impl<'a> Interactive<'a> {
                 r.valid = valid;
             }
         }
-        Frame { time: 0.0, run: "session".into(), t, views, overlay, captions: vec![], announcements: vec![] }
+        Frame { time: t, run: "session".into(), t, views, overlay, captions: vec![], announcements: vec![] }
     }
 
     /// The current data of an observation of the presentation.
@@ -300,7 +345,7 @@ pub fn keyboard_step(ctx: &ViewCtx, r: &CRep) -> (f64, f64) {
         return (*num, *num);
     }
     match ctx {
-        ViewCtx::Plot { x, y } => ((x.1 - x.0) / 100.0, (y.1 - y.0) / 100.0),
+        ViewCtx::Plot { x, y, .. } => ((x.1 - x.0) / 100.0, (y.1 - y.0) / 100.0),
         _ => (10.0, 10.0),
     }
 }

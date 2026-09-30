@@ -145,6 +145,8 @@ pub enum Arg {
     Range { lo: Expr, hi: Expr },
     Scale { scale: Scale },
     Word { word: String },
+    /// A source sampled over the run: `pos every 0.02 s` (PK-6.3, `trace`, `series_plot`).
+    Sampled { expr: Expr, every: Expr },
 }
 
 /// A declared inverse (PK-5.6): the gesture's value, `{"param": 0}`, gives proposals.

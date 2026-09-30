@@ -26,7 +26,7 @@ use prismal_present::data::Data;
 use prismal_present::expect::run_case;
 use prismal_present::frame::{CKind, CRep, Frame, Shape, ViewCtx};
 use prismal_present::interact::{si_literal, Interactive, Key};
-use prismal_present::text::{fmt_num, fmt_value, print, symbol};
+use prismal_present::text::{fmt_num, fmt_value, print, symbol, unit_text};
 use prismal_present::timeline::{play, Input, Medium, Playback};
 use prismal_present::{Program, LESSON_HORIZON};
 use prismal_runtime::{Action, Config};
@@ -38,6 +38,9 @@ fn located(code: &str, message: &str, span: Option<prismal_syntax::Span>) -> Jso
     let s = span.unwrap_or_default();
     json!({ "code": code, "message": message, "line": s.line, "col": s.col, "start": s.start, "end": s.end })
 }
+
+/// Simulated span of an interactive session of a dynamic model.
+pub const SESSION_HORIZON: f64 = LESSON_HORIZON;
 
 enum Mode {
     Closed,
@@ -117,7 +120,8 @@ impl Player {
             let medium = if video { Medium::Video } else { Medium::Interactive };
             Mode::Lesson(Box::new(Lesson::replay(self.prog, &pres.id, medium, vec![])?))
         } else {
-            let i = Interactive::new(self.prog, &pres.id, Config::until(0.0)).map_err(|ds| pdiags(self.prog, &ds))?;
+            // A dynamic model runs to the session horizon; a static one has one instant.
+            let i = Interactive::new(self.prog, &pres.id, Config::until(SESSION_HORIZON)).map_err(|ds| pdiags(self.prog, &ds))?;
             Mode::Interactive(Box::new(i))
         };
         Ok(self.layout())
@@ -146,7 +150,8 @@ impl Player {
         };
         let cm = self.cm().unwrap();
         let frames: Vec<Frame> = match &self.mode {
-            Mode::Interactive(i) => vec![i.frame()],
+            // The first and last instants: a trace at the end covers the whole path.
+            Mode::Interactive(i) => vec![i.frame_at(i.cfg_t0()), i.frame_at(i.end_time())],
             Mode::Lesson(l) => l.pb.export(10.0),
             Mode::Closed => vec![],
         };
@@ -164,9 +169,10 @@ impl Player {
                         v["axes"] = json!(axes);
                         v["extent"] = json!(extent(frames.iter().flat_map(|f| f.views.iter().filter(|x| &x.id == id)).flat_map(|x| x.reps.iter()).map(|r| &r.shape)));
                     }
-                    ViewCtx::Plot { x, y } => {
+                    ViewCtx::Plot { x, y, dims } => {
                         v["x"] = json!([x.0, x.1]);
                         v["y"] = json!([y.0, y.1]);
+                        v["units"] = json!([unit_text(&dims.0), unit_text(&dims.1)]);
                     }
                     ViewCtx::Panel => {}
                 }
@@ -180,9 +186,56 @@ impl Player {
                 out["mode"] = json!("lesson");
                 out["lesson"] = self.lesson_info(l);
             }
-            _ => out["mode"] = json!("interactive"),
+            Mode::Interactive(i) => {
+                out["mode"] = json!("interactive");
+                out["session"] = self.session_info(i);
+            }
+            Mode::Closed => {}
         }
         out
+    }
+
+    /// The clock of an interactive session: `dynamic` when the model evolves in time, the
+    /// instant shown, the run's span, its diagnostics and the number of interventions.
+    fn session_info(&self, i: &Interactive) -> Json {
+        let run = &i.session.current;
+        json!({
+            "dynamic": !i.cm.is_static,
+            "t": i.t,
+            "t0": run.config.t0,
+            "end": i.end_time(),
+            "interventions": i.session.log().len(),
+            "diagnostics": run.diagnostics.iter().map(|d| d.message.clone()).collect::<Vec<_>>(),
+        })
+    }
+
+    /// Shows simulation instant `t` in an interactive session (play and seek). Returns the
+    /// session's clock.
+    pub fn seek(&mut self, t: f64) -> Json {
+        match &mut self.mode {
+            Mode::Interactive(i) => {
+                i.seek(t);
+            }
+            _ => return Json::Null,
+        }
+        let Mode::Interactive(i) = &self.mode else { unreachable!() };
+        self.session_info(i)
+    }
+
+    /// A new run of the session, with an empty log, at `t0` (RC section 12).
+    pub fn reset(&mut self) -> Json {
+        if let Mode::Interactive(i) = &mut self.mode {
+            i.reset();
+        }
+        self.layout()
+    }
+
+    /// The session's clock after an action (interventions change the run and its span).
+    pub fn session(&self) -> Json {
+        match &self.mode {
+            Mode::Interactive(i) => self.session_info(i),
+            _ => Json::Null,
+        }
     }
 
     fn lesson_info(&self, l: &Lesson) -> Json {
@@ -230,7 +283,13 @@ impl Player {
     pub fn frame(&self, p: f64, dt: f64) -> Json {
         let (frame, formulas): (Frame, Vec<&CRep>) = match &self.mode {
             Mode::Closed => return Json::Null,
-            Mode::Interactive(i) => (i.frame(), i.projector.views.iter().flat_map(|v| v.2.iter()).collect()),
+            Mode::Interactive(i) => {
+                let mut f = i.frame();
+                if dt > 0.0 {
+                    f.announcements = i.events_between(i.t - dt, i.t);
+                }
+                (f, i.projector.views.iter().flat_map(|v| v.2.iter()).collect())
+            }
             Mode::Lesson(l) => (l.pb.frame(p, dt), l.pb.projector.views.iter().flat_map(|v| v.2.iter()).chain(l.pb.shown.iter().map(|s| &s.rep)).collect()),
         };
         let cm = self.cm().unwrap();
@@ -466,6 +525,11 @@ fn enrich(r: &mut Json, cm: &CModel, compiled: &[&CRep]) {
             r["symbol"] = json!(symbol(cm, binding));
             if let Some(u) = cm.ir.binding(binding).and_then(|b| b.display.unit.as_ref()).and_then(|u| prismal_ir::Unit::parse(u).ok()) {
                 r["display_unit"] = json!({ "text": u.text, "scale": u.scale });
+            } else if let Some(prismal_ir::Type::Quantity { dim }) = cm.index.get(binding).map(|&i| &cm.bindings[i].ty) {
+                // The coherent SI unit the control's value is in.
+                if !dim.is_none() {
+                    r["unit"] = json!(unit_text(dim));
+                }
             }
         }
         _ => {}

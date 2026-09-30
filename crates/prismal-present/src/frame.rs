@@ -103,7 +103,8 @@ pub struct Symbol {
 #[derive(Clone, Debug)]
 pub enum ViewCtx {
     Spatial { space: Id, px_per_m: f64, y_up: bool },
-    Plot { x: (f64, f64), y: (f64, f64) },
+    /// Ranges in coherent SI units, and the dimension of each axis (PK-7.3).
+    Plot { x: (f64, f64), y: (f64, f64), dims: (Dim, Dim) },
     Panel,
 }
 
@@ -123,7 +124,15 @@ impl ViewCtx {
             }
             ViewKind::Plot { x, y } => {
                 let n = |e: &Expr| number(cm, e).map_err(|m| err("PK-E02", m));
-                Ok(ViewCtx::Plot { x: (n(&x[0])?, n(&x[1])?), y: (n(&y[0])?, n(&y[1])?) })
+                let dim = |e: &Expr| match compile_expr(cm, e, None) {
+                    Ok((_, Type::Quantity { dim })) => Ok(dim),
+                    _ => Err(err("PK-E04", "a plot axis range is a pair of numbers or quantities: `x: [0 s, 5 s]` (PK-7.3)".into())),
+                };
+                let (dx, dy) = (dim(&x[0])?, dim(&y[0])?);
+                if dim(&x[1])? != dx || dim(&y[1])? != dy {
+                    return Err(err("PK-E04", "both ends of a plot axis range have the same dimension (PK-7.3)".into()));
+                }
+                Ok(ViewCtx::Plot { x: (n(&x[0])?, n(&x[1])?), y: (n(&y[0])?, n(&y[1])?), dims: (dx, dy) })
             }
             ViewKind::Panel => Ok(ViewCtx::Panel),
         }
@@ -155,8 +164,18 @@ impl ViewCtx {
                 let y = if *y_up { -p[1] } else { p[1] } / px_per_m;
                 origin(space) + tuple(vec![num(x, "m"), num(y, "m")])
             }
-            _ => tuple(vec![prismal_ir::build::lit(p[0]), prismal_ir::build::lit(p[1])]),
+            ViewCtx::Plot { dims, .. } => tuple(vec![si_num(p[0], &dims.0), si_num(p[1], &dims.1)]),
+            ViewCtx::Panel => tuple(vec![prismal_ir::build::lit(p[0]), prismal_ir::build::lit(p[1])]),
         }
+    }
+}
+
+/// A number in coherent SI units of a dimension, as a literal (bare when dimensionless).
+fn si_num(x: f64, dim: &Dim) -> Expr {
+    if dim.is_none() {
+        prismal_ir::build::lit(x)
+    } else {
+        Expr::Num { num: x, unit: Some(prismal_ir::Unit { text: crate::text::unit_text(dim), scale: 1.0, offset: 0.0, dim: *dim }) }
     }
 }
 
@@ -173,6 +192,10 @@ pub enum CKind {
     Arrow { vec: CExpr, ty: Type, from: Option<CExpr>, px_per_unit: f64, label: String },
     Segment { a: CExpr, b: CExpr },
     Graph { f: CExpr, lo: f64, hi: f64, label: String },
+    /// The path of a point, sampled every `every` seconds from the run's start (PK-6.3).
+    Trace { pos: CExpr, every: f64, label: String },
+    /// A scalar against elapsed time, sampled every `every` seconds (PK-6.3).
+    Series { value: CExpr, every: f64, label: String },
     Label { value: CExpr, ty: Type, label: String },
     Formula { lhs: String, rhs: Expr, params: Vec<String>, refs: Vec<(Id, usize)>, live: bool },
     Control { control: String, binding: Id, idx: usize, min: Option<f64>, max: Option<f64>, step: Option<f64> },
@@ -231,11 +254,14 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
             };
             let ok = match (&t, ctx) {
                 (Type::Point { .. }, ViewCtx::Spatial { .. }) => true,
-                (Type::Tuple { items }, ViewCtx::Plot { .. }) => items.len() == 2 && items.iter().all(|i| *i == Type::real()),
+                // A pair of plot coordinates with the dimensions of the plot's axes (PK-7.3).
+                (Type::Tuple { items }, ViewCtx::Plot { dims, .. }) => {
+                    items.len() == 2 && items[0] == (Type::Quantity { dim: dims.0 }) && items[1] == (Type::Quantity { dim: dims.1 })
+                }
                 _ => false,
             };
             if !ok {
-                return Err(needs("a point of the view's space, or a pair of plot coordinates"));
+                return Err(needs("a point of the view's space, or a pair of plot coordinates in the units of the plot's axes"));
             }
             CKind::Marker { pos: c, label: label(e) }
         }
@@ -294,6 +320,34 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
                 return Err(needs("a function from Real to Real"));
             }
             CKind::Graph { f: c, lo: x.0, hi: x.1, label: label(e) }
+        }
+        "trace" | "series_plot" => {
+            let Some(Arg::Sampled { expr: e, every }) = rep.sources.first() else {
+                return Err(needs("a sampled source: `pos every 0.02 s`"));
+            };
+            let dt = match compile_expr(cm, every, None) {
+                Ok((_, Type::Quantity { dim })) if dim == Dim::time() => number(cm, every).map_err(|m| d("PK-E02", m))?,
+                _ => return Err(d("PK-E04", "a sampling interval is a duration: `every 0.02 s`".into())),
+            };
+            if !(dt > 0.0) {
+                return Err(d("PK-E05", "a sampling interval is positive".into()));
+            }
+            if rep.kind == "trace" {
+                let ViewCtx::Spatial { space, .. } = ctx else { return Err(d("PK-E05", "a trace belongs in a spatial view".into())) };
+                let (c, _) = ce(e, Some(&Type::Point { space: space.clone() }))?;
+                CKind::Trace { pos: c, every: dt, label: label(e) }
+            } else {
+                let ViewCtx::Plot { dims, .. } = ctx else { return Err(d("PK-E05", "a series plot belongs in a plot view".into())) };
+                let (c, t) = ce(e, None)?;
+                let Type::Quantity { dim } = t else { return Err(needs("a number or a quantity")) };
+                if dims.0 != Dim::time() {
+                    return Err(d("PK-E04", "a series plot draws against elapsed time: its plot's x axis is a time range, `x: [0 s, 5 s]` (PK-7.3)".into()));
+                }
+                if dim != dims.1 {
+                    return Err(d("PK-E04", format!("the series has dimension {dim}, the plot's y axis {} (PK-7.3)", dims.1)));
+                }
+                CKind::Series { value: c, every: dt, label: label(e) }
+            }
         }
         "label" => {
             let e = source(rep, 0).ok_or_else(|| needs("a value"))?;
@@ -431,6 +485,28 @@ pub fn project(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], 
             Ok(_) => (Shape::Status { status: "not a function".into() }, "graph: not available".into()),
             Err(s) => status(s),
         },
+        CKind::Trace { pos, every, label } => {
+            let pts: Vec<[f64; 2]> = samples(run, t, *every).filter_map(|s| run.eval_state(pos, &run.state_at(s), s).ok()).map(|v| ctx.to_view(&coords(&v))).collect();
+            let text = match (pts.first(), pts.last()) {
+                (Some(_), Some(_)) => format!("trace of {label}: {} samples every {} s up to t = {} s", pts.len(), fmt_num(*every), fmt_num(t - run.config.t0)),
+                _ => format!("trace of {label}: no samples"),
+            };
+            (Shape::Polyline { points: pts }, text)
+        }
+        CKind::Series { value, every, label } => {
+            let t0 = run.config.t0;
+            let pts: Vec<[f64; 2]> = samples(run, t, *every)
+                .filter_map(|s| match run.eval_state(value, &run.state_at(s), s) {
+                    Ok(Value::Num(y)) => Some([s - t0, y]),
+                    _ => None,
+                })
+                .collect();
+            let text = match pts.last() {
+                Some(p) => format!("series of {label} against elapsed time: {} samples, last {} at {} s", pts.len(), fmt_num(p[1]), fmt_num(p[0])),
+                None => format!("series of {label}: no samples"),
+            };
+            (Shape::Polyline { points: pts }, text)
+        }
         CKind::Label { value, ty, label } => match eval(value) {
             Ok(v) => {
                 let s = fmt_value(&v, ty);
@@ -468,6 +544,15 @@ pub fn project(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], 
         CKind::Grid => (Shape::Grid, "grid".into()),
     };
     RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None }
+}
+
+/// Sample instants `t0, t0 + dt, ...` up to `t`, and `t` itself (PK-6.3, PK-7.5: a trace
+/// ends at the instant shown).
+fn samples(run: &Run, t: f64, dt: f64) -> impl Iterator<Item = f64> {
+    let t0 = run.config.t0;
+    let end = t.min(run.end_time());
+    let n = ((end - t0) / dt).floor().max(0.0) as usize;
+    (0..=n).map(move |k| t0 + k as f64 * dt).filter(move |s| *s < end).chain(std::iter::once(end))
 }
 
 /// The compiled views of a presentation.

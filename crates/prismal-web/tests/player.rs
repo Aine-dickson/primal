@@ -166,3 +166,27 @@ fn rp08_lesson() {
     assert!(layout["lesson"]["explore"].as_array().unwrap().is_empty());
     assert_eq!(layout["lesson"]["medium"], "video");
 }
+
+#[test]
+fn labs_play_in_the_player() {
+    for (key, lab) in [("rp01", "ProjectileLab"), ("rp02", "ProjectileLab"), ("rp03", "BounceLab"), ("rp04", "PendulumLab"), ("rp05", "SpringLab")] {
+        let mut p = load(key);
+        let layout = p.open(lab, false).unwrap_or_else(|d| panic!("{key}: {d}"));
+        let s = &layout["session"];
+        assert_eq!(s["dynamic"], true, "{key}");
+        assert_eq!(s["end"], 60.0, "{key}: {s}");
+        assert_eq!(p.seek(1.5)["t"], 1.5);
+        let f = p.frame(1.5, 0.5);
+        assert_eq!(f["t"], 1.5);
+        assert!(f["views"].as_array().unwrap().iter().flat_map(|v| v["reps"].as_array().unwrap()).any(|r| r["shape"] == "polyline"), "{key}");
+    }
+    // Plot axes carry their units; events passed while playing are announced.
+    let mut p = load("rp03");
+    let layout = p.open("BounceLab", false).unwrap();
+    assert_eq!(layout["views"][1]["units"], serde_json::json!(["s", "m"]));
+    p.seek(0.5);
+    assert_eq!(p.frame(0.5, 0.1)["announcements"], serde_json::json!(["bounce"]), "first bounce at 0.4515 s");
+    // A static model has no clock.
+    let mut p = load("rp06");
+    assert_eq!(p.open("QuadraticPlot", false).unwrap()["session"]["dynamic"], false);
+}

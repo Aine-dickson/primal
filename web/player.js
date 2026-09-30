@@ -111,8 +111,8 @@ async function main() {
   $('#source').addEventListener('input', () => { $('#program').value = ''; });
   setupTabs();
   setupTransport();
-  $('#undo').addEventListener('click', () => { st.player.undo(); refresh(); });
-  $('#redo').addEventListener('click', () => { st.player.redo(); refresh(); });
+  $('#undo').addEventListener('click', () => { st.player.undo(); status(''); afterSessionAction(); });
+  $('#redo').addEventListener('click', () => { st.player.redo(); status(''); afterSessionAction(); });
   $('#run-cases').addEventListener('click', runCases);
   window.addEventListener('resize', () => { if (st.frame) render(st.frame); });
   loadExample(sel.value);
@@ -210,6 +210,10 @@ function openPresentation() {
   }
   buildViews();
   st.p = 0;
+  st.sess = null;
+  $('#beats').hidden = false;
+  $('#restart').textContent = 'Restart';
+  $('#restart').title = 'Play the lesson again without your inputs';
   if (st.layout.mode === 'lesson') {
     st.lesson = st.layout.lesson;
     $('#transport').hidden = false;
@@ -220,7 +224,18 @@ function openPresentation() {
     status(lessonNotes());
   } else {
     st.lesson = null;
+    st.sess = st.layout.session;
+    st.p = st.sess.t;
     $('#interactive-bar').hidden = false;
+    if (st.sess.dynamic) {
+      // A running model: the transport plays the session's run (RC section 12).
+      $('#transport').hidden = false;
+      $('#scrub').disabled = false;
+      $('#speed').disabled = false;
+      $('#beats').hidden = true;
+      $('#restart').textContent = 'Reset';
+      $('#restart').title = 'A new run with no interventions, from the start';
+    }
     status('');
   }
   refresh();
@@ -259,7 +274,8 @@ function buildViews() {
         cap.append(reset);
         enableZoomPan(entry);
       }
-      fig.classList.add('wide');
+      // A wide scene spans the row; a small one sits beside the other views.
+      if (w > 480) fig.classList.add('wide');
     } else if (v.kind === 'plot') {
       entry.W = 560; entry.H = 360; entry.m = 44;
       entry.svg = svg('svg', { viewBox: `0 0 ${entry.W} ${entry.H}`, role: 'group', 'aria-label': `${v.name}: plot` });
@@ -335,21 +351,32 @@ function drawPlotChrome(v, g) {
   const m = plotMap(v);
   const [x0, x1] = v.x, [y0, y1] = v.y;
   svg('rect', { class: 'frame', x: v.m, y: v.m, width: v.W - 2 * v.m, height: v.H - 2 * v.m }, g);
-  const xs = niceStep((x1 - x0) / 6), ys = niceStep((y1 - y0) / 6);
+  // About one tick per 70 px across and 32 px down.
+  const xs = niceStep((x1 - x0) / Math.max(2, (v.W - 2 * v.m) / 70));
+  const ys = niceStep((y1 - y0) / Math.max(2, (v.H - 2 * v.m) / 32));
   for (let x = Math.ceil(x0 / xs) * xs; x <= x1 + 1e-9; x += xs) {
     const [X] = m.to([x, y0]);
     svg('line', { class: 'gridline', x1: X, y1: v.m, x2: X, y2: v.H - v.m }, g);
     const t = svg('text', { class: 'tick', x: X, y: v.H - v.m + 16, 'text-anchor': 'middle', 'font-size': 12 }, g);
-    t.textContent = fmt(x);
+    t.textContent = fmt(Math.abs(x) < xs * 1e-9 ? 0 : x);
   }
   for (let y = Math.ceil(y0 / ys) * ys; y <= y1 + 1e-9; y += ys) {
     const [, Y] = m.to([x0, y]);
     svg('line', { class: 'gridline', x1: v.m, y1: Y, x2: v.W - v.m, y2: Y }, g);
     const t = svg('text', { class: 'tick', x: v.m - 6, y: Y + 4, 'text-anchor': 'end', 'font-size': 12 }, g);
-    t.textContent = fmt(y);
+    t.textContent = fmt(Math.abs(y) < ys * 1e-9 ? 0 : y);
   }
   if (x0 < 0 && x1 > 0) { const [X] = m.to([0, 0]); svg('line', { class: 'axis', x1: X, y1: v.m, x2: X, y2: v.H - v.m }, g); }
   if (y0 < 0 && y1 > 0) { const [, Y] = m.to([0, 0]); svg('line', { class: 'axis', x1: v.m, y1: Y, x2: v.W - v.m, y2: Y }, g); }
+  const [ux, uy] = v.units || ['', ''];
+  if (ux) {
+    const t = svg('text', { class: 'tick', x: v.W - v.m, y: v.H - 8, 'text-anchor': 'end', 'font-size': 12 }, g);
+    t.textContent = ux === 's' ? 'elapsed time (s)' : `(${ux})`;
+  }
+  if (uy) {
+    const t = svg('text', { class: 'tick', x: v.m, y: v.m - 10, 'font-size': 12 }, g);
+    t.textContent = `(${uy})`;
+  }
 }
 
 function arrowHead(from, to, size) {
@@ -409,7 +436,8 @@ function drawRep(v, g, r, u, colorIndex) {
     }
     case 'polyline': {
       const pts = r.points.map((p) => m.to(p).join(',')).join(' ');
-      svg('polyline', { class: 'graph', points: pts, 'stroke-width': 2 * u }, grp);
+      const trace = r.kind === 'trace';
+      svg('polyline', { class: trace ? 'trace' : 'graph', points: pts, 'stroke-width': (trace ? 1.5 : 2) * u }, grp);
       break;
     }
     default:
@@ -482,7 +510,7 @@ function renderItem(host, r) {
 function controlDisplay(r, value) {
   if (r.control === 'toggle') return value ? 'true' : 'false';
   if (r.display_unit) return `${fmt(value / r.display_unit.scale)} ${r.display_unit.text}`;
-  return fmt(value);
+  return r.unit ? `${fmt(value)} ${r.unit}` : fmt(value);
 }
 
 function renderControl(it, r) {
@@ -537,7 +565,7 @@ function onControlKey(e, r, it) {
     commitControl(r.id, v);
   } else {
     report(JSON.parse(st.player.key(r.id, k)));
-    refresh();
+    afterSessionAction();
   }
 }
 
@@ -552,8 +580,18 @@ function commitControl(id, value) {
   } else {
     const res = JSON.parse(st.player.set_control(id, value));
     report(res);
-    refresh();
+    afterSessionAction();
   }
+}
+
+/// The run changes after an intervention: its span and diagnostics are read again.
+function afterSessionAction() {
+  if (st.sess) {
+    st.sess = JSON.parse(st.player.session());
+    const d = st.sess.diagnostics;
+    if (d.length && !$('#status').classList.contains('bad')) status(`Run: ${d[0]}${d.length > 1 ? ` (and ${d.length - 1} more)` : ''}`, true);
+  }
+  refresh();
 }
 
 function report(res) {
@@ -583,6 +621,14 @@ function renderFrame(frame) {
       if (v.kind === 'spatial') {
         if (!st.lesson) growToFit(v, vf.reps);
         v.svg.setAttribute('viewBox', v.vb.join(' '));
+      } else {
+        // A plot is drawn at its rendered size, so that text and margins stay readable.
+        const w = Math.max(240, Math.round(v.svg.clientWidth || 560));
+        if (w !== v.W) {
+          v.W = w;
+          v.H = Math.round(Math.min(w * 0.62, 420));
+          v.svg.setAttribute('viewBox', `0 0 ${v.W} ${v.H}`);
+        }
       }
       v.svg.replaceChildren();
       const g = svg('g', {}, v.svg);
@@ -661,10 +707,24 @@ function renderDescription(frame) {
 
 function refresh() {
   if (!st.player || !st.layout) return;
+  if (st.sess) st.p = JSON.parse(st.player.seek(st.p)).t;
   const frame = JSON.parse(st.player.frame(st.p, 0));
   render(frame);
   renderObservations();
-  if (st.lesson) updateTransport();
+  if (clocked()) updateTransport();
+}
+
+/// Whether the open presentation has a clock: a lesson, or a session of a dynamic model.
+function clocked() {
+  return !!(st.lesson || (st.sess && st.sess.dynamic));
+}
+
+function clockStart() {
+  return st.lesson ? 0 : st.sess.t0;
+}
+
+function clockEnd() {
+  return st.lesson ? st.lesson.end : st.sess.end;
 }
 
 function renderObservations() {
@@ -697,7 +757,10 @@ function startDrag(e, v, r) {
   e.stopPropagation();
   const res = JSON.parse(st.player.pointer_down(r.id, part));
   if (!res.ok) { report(res); return; }
-  st.drag = { rep: r.id, view: v, pointerId: e.pointerId };
+  // Drag mode `hold`: the run pauses while dragging and resumes after the commit (PK-10.9).
+  const resume = st.playing;
+  stop();
+  st.drag = { rep: r.id, view: v, pointerId: e.pointerId, resume };
   v.svg.setPointerCapture(e.pointerId);
 }
 
@@ -707,16 +770,18 @@ function setupPointer(v) {
     const [x, y] = toView(v, e);
     const res = JSON.parse(st.player.pointer_move(x, y));
     status(res.ok ? '' : `Not valid here: ${res.message || 'rejected'}`, !res.ok);
-    render(JSON.parse(st.player.frame(0, 0)));
+    render(JSON.parse(st.player.frame(st.p, 0)));
   });
   const end = (e) => {
     if (!st.drag || st.drag.pointerId !== e.pointerId) return;
+    const resume = st.drag.resume;
     st.drag = null;
     const res = JSON.parse(st.player.pointer_up());
     if (!res.ok) report(res);
     else if (!res.committed) status('Nothing committed: no valid position during the drag.', true);
     else status('');
-    refresh();
+    afterSessionAction();
+    if (resume) togglePlay();
   };
   v.svg.addEventListener('pointerup', end);
   v.svg.addEventListener('pointercancel', (e) => {
@@ -734,7 +799,7 @@ window.addEventListener('keydown', (e) => {
     status('Drag cancelled.');
     refresh();
   }
-  if (e.key === ' ' && st.lesson && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName)) {
+  if (e.key === ' ' && clocked() && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(document.activeElement.tagName)) {
     e.preventDefault();
     togglePlay();
   }
@@ -748,7 +813,7 @@ function onRepKey(e, id) {
   const res = JSON.parse(st.player.key(id, k));
   report(res);
   st.focus = { rep: id };
-  refresh();
+  afterSessionAction();
 }
 
 function enableZoomPan(v) {
@@ -791,11 +856,18 @@ function setupTransport() {
   $('#play').addEventListener('click', togglePlay);
   $('#restart').addEventListener('click', () => {
     stop();
-    st.layout = JSON.parse(st.player.lesson_restart());
-    st.lesson = st.layout.lesson;
-    st.p = 0;
-    buildBeats();
-    status(lessonNotes());
+    if (st.lesson) {
+      st.layout = JSON.parse(st.player.lesson_restart());
+      st.lesson = st.layout.lesson;
+      st.p = 0;
+      buildBeats();
+      status(lessonNotes());
+    } else {
+      st.layout = JSON.parse(st.player.reset());
+      st.sess = st.layout.session;
+      st.p = st.sess.t;
+      status('');
+    }
     refresh();
   });
   $('#continue').addEventListener('click', () => {
@@ -831,7 +903,6 @@ function buildBeats() {
   const host = $('#beats');
   host.replaceChildren();
   const end = st.lesson.end || 1;
-  $('#scrub').max = end;
   for (const b of st.lesson.beats) {
     const w = Math.max(0, b.end - b.start);
     const btn = el('button', { type: 'button', role: 'listitem', title: `${b.scene} / ${b.beat}: ${fmt(b.start)} s to ${fmt(b.end)} s`, text: b.beat });
@@ -844,22 +915,34 @@ function buildBeats() {
 }
 
 function updateTransport() {
-  const l = st.lesson;
-  $('#scrub').value = st.p;
-  const beat = l.beats.find((b) => st.p >= b.start && st.p < b.end) || l.beats[l.beats.length - 1];
-  for (const b of $('#beats').children) b.classList.toggle('current', beat && b.dataset.beat === beat.beat);
-  const ex = exploreAt(st.p);
-  $('#continue').hidden = !ex;
-  if (ex) $('#continue').textContent = `Continue (explore ends in ${Math.ceil(ex.end - st.p)} s)`;
-  $('#clock').textContent = `${fmt(Math.round(st.p * 10) / 10)} s / ${fmt(Math.round(l.end * 10) / 10)} s${beat ? `, beat ${beat.beat}` : ''}`;
-  $('#play').textContent = st.playing ? 'Pause' : st.p >= l.end ? 'Replay' : 'Play';
+  const [t0, end] = [clockStart(), clockEnd()];
+  const scrub = $('#scrub');
+  scrub.min = t0;
+  scrub.max = end;
+  scrub.value = st.p;
+  const label = (x) => fmt(Math.round(x * 10) / 10);
+  let where = '';
+  if (st.lesson) {
+    const l = st.lesson;
+    const beat = l.beats.find((b) => st.p >= b.start && st.p < b.end) || l.beats[l.beats.length - 1];
+    for (const b of $('#beats').children) b.classList.toggle('current', beat && b.dataset.beat === beat.beat);
+    const ex = exploreAt(st.p);
+    $('#continue').hidden = !ex;
+    if (ex) $('#continue').textContent = `Continue (explore ends in ${Math.ceil(ex.end - st.p)} s)`;
+    if (beat) where = `, beat ${beat.beat}`;
+  } else {
+    $('#continue').hidden = true;
+    where = `, ${st.sess.interventions} intervention${st.sess.interventions === 1 ? '' : 's'}`;
+  }
+  $('#clock').textContent = `${st.lesson ? '' : 't = '}${label(st.p)} s / ${label(end)} s${where}`;
+  $('#play').textContent = st.playing ? 'Pause' : st.p >= end ? 'Replay' : 'Play';
   $('#play').setAttribute('aria-label', $('#play').textContent);
 }
 
 function togglePlay() {
-  if (!st.lesson) return;
+  if (!clocked()) return;
   if (st.playing) { stop(); updateTransport(); return; }
-  if (st.p >= st.lesson.end) st.p = 0;
+  if (st.p >= clockEnd()) st.p = clockStart();
   st.playing = true;
   st.lastTick = null;
   requestAnimationFrame(tick);
@@ -871,14 +954,16 @@ function stop() {
 }
 
 function tick(now) {
-  if (!st.playing || !st.lesson) return;
+  if (!st.playing || !clocked()) return;
   const dt = st.lastTick == null ? 0 : Math.min(0.1, (now - st.lastTick) / 1000) * st.speed;
   st.lastTick = now;
-  st.p = Math.min(st.lesson.end, st.p + dt);
+  const end = clockEnd();
+  st.p = Math.min(end, st.p + dt);
+  if (st.sess) st.p = JSON.parse(st.player.seek(st.p)).t;
   const frame = JSON.parse(st.player.frame(st.p, dt));
   render(frame);
   updateTransport();
-  if (st.p >= st.lesson.end) {
+  if (st.p >= end) {
     stop();
     updateTransport();
     renderObservations();

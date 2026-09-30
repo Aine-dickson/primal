@@ -64,6 +64,29 @@ presentation ProjectileChecks for Projectile {
 }
 ```
 
+## Lab
+
+An interactive presentation for the web player (D-018). It is not used by the cases. The learner plays the run and changes gravity or drag while the ball flies; a change takes effect at the instant on display and the rest of the flight is recomputed (RC-11.2). `speed` and `angle` have no sliders here: they set the launch velocity at `t0` only (RP-08 relaunches for that).
+
+```text
+presentation ProjectileLab for Projectile {
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    axes
+    marker(pos) as ball
+    arrow(vel, from: pos, scale: 1 m/s -> 2 px)
+    trace(pos every 0.05 s)
+  }
+  view height: plot(x: [0 s, 3 s], y: [0 m, 12 m]) {
+    series_plot(pos.y every 0.02 s)
+  }
+  panel controls {
+    slider(g, range: [1 m/s^2, 20 m/s^2])
+    slider(k, range: [0 /m, 0.05 /m])
+    label(pos.x)
+  }
+}
+```
+
 ## Cases
 
 | Case | Overrides | End |
@@ -117,3 +140,4 @@ D1 applies to the IR: a surface syntax may lower `y <= 0` to `falling(y)` (MK-15
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied (display symbols, named processes, zero vectors).
 - 2026-09-30 `angle` declares its display unit `deg` (MK-3.12), found by the web player: RP-08 narrates and ranges the angle in degrees, and its explore slider showed radians.
+- 2026-09-30 lab presentation added for the web player (not used by the cases).

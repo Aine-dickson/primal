@@ -52,6 +52,32 @@ presentation PendulumChecks for Pendulum {
 }
 ```
 
+## Lab
+
+An interactive presentation for the web player (D-018), not used by the cases. Changing `g` or `L` during the swing changes the period from that instant on; the energy formula shows the jump, since energy is conserved only while the parameters are constant.
+
+```text
+presentation PendulumLab for Pendulum {
+  view scene: spatial(Plane, scale: 1 m -> 150 px, y: up) {
+    segment(pivot, bob)
+    marker(pivot)
+    marker(bob) as bob
+    trace(bob every 0.02 s)
+  }
+  view angle: plot(x: [0 s, 10 s], y: [-0.2, 0.2]) {
+    series_plot(θ every 0.01 s)
+  }
+  view energy_plot: plot(x: [0 s, 10 s], y: [0 J, 0.2 J]) {
+    series_plot(energy every 0.02 s)
+  }
+  panel controls {
+    slider(g, range: [1 m/s^2, 25 m/s^2])
+    slider(L, range: [0.25 m, 2 m])
+    formula(energy, live: true)
+  }
+}
+```
+
 ## Cases
 
 | Case | Configuration | End |
@@ -107,3 +133,4 @@ E10 records the teaching point of the per-solver drift in D-012: the choice of s
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied (`Plane` declared; `Plane` is the default space). RP-04.D2 now expects MK-E01 instead of MK-E04: under D-032 the tuple takes the expected type `Vector<Plane, L>`, so the error is found in its components.
 - 2026-09-30 provisional tolerances confirmed by the Rust prototype and made fixed. Measured: `dopri5` first upswing rel error 5.4e-8, worst period 2.0e-7, energy drift 7.7e-5 (1645 steps); `rk4` 8.0e-9, 7.9e-9, 1.35e-7.
+- 2026-09-30 lab presentation added for the web player (not used by the cases).

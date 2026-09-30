@@ -252,6 +252,8 @@ pub enum CmpOp {
 pub struct Arg {
     pub name: Option<Name>,
     pub value: Expr,
+    /// `pos every 0.02 s`: a representation source sampled over the run (PK-6.3).
+    pub every: Option<Expr>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -60,6 +60,25 @@ presentation BounceChecks for BouncingBall {
 }
 ```
 
+## Lab
+
+An interactive presentation for the web player (D-018), not used by the cases. The model has no space, so the ball is a marker in a plot whose vertical axis is a length: `(0, y)` pairs a bare number with a length, matching the axes `[-1, 1]` and `[0 m, 1.1 m]` (PK-7.3).
+
+```text
+presentation BounceLab for BouncingBall {
+  view ball: plot(x: [-1, 1], y: [0 m, 1.1 m]) {
+    marker(at: (0, y)) as ball
+  }
+  view height: plot(x: [0 s, 6 s], y: [0 m, 1.1 m]) {
+    series_plot(y every 0.01 s)
+  }
+  panel controls {
+    slider(e, range: [0, 0.95], step: 0.05)
+    label(v)
+  }
+}
+```
+
 ## Model variants
 
 Structural changes used by cases (D-031). Each changes named elements of the model; nothing else differs.
@@ -134,3 +153,4 @@ E9 and E10 are provisional because detection depends on the location error of th
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied; case `B-stop` now runs the declared model variant `RP-03.V1` (D-031).
 - 2026-09-30 E9 and E10 confirmed by the Rust prototype and made fixed: Zeno accumulation detected at bounce 63, `t = 4.06370922186394 s` (predicted bounce 63 at 4.06370922604679 s), 3.5e-6 s before `t_inf`. Bounce 10 located within 3.5e-11 s.
+- 2026-09-30 lab presentation added for the web player (not used by the cases).

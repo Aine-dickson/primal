@@ -149,6 +149,7 @@ The presentation kernel has these concepts:
 | `slider`, `number_input`, `toggle`, `button` | a control | intervenable binding; for `button`, a requestable event (D-027) or a runtime control |
 | `group` | a set of representations with a shared transform | representations |
 
+- **PK-6.3a** A `trace` or `series_plot` takes a **sampled source**, `expr every Δ` with `Δ` a positive duration: the source is evaluated at `t0`, `t0 + Δ`, `t0 + 2Δ`, ... up to the instant shown, and at that instant, so the drawing ends where the other representations are (PK-7.5). A `trace` samples a point of the view's space and draws its path. A `series_plot` samples a number or quantity and draws it against elapsed time in a plot view whose `x` axis is a time range. A source that is not sampled, an interval that is not a duration, or a series whose dimension differs from the plot's `y` axis is a static error (PK-E04, PK-E05).
 - **PK-6.4** Controls are representations of bindings with a declared inverse (PK-5.6): a slider shows a parameter's value and, when moved, proposes a new one. A control can only target an intervenable binding (D-023).
 - **PK-6.5** `equation` and `formula` representations are typeset from symbolic forms in the IR (MK-10.6), never from strings. A `formula` of a derived binding or derived function value shows its definition (`f(x) = a x²`); a `formula` with a label shows `label = expression`, where the label is presentation text and not a binding (D-034). Each symbol that refers to a binding carries that binding's identity, so views can highlight a symbol with the value it stands for, and a label can show live values substituted into the equation.
 - **PK-6.6** A representation may exist without a model source (a title, an annotation) (R-37 invariant 19). A line between two objects is not a relation unless the model declares one (R-59).
@@ -165,6 +166,7 @@ The presentation kernel has these concepts:
 - **PK-7.1** A **view** is a region of the presentation with its own coordinate system, a set of representations, and presentation state: camera, visibility, selection, and zoom.
 - **PK-7.2** A **spatial view** shows one model space (D-022). Its **coordinate mapping** takes model coordinates in a chosen frame of that space to view coordinates: origin, scale (for example `1 m -> 100 px`), rotation and orientation (for example `y` up). Camera movement changes the mapping, never model values (R-07: model space is not render space).
 - **PK-7.3** A **plot view** has axes, each bound to a dimension and a display unit, with a range that is fixed, follows the data, or is controlled by the camera.
+- **PK-7.3a** In v0 a plot axis range is fixed: two numbers or two quantities of one dimension (`x: [0 s, 5 s]`, `y: [0 m, 1.1 m]`), which gives the axis its dimension; it is shown in coherent SI units. A marker in a plot view is at a pair whose components have the axes' dimensions (`(0, y)` with `y` a length on a length axis), and a drag in a plot view gives a pair of quantities in those dimensions (PK-5.6).
 - **PK-7.4** **Layout** places views in the presentation and adapts them to the output's size and orientation. Layout never changes what a view shows, only where and how large.
 - **PK-7.5** **Consistency across views**: every view in one presented frame shows the same simulation instant (and the same microstep when one is selected), and the same committed state or dense-output value. A view never shows a newer state than another view of the same frame (07 section 96).
 
@@ -438,6 +440,7 @@ The model kernel's open item (checks at an event instant) is resolved by `on(E)`
 - Undo as seek with the intervention removed (PK-10.10).
 - Medium fallbacks declared, never silently dropped (PK-12.3).
 - From the presentation prototype: mapping persistence across beats (PK-8.2a), reading time and highlight duration (PK-9.2b), exact event instants at the end of `wait_until` (PK-9.3a), waits while holding (PK-9.4a), lesson run end and run versions (PK-9.5a), refusal of learner actions (PK-9.8a), keyboard steps (PK-11.2a), announcements (PK-11.3a), view coordinates of frames (PK-12.1a), static diagnostics (section 16).
+- From the web player: sampled sources (PK-6.3a), plot axes with dimensions (PK-7.3a).
 
 ---
 
@@ -475,3 +478,4 @@ A presentation is checked against its model before it is used (PK-2.3). Each dia
 - 2026-09-29 written; D-025 and D-026 raised.
 - 2026-09-30 revised with the syntax study (D-033, D-034).
 - 2026-09-30 revised with the presentation prototype: elaborations PK-8.2a, PK-9.2b, PK-9.3a, PK-9.4a, PK-9.5a, PK-9.8a, PK-11.2a, PK-11.3a, PK-12.1a; section 16; the velocity arrow of 13.5 declares its scale (PK-5.5).
+- 2026-09-30 revised with the web player: sampled sources for `trace` and `series_plot` (PK-6.3a); plot axes with dimensions (PK-7.3a).

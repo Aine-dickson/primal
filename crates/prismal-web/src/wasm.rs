@@ -72,6 +72,15 @@ impl WebPlayer {
     pub fn lesson_restart(&mut self) -> Result<String, JsValue> {
         self.0.lesson_restart().map(s).map_err(|d| JsValue::from_str(&d.to_string()))
     }
+    pub fn seek(&mut self, t: f64) -> String {
+        s(self.0.seek(t))
+    }
+    pub fn reset(&mut self) -> String {
+        s(self.0.reset())
+    }
+    pub fn session(&self) -> String {
+        s(self.0.session())
+    }
     pub fn run_cases(&self) -> String {
         s(self.0.run_cases())
     }

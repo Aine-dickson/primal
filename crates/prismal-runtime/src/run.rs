@@ -418,7 +418,11 @@ impl<'a> Engine<'a> {
                 _ => None,
             };
             if res.map(|r| r > tol).unwrap_or(true) {
-                let d = self.diag(Category::Equation, format!("check equation `{}` residual {:?} exceeds {}", q.name, res, tol), Some(&q.id));
+                let message = match res {
+                    Some(r) => format!("check equation `{}` at t = {} s: residual {r:.3e} exceeds {tol:e}", q.name, self.t),
+                    None => format!("check equation `{}` at t = {} s: a side has no value", q.name, self.t),
+                };
+                let d = self.diag(Category::Equation, message, Some(&q.id));
                 self.run.diagnostics.push(d);
             }
         }

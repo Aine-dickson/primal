@@ -93,7 +93,9 @@ RP-01.D1 is not covered by text: it is stored in IR form because the working syn
 
 `cargo run -p prismal-present --example cases -- FILE...` runs the cases of a program headless and reports every expectation (for a lesson, also the beat timings).
 
-Representations implemented: `marker`, `arrow`, `segment`, `function_graph`, `label`, `formula`, `slider`, `number_input`, `toggle`, `axes`, `grid`. Others are reported as PK-E06, never dropped.
+Representations implemented: `marker`, `arrow`, `segment`, `trace`, `function_graph`, `series_plot`, `label`, `formula`, `slider`, `number_input`, `toggle`, `axes`, `grid`. Others are reported as PK-E06, never dropped.
+
+An interactive session has a display clock (RC section 12): its run is computed to the configuration's end, `seek` chooses the instant shown, and the learner's actions take effect at that instant (RC-11.2), so the trajectory after it is recomputed and the one before it is unchanged; `reset` starts a new run with an empty log. A static model has one instant (RC-12.4).
 
 ### Acceptance
 
@@ -118,6 +120,8 @@ Representations implemented: `marker`, `arrow`, `segment`, `function_graph`, `la
 | `web/player.js` | spatial views as SVG in view coordinates (grid and axes with ticks in metres, zoom and pan when permitted), plot views as SVG with their ranges, panels and overlays as HTML (sliders, number inputs, toggles, MathML formulas with live values, labels), drags with pointer capture, keyboard operation, lesson transport, captions, announcements, text alternatives |
 
 A lesson is replayed from the learner's recorded inputs whenever one is added (`timeline::play` with the inputs), which the determinism of playback (PK-8.7) makes safe: frames before the new input are unchanged, which a test checks. Zoom, pan, pause and seeking are the renderer's; they never reach the model.
+
+Lab presentations: RP-01, RP-03, RP-04 and RP-05 each declare a lab presentation with views (the projectile with its trace and height series, the bouncing ball in a plot with a length axis, the pendulum with its rod, trace, angle and energy series, the spring's mass and displacement series), and sliders for parameters that act during the run (gravity, drag, restitution, rod length, stiffness, mass). They play in the player as sessions of the running model; drags pause the run and resume it after the commit (PK-10.9, `hold`). `prismal-present/tests/labs.rs` checks them: positions at displayed instants against closed forms, the trace and series ending at the instant shown, seeking back and forth reproducing frames (RC-12.2), an intervention applying at the instant shown with an unchanged past and a later landing, undo, reset, the bouncing ball resting after the Zeno limit, the energy of the pendulum jumping when `L` changes, the spring's checked equation reported after `k` changes, and the static errors of sampled sources.
 
 Acceptance: `prismal-web/tests/player.rs` loads every example, runs the 36 case expectations through the player, checks located diagnostics, RP-06's slider, drag, rejected drag and undo, RP-07's drag of `u`'s head, and RP-08's lesson (MathML of `R`, explore input at 60 deg landing at R60, unchanged earlier frames, refusal outside the explore beat, video medium). The front end was also driven in a headless browser through the same scripts (drags, keys, the explore slider, compile errors, phone width, light and dark themes).
 
@@ -166,6 +170,8 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - **Rules the timeline needed**, recorded as elaborations in 03: the mapping persists across beats (PK-8.2a), reading time and highlight duration (PK-9.2b), waits while holding (PK-9.4a), lesson run end and run versions (PK-9.5a), refusal of learner actions (PK-9.8a), keyboard steps (PK-11.2a; RP-06's marker declares no step, so it moves by 1/100 of the axis span), announcements (PK-11.3a).
 - **Display units were not used.** RP-08 narrates the launch angle in degrees and ranges its explore slider in degrees, but the slider showed radians: RP-01's `angle` declared no display unit, and the presentation kernel ignored display units in text alternatives and live formula values although PK-11.1 requires them. RP-01's `angle` now declares `unit deg` (its history records it) and the kernel formats a binding's value in its display unit (`text::fmt_binding`).
 - **Keyboard operation of arrow heads.** PK-11.2 requires every drag to be available from the keyboard; the kernel only moved markers. A keyboard step now moves the part a representation is dragged by (a marker, an arrow's head).
+- **Plots had no dimensions.** A plot's axes were bare numbers, so neither a scalar model (the bouncing ball's `y` is a length) nor a series against time could be drawn. Plot axes now take their dimension from their ranges (PK-7.3a), and `trace` and `series_plot` take sampled sources (PK-6.3a) with their syntax, `expr every Δ`, and IR form.
+- **Equation diagnostics.** A failed equation check printed its residual as `Some(0.0148...)`. The message now gives the instant and the residual.
 - **`emit` semantics.** A first version made the emitted event itself due; MK-15.10 makes the events triggered `on(E)` due. Fixed and covered by a unit test with the cascade limit (RC-8.3).
 
 ## Not implemented
@@ -174,11 +180,11 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 |---|---|
 | Formatter (canonical printing) and matching identities against a previous IR (the parser assigns path identities afresh) | working syntax section 1.4, D-036 |
 | Declared functions (`fn`), contained objects (`object`), enumeration types and cases: no IR form or no spelling yet | MK-10.3, MK section 7, 04-ir section 3 |
-| Representations `trace`, `series_plot`, `table`, `polyline`, `polygon`, `group`, `equation`, `button` (and the syntax for data sources such as `trace(pos every 0.02 s)`) | PK-6.3 |
+| Representations `table`, `polyline`, `polygon`, `group`, `equation`, `button`; sampled sources `over I` | PK-6.3 |
+| Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `camera`, `bind`, `release`, `hide`, `reveal`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
 | Renderers: video and image output (the web player renders interactively) | PK section 12 |
-| Time advancing in interactive sessions of dynamic models (the web player opens them at their initial state) | RC section 12 |
 | Inputs (`input` bindings, `on input`) | RC section 11.2 |
 | Snapshots and backward seek within a dynamic run (undo recomputes from the start) | RC section 14.1 |
 | Payloads of requested and emitted events | MK-15.1 |
@@ -192,3 +198,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 text parser (`prismal-syntax`): all eight programs read from their documents lower to the builder IR; diagnostic variants reproduced as text edits; cases run from text; D-039 and D-040 raised.
 - 2026-09-30 presentation prototype (`prismal-present`), presentation and run IR (04-ir section 7) and their lowering: every expectation of RP-01 to RP-08 checked; RP-08 arrows given scales; lambda parameter names; elaborations of 03 and its static diagnostics.
 - 2026-09-30 web player (`prismal-web`, `web/`): RP-06 to RP-08 interactive in a browser, cases of every program; display units in text alternatives (RP-01 `angle` in degrees); keyboard steps for arrow heads.
+- 2026-09-30 dynamic interactive sessions (display clock, interventions at the instant shown, reset); `trace` and `series_plot` with sampled sources; plot axes with dimensions; lab presentations for RP-01, RP-03, RP-04 and RP-05, played in the web player.
