@@ -10,7 +10,6 @@
 //!   is recomputed from them, which is deterministic (PK-8.7), so frames before an input
 //!   never change.
 
-use crate::mathml;
 use std::rc::Rc;
 use prismal_ir::present::{Action as TAction, LearnerInput, Observation, Schedule, Source};
 use prismal_ir::Op;
@@ -261,29 +260,34 @@ impl Instance {
     /// `(p - dt, p]`), or the session's current frame (interactive). Formulas carry their
     /// MathML typesetting.
     pub fn frame(&self, p: f64, dt: f64) -> Json {
-        let (frame, formulas): (Frame, Vec<&CRep>) = match &self.mode {
+        let frame = match &self.mode {
             Mode::Closed => return Json::Null,
             Mode::Interactive(i) => {
                 let mut f = i.frame();
                 if dt > 0.0 {
                     f.announcements = i.events_between(i.t - dt, i.t);
                 }
-                (f, i.projector.views.iter().flat_map(|v| v.2.iter()).collect())
+                f
             }
-            Mode::Lesson(l) => (l.pb.frame(p, dt), l.pb.projector.views.iter().flat_map(|v| v.2.iter()).chain(l.pb.shown.iter().map(|s| &s.rep)).collect()),
+            Mode::Lesson(l) => l.pb.frame(p, dt),
         };
-        let cm = self.cm().unwrap();
-        let mut out = serde_json::to_value(&frame).expect("frame description");
-        let views = out.get_mut("views").and_then(|v| v.as_array_mut()).into_iter().flatten();
-        for v in views {
-            for r in v.get_mut("reps").and_then(|r| r.as_array_mut()).into_iter().flatten() {
-                enrich(r, cm, &formulas);
-            }
+        serde_json::to_value(&frame).expect("frame description")
+    }
+
+    /// The math box tree of a formula or equation representation (D-046), for a medium
+    /// with its own math engine (MathML in a browser).
+    pub fn math(&self, rep: &str) -> Option<prismal_present::math::MathBox> {
+        let (cm, compiled): (&CModel, Vec<&CRep>) = match &self.mode {
+            Mode::Closed => return None,
+            Mode::Interactive(i) => (&i.cm, i.projector.views.iter().flat_map(|v| v.2.iter()).collect()),
+            Mode::Lesson(l) => (&l.pb.cm, l.pb.projector.views.iter().flat_map(|v| v.2.iter()).chain(l.pb.shown.iter().map(|s| &s.rep)).collect()),
+        };
+        let c = compiled.into_iter().find(|c| c.rep.id == rep)?;
+        match &c.kind {
+            CKind::Formula { lhs, rhs, params, .. } => Some(prismal_present::math::formula(lhs, rhs, cm, params)),
+            CKind::Equation { lhs, rhs, .. } => Some(prismal_present::math::equation(lhs, rhs, cm)),
+            _ => None,
         }
-        for r in out.get_mut("overlay").and_then(|o| o.as_array_mut()).into_iter().flatten() {
-            enrich(r, cm, &formulas);
-        }
-        out
     }
 
     /// The observations of the open presentation, as text lines per observation.
@@ -468,33 +472,6 @@ fn control_type<'a>(cm: &CModel, reps: impl Iterator<Item = &'a CRep>, rep: &str
     prismal_ir::Type::real()
 }
 
-/// Adds to a representation's frame what a web renderer needs beyond the frame description:
-/// the label of a marker, arrow or graph, a formula's MathML, a control's display symbol and unit, and the part a draggable
-/// representation is dragged by (`drag`: `body` or the part's name).
-fn enrich(r: &mut Json, cm: &CModel, compiled: &[&CRep]) {
-    let id = r["id"].as_str().unwrap_or_default().to_string();
-    let Some(c) = compiled.iter().find(|c| c.rep.id == id) else { return };
-    if let Some(inv) = &c.rep.inverse {
-        r["drag"] = json!(inv.part.as_deref().unwrap_or("body"));
-    }
-    match &c.kind {
-        CKind::Marker { label, .. } | CKind::Arrow { label, .. } | CKind::Graph { label, .. } => r["label"] = json!(label),
-        CKind::Formula { lhs, rhs, params, .. } => r["mathml"] = json!(mathml::formula(lhs, rhs, cm, params)),
-        CKind::Equation { lhs, rhs, .. } => r["mathml"] = json!(mathml::equation(lhs, rhs, cm)),
-        CKind::Control { binding, .. } => {
-            r["symbol"] = json!(symbol(cm, binding));
-            if let Some(u) = cm.ir.binding(binding).and_then(|b| b.display.unit.as_ref()).and_then(|u| prismal_ir::Unit::parse(u).ok()) {
-                r["display_unit"] = json!({ "text": u.text, "scale": u.scale });
-            } else if let Some(prismal_ir::Type::Quantity { dim }) = cm.index.get(binding).map(|&i| &cm.bindings[i].ty) {
-                // The coherent SI unit the control's value is in.
-                if !dim.is_none() {
-                    r["unit"] = json!(unit_text(dim));
-                }
-            }
-        }
-        _ => {}
-    }
-}
 
 /// The extent `[xmin, ymin, xmax, ymax]` of shapes in view coordinates, including the origin.
 fn extent<'a>(shapes: impl Iterator<Item = &'a Shape>) -> [f64; 4] {

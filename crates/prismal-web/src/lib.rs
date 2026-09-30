@@ -6,10 +6,10 @@
 //! engine's JSON protocol, for any web host.
 
 pub mod examples;
+pub mod mathml;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
-pub use prismal_host::mathml;
 use prismal_host::{Content, Diagnostic, Document, Instance};
 use serde_json::{json, Value as Json};
 use std::ops::{Deref, DerefMut};
@@ -52,6 +52,14 @@ impl Player {
     /// Runs every case of the program headless and reports each expectation (PK-4.2).
     pub fn run_cases(&self) -> Json {
         self.doc.run_cases().unwrap_or_else(|d| json!([{ "case": "-", "error": d.message }]))
+    }
+
+    /// The frame description at presentation instant `p` (see `Instance::frame`), with the
+    /// MathML of its formulas for the browser.
+    pub fn frame(&self, p: f64, dt: f64) -> Json {
+        let mut f = self.inst.frame(p, dt);
+        mathml::add_mathml(&mut f, &self.inst);
+        f
     }
 
     /// The source location of an IR element (for linking diagnostics and representations

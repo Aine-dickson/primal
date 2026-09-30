@@ -2,7 +2,7 @@
 
 The first renderer of Prismal (D-018): the presentation kernel compiled to WebAssembly, with a browser front end that draws its frame descriptions (PK-12.1).
 
-- `crates/prismal-host`: the host interface (`docs/spec/05-host-interface.md`), independent of the browser and tested natively. It compiles a program from source text or the IR, opens a presentation, and answers with layout and frame descriptions as JSON. Formulas are typeset as MathML from the IR (D-034).
+- `crates/prismal-host`: the host interface (`docs/spec/05-host-interface.md`), independent of the browser and tested natively. It compiles a program from source text or the IR, opens a presentation, and answers with layout and frame descriptions as JSON. Formulas carry a layout any medium can draw (D-046); the browser binding adds their MathML, which this front end shows.
 - `crates/prismal-web`: its JavaScript bindings: `WebPlayer`, one program and one presentation as this front end uses them, and `Engine`, the host protocol for any web page or web view (`new Engine().handle(JSON.stringify({ protocol: 1, op: "capabilities" }))`).
 - `web/`: the front end (`index.html`, `player.js`, `style.css`), with no framework and no build step of its own. It draws spatial and plot views as SVG, panels as HTML controls, and forwards gestures to the kernel. It holds no model logic.
 

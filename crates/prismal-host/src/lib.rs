@@ -9,7 +9,6 @@
 
 pub mod document;
 pub mod instance;
-pub mod mathml;
 
 pub use document::{Content, Diagnostic, Document, Span};
 pub use instance::Instance;

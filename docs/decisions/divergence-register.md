@@ -65,6 +65,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-043 | `group`: members placed by a shared rigid transform with scale, applied in model space | Accepted |
 | D-044 | Prismal is a general embeddable system; Mava Studio is one consumer among others | Accepted |
 | D-045 | Host interface: an engine with handles, a Rust API and one JSON protocol offered by every binding | Accepted |
+| D-046 | Formulas typeset for every medium: a math box tree and its layout in frames; MathML only in the browser binding | Accepted |
 
 ---
 
@@ -827,5 +828,22 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30. Fine-grained edit operations (option 2) can be added to the protocol later if a host needs them; whole replacement with `reconcile` serves both text and visual editing now.
 - **Reason:** any host can embed Prismal without Prismal knowing it; one protocol keeps bindings identical; whole-document updates work for editors of any design.
 - **Consequences:** `docs/spec/05-host-interface.md` (HI-1 to HI-6, HI-E01 to HI-E03); the `prismal-host` crate; `prismal-web` reduced to the WebAssembly binding and the reference renderer; sessions and playbacks own their compiled model, so documents can be closed and freed.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-046: Formulas are typeset for every medium
+
+- **Status:** Accepted
+- **Original position:** D-034 and PK-6.5 require formulas to be typeset from the IR. The prototype typeset them only as MathML, which browsers draw and no other medium does, and the host interface (HI-5.2) put that MathML in every frame. PK-12.2 names still image, video and vector documents as media alongside the web player.
+- **Raised by:** the owner's review of whether rendering is swappable to other targets, and the owner's requirement that formulas remain visible outside the browser.
+- **Builds on:** D-018, D-034, PK-6.5, PK-12.1, PK-12.2, D-045.
+- **Question:** How does a medium without a math engine draw a formula?
+- **Options considered:**
+  1. **Leave typesetting to each renderer**, from the symbolic IR in the frame. Every renderer re-implements math layout, and the same formula looks different in each medium.
+  2. **A TeX string** in the frame. Readable by math engines, but most media (images, video, native interfaces) have none, so it moves the problem rather than solving it.
+  3. **A math box tree and its layout in the core.** The presentation kernel builds a medium-independent box tree from the IR and places it as text runs, rules and stroked paths in em units, with approximate serif metrics and each run's width, so any renderer that draws text and lines draws the formula. A medium with a math engine may typeset the box tree instead; the browser binding writes it as MathML, so both come from one structure.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30. The layout is in `frame::Shape::Formula` and `Equation` as `layout`; MathML leaves the host interface for the WebAssembly binding. Frame descriptions also gain what the host used to add after the fact (labels, drag parts, control symbols and display units), so that they are complete for every renderer.
+- **Reason:** one typesetting for all media keeps formulas consistent and visible everywhere, without a math engine in each renderer; the frame description stays free of any one medium's format.
+- **Consequences:** PK-6.5a, PK-12.1a, HI-5.2; `prismal-present/src/math.rs`; `prismal-web/src/mathml.rs` renders the box tree; `prismal-present/tests/math.rs` checks layouts and writes them as SVG for inspection. Layout metrics are approximate: a renderer with a different font fits each run to its width.
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.

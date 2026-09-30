@@ -107,7 +107,19 @@ impl Engine {
     pub fn new() -> Engine {
         Engine(prismal_host::Engine::new())
     }
+    /// A frame answered to a web host also carries the MathML of its formulas.
     pub fn handle(&mut self, request: &str) -> String {
-        self.0.handle(request)
+        let out = self.0.handle(request);
+        let req: serde_json::Value = serde_json::from_str(request).unwrap_or_default();
+        if req["op"] != "frame" {
+            return out;
+        }
+        let mut v: serde_json::Value = serde_json::from_str(&out).expect("the engine answers JSON");
+        if let (Some(h), Some(f)) = (req["instance"].as_str(), v.get_mut("ok")) {
+            if let Ok(inst) = self.0.instance(h) {
+                crate::mathml::add_mathml(f, inst);
+            }
+        }
+        v.to_string()
     }
 }

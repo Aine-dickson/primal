@@ -8,7 +8,8 @@
 //! pointing down on screen (a view with `y: up` negates model `y`); in a plot view, the
 //! plot's own coordinates; in a panel, none.
 
-use crate::text::{fmt_binding, fmt_num, fmt_value, print, symbol};
+use crate::math::{self, MathLayout};
+use crate::text::{fmt_binding, fmt_num, fmt_value, print, symbol, unit_text};
 use crate::{constant, number, PDiag};
 use prismal_ir::build::{num, origin, tuple};
 use prismal_ir::present::{Arg, Presentation, Rep, View, ViewKind};
@@ -96,6 +97,13 @@ pub struct RepFrame {
     /// During a `reveal draw`: the fraction of a line or path drawn so far.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drawn: Option<f64>,
+    /// The label drawn with a marker, an arrow or a graph: its author name or its source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// For a representation with a declared inverse (PK-5.6): the part it is dragged by,
+    /// `body` or the part's name (`head`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drag: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -110,14 +118,33 @@ pub enum Shape {
     Text { value: String },
     /// Typeset from the IR (PK-6.5, D-034): `rhs` is the symbolic form; each symbol carries
     /// its binding's identity and, when live, its current value.
-    Formula { lhs: String, rhs: Expr, symbols: Vec<Symbol> },
-    Control { control: String, binding: Id, value: f64, #[serde(skip_serializing_if = "Option::is_none")] min: Option<f64>, #[serde(skip_serializing_if = "Option::is_none")] max: Option<f64>, #[serde(skip_serializing_if = "Option::is_none")] step: Option<f64> },
+    /// `layout` places it for any medium (D-046).
+    Formula { lhs: String, rhs: Expr, symbols: Vec<Symbol>, layout: MathLayout },
+    /// `value`, `min`, `max` and `step` are in coherent SI units; `symbol` is the binding's
+    /// display symbol, `display_unit` its display unit (`value / scale` in `text`), else
+    /// `unit` names the coherent SI unit.
+    Control {
+        control: String,
+        binding: Id,
+        value: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        step: Option<f64>,
+        symbol: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display_unit: Option<DisplayUnit>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        unit: Option<String>,
+    },
     /// The source has no value at this instant (PK-3.3).
     Status { status: String },
     /// A closed path through points.
     Polygon { points: Vec<[f64; 2]> },
     /// A model equation typeset from the IR (PK-6.5); `name` is the equation's name.
-    Equation { name: String, lhs: Expr, rhs: Expr, symbols: Vec<Symbol> },
+    Equation { name: String, lhs: Expr, rhs: Expr, symbols: Vec<Symbol>, layout: MathLayout },
     /// A button that requests an event (D-027).
     Button { event: Id, label: String },
     /// Rows of values: the sample instant, then one column per component.
@@ -144,6 +171,13 @@ pub fn retain_reps(reps: &mut Vec<RepFrame>, keep: &impl Fn(&RepFrame) -> bool) 
             retain_reps(members, keep);
         }
     }
+}
+
+/// A display unit: a value in coherent SI units shows as `value / scale` followed by `text`.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct DisplayUnit {
+    pub text: String,
+    pub scale: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -656,7 +690,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                 Some(Ok(v)) => coords(&v),
                 Some(Err(s)) => {
                     let (sh, tx) = status(s);
-                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None };
+                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None };
                 }
                 None => vec![0.0, 0.0],
             };
@@ -734,7 +768,8 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             if !values.is_empty() {
                 text = format!("{text}, where {}", values.join(", "));
             }
-            (Shape::Formula { lhs: lhs.clone(), rhs: rhs.clone(), symbols }, text)
+            let layout = math::layout(&math::formula(lhs, rhs, cm, params));
+            (Shape::Formula { lhs: lhs.clone(), rhs: rhs.clone(), symbols, layout }, text)
         }
         CKind::Control { control, binding, idx, min, max, step } => {
             let v = match &vals[*idx] {
@@ -747,7 +782,13 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                 _ => String::new(),
             };
             let text = format!("{control} for {} = {}{range}", symbol(cm, binding), fmt_binding(cm, *idx, &vals[*idx]));
-            (Shape::Control { control: control.clone(), binding: binding.clone(), value: v, min: *min, max: *max, step: *step }, text)
+            let display_unit = cm.ir.binding(binding).and_then(|b| b.display.unit.as_ref()).and_then(|u| prismal_ir::Unit::parse(u).ok()).map(|u| DisplayUnit { text: u.text, scale: u.scale });
+            let unit = match (&display_unit, &cm.bindings[*idx].ty) {
+                (None, Type::Quantity { dim }) if !dim.is_none() => Some(unit_text(dim)),
+                _ => None,
+            };
+            let shape = Shape::Control { control: control.clone(), binding: binding.clone(), value: v, min: *min, max: *max, step: *step, symbol: symbol(cm, binding), display_unit, unit };
+            (shape, text)
         }
         CKind::Poly { points, closed } => {
             let mut pts = vec![];
@@ -756,7 +797,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                     Ok(v) => pts.push(ctx.to_view(&coords(&v))),
                     Err(s) => {
                         let (sh, tx) = status(s);
-                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None };
+                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None };
                     }
                 }
             }
@@ -773,7 +814,8 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             if !values.is_empty() {
                 text = format!("{text}, where {}", values.join(", "));
             }
-            (Shape::Equation { name: name.clone(), lhs: lhs.clone(), rhs: rhs.clone(), symbols }, text)
+            let layout = math::layout(&math::equation(lhs, rhs, cm));
+            (Shape::Equation { name: name.clone(), lhs: lhs.clone(), rhs: rhs.clone(), symbols, layout }, text)
         }
         CKind::Button { event, label } => {
             let name = cm.ir.events.iter().find(|e| &e.id == event).map(|e| e.name.clone()).unwrap_or_default();
@@ -822,7 +864,12 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
         CKind::Axes => (Shape::Axes, "axes".into()),
         CKind::Grid => (Shape::Grid, "grid".into()),
     };
-    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None }
+    let label = match &r.kind {
+        CKind::Marker { label, .. } | CKind::Arrow { label, .. } | CKind::Graph { label, .. } => Some(label.clone()),
+        _ => None,
+    };
+    let drag = r.rep.inverse.as_ref().map(|inv| inv.part.clone().unwrap_or_else(|| "body".into()));
+    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag }
 }
 
 /// Sample instants `t0, t0 + dt, ...` up to `t`, and `t` itself (PK-6.3, PK-7.5: a trace
