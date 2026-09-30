@@ -193,7 +193,9 @@ impl Player {
     }
 
     fn sim_at(&self, p: f64) -> f64 {
-        if let Some(pin) = self.pb.pins.iter().rev().find(|x| x.0 == p && x.1 == self.open.run) {
+        // A pin belongs to the segment that ends at it; a segment opened at that instant (by a
+        // seek, say) carries its own start.
+        if let Some(pin) = self.pb.pins.iter().rev().find(|x| x.0 == p && x.1 == self.open.run && self.open.p0 < p) {
             return pin.2;
         }
         let s = self.open.s0 + self.open.rate * (p - self.open.p0);
@@ -569,7 +571,7 @@ impl Playback {
     /// The run version and simulation instant shown at presentation instant `p` (PK-8.2).
     pub fn sim_at(&self, p: f64) -> (usize, f64) {
         let s = self.segment_at(p);
-        if let Some(pin) = self.pins.iter().rev().find(|x| x.0 == p && x.1 == s.run) {
+        if let Some(pin) = self.pins.iter().rev().find(|x| x.0 == p && x.1 == s.run && s.p0 < p) {
             return (s.run, pin.2);
         }
         let r = &self.runs[s.run].run;

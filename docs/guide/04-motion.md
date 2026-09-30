@@ -137,7 +137,7 @@ A state variable has one defining flow; to combine several influences, use `+=` 
 
 ## Exercises
 
-1. Add a driving force: `process drive { flow der(v) += (F0 / m) * cos(w * t) }` with parameters `F0: Force` and `w: Frequency`. Plot `x` over 40 s and look for resonance near `w = 2 /s`.
+1. Add a driving force: `process drive { flow der(v) += (F0 / m) * cos(w * (t - t0)) }` with parameters `F0: Force` and `w: Frequency`. Plot `x` over 40 s and look for resonance near `w = 2 /s`.
 2. Write a model of exponential cooling without units first: `state T: Real = 90`, `flow der(T) = -r * (T - Ta)` with `r: Quantity<1/T>`. Check `T` at 10 s against `Ta + (T0 - Ta) e^(-r t)`.
 3. Write a projectile in the plane with `pos: Point` and `vel: Vector<Velocity>`, gravity as a process, and a spatial view with a `trace`. (RP-01 is a complete solution, with the landing as an event from chapter 5.)
 
