@@ -95,8 +95,8 @@ async function main() {
   const sel = $('#program');
   for (const ex of st.examples) sel.append(el('option', { value: ex.key, text: ex.title }));
   sel.append(el('option', { value: '', text: 'Edited source' }));
-  const want = location.hash.slice(1);
-  sel.value = st.examples.some((e) => e.key === want) ? want : st.examples[0].key;
+  st.want = parseAddress();
+  sel.value = st.examples.some((e) => e.key === st.want.key) ? st.want.key : st.examples[0].key;
   sel.addEventListener('change', () => {
     if (!sel.value) return;
     location.hash = sel.value;
@@ -129,6 +129,15 @@ async function main() {
   $('#run-cases').addEventListener('click', runCases);
   window.addEventListener('resize', () => { if (st.frame) render(st.frame); });
   loadExample(sel.value);
+}
+
+/// The address `#key`, `#key/Presentation` or `#key/Presentation@seconds` opens that
+/// program, presentation and instant (presentation time in a lesson, simulation time in a
+/// session).
+function parseAddress() {
+  const m = decodeURIComponent(location.hash.slice(1)).match(/^([^/@]*)(?:\/([^@]*))?(?:@([0-9.]+))?$/);
+  if (!m) return { key: '' };
+  return { key: m[1], presentation: m[2] || null, time: m[3] != null ? parseFloat(m[3]) : null };
 }
 
 function loadExample(key) {
@@ -167,6 +176,8 @@ function compileSource() {
   }
   const first = st.catalogue.presentations.find((p) => p.kind !== 'observations') || st.catalogue.presentations[0];
   if (first) psel.value = first.name;
+  const asked = st.want && st.want.presentation;
+  if (asked && st.catalogue.presentations.some((p) => p.name === asked)) psel.value = asked;
   $('#cases').replaceChildren();
   $('#cases-summary').textContent = `${st.catalogue.cases.length} case${st.catalogue.cases.length === 1 ? '' : 's'}`;
   openPresentation();
@@ -251,6 +262,8 @@ function openPresentation() {
     }
     status('');
   }
+  if (st.want && st.want.time != null && clocked()) st.p = Math.max(clockStart(), Math.min(clockEnd(), st.want.time));
+  st.want = null;
   refresh();
 }
 

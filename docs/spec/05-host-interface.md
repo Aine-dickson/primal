@@ -50,7 +50,7 @@
 
 - **HI-5.1** A **layout** lists an instance's views with their coordinate systems (spatial scale and orientation, plot ranges and units), the extent of their content over the run (for an initial viewport), the learner's permissions, and for a lesson its beats, captions and explore windows.
 - **HI-5.2** A **frame** is the frame description of PK-12.1, which holds everything any renderer needs to draw it without the model (PK-12.1a): labels, the part a representation is dragged by, a control's symbol and display unit, and for formulas and equations the symbolic IR and a layout drawable with text and lines (PK-6.5a, D-046). The host interface adds nothing specific to one medium; a binding for a medium may add to frames what that medium uses (the WebAssembly binding adds MathML).
-- **HI-5.3** A host may draw frames with its own renderer, or embed the reference renderer (`web/`), which draws frames in any web view.
+- **HI-5.3** A host may draw frames with its own renderer, or use a reference renderer: `web/` draws frames in any web view, interactively; `prismal-svg` draws each frame as a standalone SVG document (still images, vector documents, image sequences for video). A renderer needs only layouts and frames.
 - **HI-5.4** **Observations** (PK section 3) of an instance's current run are available by name, as values and as text.
 
 ---
@@ -102,3 +102,4 @@
 
 - 2026-09-30 written with D-044 and D-045.
 - 2026-09-30 HI-5.2: frames carry formula layouts; MathML moved to the WebAssembly binding (D-046).
+- 2026-09-30 HI-5.3: the SVG renderer named as a second reference renderer.

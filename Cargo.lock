@@ -83,6 +83,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "prismal-svg"
+version = "0.1.0"
+dependencies = [
+ "prismal-host",
+ "prismal-web",
+ "serde_json",
+]
+
+[[package]]
 name = "prismal-syntax"
 version = "0.1.0"
 dependencies = [

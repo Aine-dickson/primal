@@ -345,9 +345,14 @@ const DESC: f64 = 0.22;
 const AXIS: f64 = 0.25;
 const RULE: f64 = 0.05;
 
+/// Room after an italic run for the slant of its last letter (italic correction), so that a
+/// superscript or a closing delimiter does not touch it.
+const ITALIC_CORRECTION: f64 = 0.06;
+
 fn text(s: &str, size: f64, italic: bool, binding: Option<Id>) -> Laid {
     let w = text_width(s) * size;
-    Laid { w, asc: ASC * size, desc: DESC * size, items: vec![MathItem::Text { text: s.into(), x: 0.0, y: 0.0, size, width: w, italic, binding }] }
+    let box_w = if italic { w + ITALIC_CORRECTION * size } else { w };
+    Laid { w: box_w, asc: ASC * size, desc: DESC * size, items: vec![MathItem::Text { text: s.into(), x: 0.0, y: 0.0, size, width: w, italic, binding }] }
 }
 
 /// A delimiter drawn as a path spanning `top` to `bottom` (y down), `size` em wide at most.

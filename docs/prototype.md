@@ -15,6 +15,7 @@ The first implementation of Prismal's core semantics, built kernel-first (D-002)
 | `crates/prismal-present` | `03-presentation-kernel.md`, `04-ir.md` section 7 | Presentation checks, observation, expectations, projection and frame descriptions, formula typesetting for every medium (`math.rs`, D-046), interaction, the explanation timeline |
 | `crates/prismal-host` | `05-host-interface.md` | The host interface: an engine of documents (from text or the IR, updated with identities kept) and instances (sessions and lessons), with a Rust API and the JSON protocol |
 | `crates/prismal-web` and `web/` | D-018, `03-presentation-kernel.md` section 12 | The web player: the host interface compiled to WebAssembly and a browser front end that renders frame descriptions |
+| `crates/prismal-svg` | `03-presentation-kernel.md` section 12, `05-host-interface.md` section 5 | The SVG renderer: frame descriptions drawn as standalone SVG documents with no browser, for still images, vector documents and image sequences |
 | `crates/prismal-runtime` | `02-runtime-contract.md` | Runs, `dopri5` and `rk4` with dense output, crossing detection and location, event iteration in superdense time, Zeno detection, constraints and equation checks, interventions and requests, time events, observation, an interactive session with undo and redo |
 
 The reference programs are in `crates/prismal-runtime/tests/common/mod.rs`, each mirroring its working-syntax text in `docs/spec/reference-programs/`. Each program has its own test file.
@@ -150,7 +151,24 @@ Lab presentations: RP-01, RP-03, RP-04 and RP-05 each declare a lab presentation
 
 Acceptance: `prismal-web/tests/player.rs` loads every example, runs the 36 case expectations through the player, checks located diagnostics, RP-06's slider, drag, rejected drag and undo, RP-07's drag of `u`'s head, and RP-08's lesson (MathML of `R`, explore input at 60 deg landing at R60, unchanged earlier frames, refusal outside the explore beat, video medium). The front end was also driven in a headless browser through the same scripts (drags, keys, the explore slider, compile errors, phone width, light and dark themes).
 
-## Coverage of the reference programs
+## SVG renderer
+
+`crates/prismal-svg` is the second renderer (PK-12.2): it draws a frame description as a standalone SVG document, with no browser. It reads only what the host interface gives every host, a layout and frames as JSON (HI section 5), and depends on no other Prismal crate, so it shows that frame descriptions are enough to draw a presentation and that renderers are swappable.
+
+| Part | Content |
+|---|---|
+| `render(layout, frame, options)` | one document per frame: a header naming the presentation, run and instant; each view in a frame with its caption; spatial views in view coordinates with grid and axes, plot views with ticks, frame and clip; markers, arrows (colored in turn, labels, drag handles), segments, graphs, traces, polygons and groups; panels and the overlay with formulas and equations drawn from their layouts (D-046) with live values, controls in their current state (slider, toggle, number) with display units, buttons, tables, labels and statuses; captions; highlights, reveal opacity, drawn fractions and cameras (D-042); drag previews marked invalid |
+| Accessibility | the document's title names the presentation, run and instant; its description lists the text alternatives; every representation carries its text alternative as a title (PK-11.1, D-026) |
+| `Options` | plot width, largest view width, pixels per em of formulas, header, light and dark themes (the web player's colors) |
+| `examples/render.rs` | `cargo run -p prismal-svg --example render -- PROGRAM PRESENTATION [--at T]... [--fps N] [--video] [--dark] [--out DIR]`: frames at chosen instants, or every frame at N per second, an image sequence for video |
+
+The drawing follows the web player's (`web/player.js`): the same view framing from the layout's extent, growth to fit in sessions, camera boxes, tick steps, marks and sizes. Sizes the web player keeps constant on screen are drawn at one document pixel per view pixel. Colors are presentation attributes, not style sheets, so any SVG consumer draws them. Panels, which the browser lays out as HTML, are stacked under their view.
+
+Acceptance:
+
+- `prismal-svg/tests/frames.rs`: every presentation with views of the reference programs and the guide, drawn at its start, a third of the way and its end (at least 60 documents): each is well formed, every representation is present with its text alternative, markers stand at the frame's view coordinates, formulas have one text element per text run of their layouts; panels, controls, buttons, tables, captions and the dark theme; DropMovie as an image sequence at 10 frames per second, with the ball fading in, the ground drawn, the view box halved by `zoom 2` and restored by `zoom 1`. The documents are written to `target/svg-tests` for inspection.
+- `node crates/prismal-svg/compare.mjs` compares frames drawn by this renderer with the same frames drawn by the web player in headless Edge (13 frames of RP-01, RP-03 to RP-08 and the guide's wheel and DropMovie, sessions and lessons, cameras and fades): the view boxes of spatial views, and for every representation its text alternative and the geometry of its marks (marker and handle centres, line ends, path and polygon points; plots normalized to their frame). All 13 agree; a camera zoom perturbed by 1% is reported. The player opens a program, presentation and instant from its address for this (`#rp08/ProjectileLesson@20`).
+
 
 | Program | Covered by the prototype | Not yet covered |
 |---|---|---|
@@ -199,6 +217,8 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - **Equation diagnostics.** A failed equation check printed its residual as `Some(0.0148...)`. The message now gives the instant and the residual.
 - **D-041.** Writing the guide, `event alarm on full` never happened: the runtime made `on(E)` due only after `emit E`, following RC section 8.1, while MK-15.3 says after `E` occurs. `on(E)` now follows both.
 - **Proposals that read bindings.** The player's intervention log evaluated a drag proposal (`speed = sqrt(p.x * 1 m * g / sin(2 * angle))`) as a constant, and the kernel indexed an empty state and panicked. `constant` now refuses expressions that read bindings or derivatives; the log evaluates proposals on the run's state at their instant.
+- **Native and WebAssembly runs differ in the last digits.** Comparing the renderers, RP-08's ball at rest after landing is at `y = -7.06e-10 m` natively and `-1.06e-10 m` in the browser: the elementary functions of the two builds round differently. This is the tolerance-equivalence across platforms that D-015 allows; the comparison checks numbers in text alternatives to 1e-6.
+- **Italic correction.** Superscripts and closing parentheses touched the slanted top of italic letters in formula layouts (`v²`, `f(x)`). An italic run now takes 0.06 em more room after it (`math.rs`); renderers draw layouts with serif faces that have true italics, whose widths the layout approximates.
 - **`emit` semantics.** A first version made the emitted event itself due; MK-15.10 makes the events triggered `on(E)` due. Fixed and covered by a unit test with the cascade limit (RC-8.3).
 
 ## Not implemented
@@ -211,7 +231,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
-| Renderers: video and image output (the web player renders interactively) | PK section 12 |
+| Video files and raster images: the SVG renderer writes vector frames and image sequences, and encoding them is left to external tools | PK section 12 |
 | Inputs (`input` bindings, `on input`) | RC section 11.2 |
 | Snapshots and backward seek within a dynamic run (undo recomputes from the start) | RC section 14.1 |
 | Payloads of requested and emitted events | MK-15.1 |
@@ -233,3 +253,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 `group` (D-043), with members placed in model space; frame tests of the animations; the web player's animations checked in headless Edge.
 - 2026-09-30 host interface (`prismal-host`, D-044, D-045): the web player's logic moved into an engine any host embeds; sessions and playbacks own their model; the JSON protocol exported to JavaScript.
 - 2026-09-30 formulas typeset for every medium (D-046): math box tree and layout in frame descriptions; labels, drag parts and control symbols and units in the core frame; MathML only in the browser binding.
+- 2026-09-30 SVG renderer (`prismal-svg`): frames as standalone SVG documents and image sequences, compared with the web player's drawing in a browser; italic correction in formula layouts; the player's address selects a presentation and instant.

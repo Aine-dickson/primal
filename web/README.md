@@ -17,7 +17,9 @@ cargo install wasm-bindgen-cli --version 0.2.126
 python -m http.server 8000 -d web     # or any static file server
 ```
 
-Then open `http://localhost:8000/`. A reference program can be chosen in the address: `#rp06`, `#rp07`, `#rp08`, `#rp01` to `#rp05`.
+Then open `http://localhost:8000/`. A program can be chosen in the address: `#rp06`, `#rp07`, `#rp08`, `#rp01` to `#rp05`, or a guide program (`#g7-wheel`). A presentation and an instant may follow: `#rp08/ProjectileLesson@20` opens the lesson at presentation time 20 s, `#rp04/PendulumLab@1.5` the session at simulation time 1.5 s.
+
+The same frames can be drawn without a browser by the SVG renderer (`crates/prismal-svg`); `node crates/prismal-svg/compare.mjs` checks that both renderers draw them alike.
 
 ## What the player does
 

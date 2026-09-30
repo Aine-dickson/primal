@@ -1,0 +1,15 @@
+[package]
+name = "prismal-svg"
+description = "Prismal SVG renderer: frame descriptions drawn as standalone SVG documents, with no browser (PK-12.2)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+# The renderer reads only what the host interface gives every host (layouts and frame
+# descriptions as JSON, HI section 4), so it depends on no other Prismal crate.
+[dependencies]
+serde_json.workspace = true
+
+[dev-dependencies]
+prismal-host = { path = "../prismal-host" }
+prismal-web = { path = "../prismal-web" }
