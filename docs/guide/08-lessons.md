@@ -356,7 +356,7 @@ presentation Unwrap for Circle {
   timeline {
     scene unwrap {
       beat meet {
-        narrate "A circle of radius 1 metre. How long is the way around it?" for 4 s
+        narrate "A circle of radius 1 metre. How long is the way around it?" for 5 s
       }
       beat roll {
         run rate 1 until done
@@ -364,7 +364,7 @@ presentation Unwrap for Circle {
       beat laid {
         hold
         highlight laid
-        narrate "Its edge, unwrapped, is a straight line: the circumference." for 4 s
+        narrate "Its edge, unwrapped, is a straight line: the circumference." for 5.2 s
       }
       beat measure {
         reveal draw for 3 s in line {
@@ -372,11 +372,11 @@ presentation Unwrap for Circle {
           segment(origin + (2 * r, -0.6 m), origin + (4 * r, -0.6 m)) as d2
           segment(origin + (4 * r, -0.4 m), origin + (6 * r, -0.4 m)) as d3
         }
-        narrate "Three diameters, and a little more." for 3 s
+        narrate "Three diameters, and a little more." for 3.4 s
       }
       beat name {
         show formula("C", 2π * r, live: true)
-        narrate "The circumference is π diameters: C = 2 π r." for 4 s
+        narrate "The circumference is π diameters: C = 2 π r." for 5 s
       }
     }
   }
@@ -392,7 +392,7 @@ The laid length after one turn is `2π r`, whatever the radius:
 ```cases
 run one_turn of Circle with Unwrap {
   expect {
-    end of roll        == 10 s within 1e-9 s
+    end of roll        == 11 s within 1e-9 s
     laid_length[1]     == 6.28318530717959 m within 1e-9 m    // 2π r
   }
 }
@@ -400,7 +400,7 @@ run one_turn of Circle with Unwrap {
 run bigger of Circle with Unwrap {
   param { r = 1.5 m }
   expect {
-    end of roll        == 10 s within 1e-9 s                 // one turn takes 6 s at any size
+    end of roll        == 11 s within 1e-9 s                 // one turn takes 6 s at any size
     laid_length[1]     == 9.42477796076938 m within 1e-9 m    // 2π × 1.5 m
   }
 }
