@@ -142,6 +142,8 @@ The player's Cases tab shows the same report.
 
 ## Exercises
 
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
+
 1. Add a parachute: a discrete `open: Boolean = false`, an event `deploy on at t0 + 12 s` that sets it, and a drag coefficient `(if open then c_open else c)`. What happens to the constraint `subterminal`? Change its policy to `report` and observe `problems`.
 2. For the `Oscillator` of chapter 4, add `equation conservation: energy == 0.5 * k * x0^2 checked within 1e-5 J` and a case with `c = 0 N*s/m` expecting `problems == []`. Then a case with the default damping: what does the diagnostic say?
 3. Write a case for the `Tank` of chapter 5 that checks `(level on full) == 1 m within 1e-9 m`.

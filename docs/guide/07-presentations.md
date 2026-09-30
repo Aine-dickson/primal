@@ -257,6 +257,8 @@ A velocity arrow in a view that maps lengths needs its own scale: `arrow(vel, fr
 
 ## Exercises
 
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
+
 1. Add a second function graph to `CannonLab` for the same launch without the Moon toggle (always `9.81 m/s^2`), to compare the two trajectories.
 2. Add a marker at the apex, `(reach / (2 m), top / (1 m))`, with an inverse that sets the angle from the dragged height.
 3. For the `Triangle` of chapter 3, add `number_input` controls for the coordinates of `A`. (Hint: a control targets a whole binding; which bindings would the model need?)

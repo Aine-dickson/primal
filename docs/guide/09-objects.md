@@ -671,6 +671,8 @@ The payload of `remove` is a member: give one, `emit remove(balls[2])`, not its 
 
 ## Exercises
 
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
+
 1. Add a fourth ball to `row`. Which expectations change?
 2. Give each ball in `row` a different radius with an override (`r = index * 0.05 m`), and show the radius as a `circle(b.pos, b.r)` in the view.
 3. Chain three masses with springs: each mass is pulled towards its neighbours. Write the force on member `b` as a sum over the others with a filter that keeps only neighbours. (Hint: give each member its number as a parameter, `n = index`, and compare numbers.)

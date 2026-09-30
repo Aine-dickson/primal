@@ -110,6 +110,8 @@ model Wave {
 
 ## Exercises
 
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
+
 1. Add a parameter `c: Real = 0 in [-2, 2]` that shifts the wave vertically, `y(x) = A sin(k x) + c`, with a slider.
 2. Add a case that sets `k = 0.5` and expects `y1 == sin(0.5)` (compute the number).
 3. Write a model `Parabola` with parameters `a`, `b`, `c` and a derived function `p(x: Real): Real = a * x^2 + b * x + c`, plotted over `[-5, 5]`.

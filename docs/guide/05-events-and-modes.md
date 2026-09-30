@@ -343,6 +343,8 @@ The compiler reports `match does not cover landed`.
 
 ## Exercises
 
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
+
 1. Add an overflow valve to the tank: an event `spill on rising(level - 1.1 m)` that sets the level back to `1.1 m`. When can it happen?
 2. Give the tank a leak that starts at 150 s: a discrete `leaking: Boolean = false`, an event `at t0 + 150 s` that sets it, and a flow that drains twice as fast while it is set. Compute when the level next reaches `low`, and test it.
 3. Write a model of a light that switches on for 2 s every 5 s, using two time events and a mode. (`on` is a reserved word, so the mode needs another name.)

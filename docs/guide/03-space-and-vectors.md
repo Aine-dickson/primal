@@ -144,6 +144,8 @@ The plane has axes `x` and `y` only.
 
 ## Exercises
 
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
+
 1. Add the midpoint `M` of `A` and `B` to `Triangle` and draw the median from `C` to `M` as a segment.
 2. Add the perpendicular height from `C` onto the line `AB`: `h: Length = 2 * area / ab`. Check it for the default triangle (`3 m`).
 3. Write a model `Forces in Plane` with two force vectors `F1: Vector<Force> = (3 N, 0 N)` and `F2: Vector<Force> = (0 N, 4 N)`, their resultant `R = F1 + F2`, and a spatial view that draws all three from `origin` with `scale: 1 N -> 30 px`. Check `|R| == 5 N`.

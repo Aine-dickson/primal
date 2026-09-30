@@ -574,3 +574,117 @@ run with_arrow of Dropped with ArrowLesson {
 ```
 
 The run-directing actions, `seek` then `run`, apply first, in order (D-033); the arrow appears as the replay starts.
+
+## Chapter 9
+
+**Exercise 1.** A fourth ball: `row: Ball[4]`. The new ball starts at `(4 m, 4 m)`, so it is the highest: `top` changes at 0.2 s (from 2.8038 m to 3.8038 m), and `rested` at 10 s becomes 4. A ball from 4 m bounces for about 8 s in all (`sqrt(2 × 3.9 m / g) × (1 + 0.8) / (1 - 0.8)`), so it rests before 10 s. `second` does not change:
+
+```text
+space Plane = euclidean(2)
+
+model Drops4 in Plane {
+  object Ball {
+    param { r: Length = 0.1 m }
+    state {
+      pos: Point            = origin + (0 m, 1 m)
+      vel: Vector<Velocity> = 0
+    }
+    discrete { resting: Boolean = false }
+    flow {
+      der(pos) = vel
+      der(vel) = if resting then 0 else (0 m/s^2, -9.81 m/s^2)
+    }
+    event bounce on falling(pos.y - r) {
+      set vel = (vel.x, -0.8 * vel.y)
+    } zeno settle {
+      set vel = 0
+      set pos = origin + (pos.x, r)
+      set resting = true
+    }
+  }
+  parts {
+    row: Ball[4] { pos = origin + (index * 1 m, index * 1 m) }
+  }
+  derived {
+    highest: Length = max(b.pos.y for b in row)
+    landed:  Real   = count(b for b in row if b.resting)
+  }
+}
+
+presentation Drops4View for Drops4 {
+  view scene: spatial(Plane, scale: 1 m -> 60 px, y: up) {
+    for b in row { marker(b.pos) as ball }
+  }
+  observe {
+    second = row[2].pos.y live
+    top    = highest live
+    rested = landed live
+  }
+}
+```
+
+```cases
+run first_moments of Drops4 with Drops4View {
+  until t0 + 0.2 s
+  expect {
+    second == 1.8038 m within 1e-9 m
+    top    == 3.8038 m within 1e-9 m
+  }
+}
+
+run at_rest of Drops4 with Drops4View {
+  until t0 + 10 s
+  expect { rested == 4 within 1e-12 }
+}
+```
+
+**Exercise 4.** Two drops per spray. Each `create` makes the next drop, so a spray at `0.5 k` s makes drops `2k + 1` and `2k + 2`. At 1.2 s the pair from 0 s has landed (at 1.0194 s), and the pairs from 0.5 s and 1 s fly: four drops. The capacity now lasts half as long, so it is doubled:
+
+```text
+space Plane = euclidean(2)
+
+model Fountain2 in Plane {
+  object Drop {
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow {
+      der(pos) = vel
+      der(vel) = (0 m/s^2, -9.81 m/s^2)
+    }
+  }
+  param { speed: Velocity = 5 m/s }
+  parts { drops: Drop[max 80] }
+  event spray on every 0.5 s {
+    create drops { vel = (1 m/s, speed) }
+    create drops { vel = (-1 m/s, speed) }
+  }
+  for d in drops {
+    event land on falling(d.pos.y) { destroy d }
+  }
+  derived { flying: Real = count(drops) }
+}
+
+presentation Spray2 for Fountain2 {
+  view scene: spatial(Plane, scale: 1 m -> 50 px, y: up) {
+    for d in drops { marker(d.pos) as drop }
+  }
+  observe {
+    n     = flying live
+    right = drops[3].pos.x live
+    left  = drops[4].pos.x live
+  }
+}
+```
+
+```cases
+run pairs of Fountain2 with Spray2 {
+  until t0 + 1.2 s
+  expect {
+    n     == 4 within 1e-12
+    right == 0.7 m within 1e-9 m      // thrown at 0.5 s, 1 m/s for 0.7 s
+    left  == -0.7 m within 1e-9 m
+  }
+}
+```

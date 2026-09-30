@@ -428,6 +428,8 @@ A highlight names a representation of the presentation; `bal` is not one.
 
 ## Exercises
 
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
+
 1. Add a beat after `slow` that shows the velocity as an arrow from the ball (`in scene { arrow(vel, from: pos, scale: 1 m/s -> 5 px) }`) and replays the fall.
 2. Make `choose` return to the lesson's own run (remove `keep h`). What does `again` drop from now? Write the case.
 3. RP-08 in the reference programs is a complete narrated lesson with an explore beat, a requested relaunch, and cases A to D. Read it and predict `end of b8` for a learner who sets 30 degrees.

@@ -218,6 +218,8 @@ The compiler reports that `kinetic` reads the parameter `m`: write `fn kinetic(m
 
 ## Exercises
 
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
+
 1. Add `fuel_rate: Quantity<M/L> = 0.06 kg/km` to `Trip` and a derived `fuel: Mass = fuel_rate * distance`. Check it with a case (`7.2 kg` for the default trip).
 2. Write `kinetic: Energy = 0.5 * mass * speed` and read the error. Which dimension does the compiler find?
 3. A pendulum's period is `T = 2π sqrt(L / g)`. Write a model with `L: Length` and `g: Acceleration` and a derived `T: Time`. Check that `L = 1 m`, `g = 9.81 m/s^2` gives `2.00607 s` (to `1e-5 s`).
