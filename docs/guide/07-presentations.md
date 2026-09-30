@@ -31,6 +31,8 @@ presentation Name for Model {
 | `arrow(v, from: P [, scale: 1 m/s -> 4 px])` | a vector drawn from a point | spatial |
 | `segment(P, Q)` | a straight segment | spatial |
 | `polyline(P, Q, ...)`, `polygon(P, Q, ...)` | an open or closed path through points | spatial |
+| `circle(P, r)`, `ellipse(P, a, b [, rotate: θ])` | a circle of radius `r`, an ellipse with radii `a` and `b` turned by `θ`, around `P` | spatial |
+| `arc(P, r, from: θ1, to: θ2)` | part of the circle of radius `r` around `P`, from angle `θ1` to `θ2` | spatial |
 | `trace(P every Δ)` | the path of a point up to the instant shown | spatial |
 | `function_graph(f)` | the graph of a function `Real -> Real` over the plot's `x` range | plot |
 | `series_plot(e every Δ)` | a value against elapsed time | plot with a time `x` axis |
@@ -47,6 +49,8 @@ presentation Name for Model {
 | `group(at: P, rotate: θ, scale: k) { ... }` | its members, placed, turned and scaled together (see Groups) | spatial |
 
 `as name` after a representation names it (`marker(pos) as ball`), for timelines and for readers.
+
+A `marker` is a dot of fixed size on the screen. A `circle`, `ellipse` or `arc` has radii in the model's units, so it grows when the view is zoomed. Their angles are measured counterclockwise from the space's `x` axis: `arc(P, r, from: 0 deg, to: 90 deg)` is the quarter from the right of `P` to above it.
 
 Every representation has a **text alternative** generated from what it shows ("slider for θ = 45 deg, from 5 deg to 85 deg"), for screen readers and the player's Description tab (D-026).
 
@@ -175,7 +179,7 @@ presentation WheelView for Wheel {
   view road: spatial(Plane, scale: 1 m -> 100 px, y: up) {
     axes
     group(at: origin + (x, r), rotate: φ) as wheel {
-      polygon(origin + (r, 0 m), origin + (0 m, r), origin + (-r, 0 m), origin + (0 m, -r))
+      circle(origin, r) as tyre
       segment(origin, origin + (r, 0 m))
       marker(origin + (r, 0 m)) as valve
     }
@@ -187,9 +191,9 @@ presentation WheelView for Wheel {
 }
 ```
 
-- The wheel is drawn around its own centre, `origin`, as a square with one spoke (v0 has no circle representation); the group places that centre at `(x, r)` and turns it by `φ`. The marker `valve` is therefore always at the model's `rim`, and the trace of `rim` draws a cycloid behind it.
+- The wheel is drawn around its own centre, `origin`, as a circle with one spoke; the group places that centre at `(x, r)` and turns it by `φ`. The marker `valve` is therefore always at the model's `rim`, and the trace of `rim` draws a cycloid behind it.
 - `at` is a point (the group's `origin` goes there; default the view's origin), `rotate` an angle (default 0), `scale` a number (default 1). Points of members are moved, turned and scaled; vectors of arrows are turned and scaled.
-- A group holds markers, arrows, segments, polylines, polygons and other groups; a group inside a group is placed in its parent's frame. Groups belong in spatial views.
+- A group holds markers, arrows, segments, polylines, polygons, circles, ellipses, arcs and other groups; a group inside a group is placed in its parent's frame. Groups belong in spatial views.
 - A group and each named member can be the target of `highlight`, `hide` and `reveal` in a timeline. The text alternative of a group lists those of its members.
 - A trace is sampled over time, so it is drawn outside the group, from a model point (`rim`).
 - The wheel stops at the end of a 4 m road (`road_end`), so the whole path fits the view.

@@ -813,6 +813,7 @@ fn extent<'a>(shapes: impl Iterator<Item = &'a Shape>) -> [f64; 4] {
                 add(to);
             }
             Shape::Polyline { points } | Shape::Polygon { points } => points.iter().for_each(add),
+            Shape::Ellipse { .. } => s.curve_points(64).iter().for_each(add),
             Shape::Group { members } => members.iter().for_each(|m| walk(&m.shape, add)),
             _ => {}
         }

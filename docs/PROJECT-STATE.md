@@ -136,7 +136,8 @@ How to verify the state quickly: `cargo test` at the root (118 tests pass as of 
 20. Process binding `prismal-stdio` (HI-6.4): the protocol for hosts in any language.
 21. Media export (D-052): video files, PNG stills and sequences (`prismal-media`).
 22. Narration sound (D-053): recordings and speech by cue name, in video export and the web player.
-23. Next: see Next steps.
+23. Round geometry (D-054): `circle`, `ellipse`, `arc`.
+24. Next: see Next steps.
 
 ## Session log
 
@@ -167,6 +168,7 @@ How to verify the state quickly: `cargo test` at the root (118 tests pass as of 
 | 2026-09-30 | Process binding `crates/prismal-stdio` (HI-6.4): the JSON protocol over standard input and output as JSON Lines, request ids echoed, errors answered as responses; `tests/process.rs` drives the running binary; `client.py` is a Python host that feeds an input and reads frames. 104 tests pass. |
 | 2026-09-30 | Media export `crates/prismal-media` (D-052): the SVG renderer's frames rasterized with resvg and piped as raw RGBA to ffmpeg (MP4 and MOV with H.264, WebM with VP9, MKV, GIF); a lesson in the video medium with fallbacks and reports (PK-12.3), a session from the start of its run; one even-sized canvas per clip so views stay in place when captions appear; captions drawn, as a subtitle track or both, always as WebVTT; PNG stills and frame directories with the encoder command for machines without an encoder; `prismal-media` command. Guide chapter 8 gained Exporting a video. |
 | 2026-09-30 | Narration sound (D-053, the owner's direction: sound is not a language feature, and is needed wherever captions play). Caption cues are named after their beats (`b3`, `b3.2`) in layouts and WebVTT (PK-9.2d, HI-5.1a). Video export: `--voice DIR` recordings by cue, `--speech system` (Windows speech, `say`, `espeak-ng`) or a command, `--music`, a recording script; narration delayed to its cues and mixed; recordings longer than their cue reported (RP-08's `b3` needs 3.6 s with the Windows voice). Web player: Voice menu with Web Speech and recordings as files, started at the offset into a cue, silenced on pause and seek; `web/check-voice.mjs` checks it in headless Edge. Found: stale length checks duplicated notes when recordings were chosen twice. |
+| 2026-09-30 | Round geometry (D-054), raised by the owner (the guide's wheel was a square): `circle(P, r)`, `ellipse(P, a, b, rotate: θ)`, `arc(P, r, from: θ1, to: θ2)` with radii in model units, carried in frames as exact elliptical arcs with the view's orientation and groups applied; SVG paths in both renderers; `reveal draw` along the perimeter; hit testing and extents by sampling. The wheel is a circle. Guide chapter 8 gained Unwrapping a circle, which answers the owner's question whether a lesson can unwrap a circle into its circumference: the circle rolls one turn, its edge laid on the line; cases check `2π r` for two radii. Found: the language has no author styling of representations (colour, dashes), so the laid edge is a polyline to share the arc's colour. |
 
 ## Working process
 

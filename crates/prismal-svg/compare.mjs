@@ -34,6 +34,8 @@ const CASES = [
   ['rp08', 'ProjectileLesson', 9],
   ['rp08', 'ProjectileLesson', 20],
   ['g7-wheel', 'WheelView', 1],
+  ['g8-circle', 'Unwrap', 7.5],
+  ['g8-circle', 'Unwrap', 20],
   ['g8-freefall', 'DropMovie', 1.5],
   ['g8-freefall', 'DropMovie', 3.2],
   ['g8-freefall', 'DropMovie', 5.2],
@@ -88,7 +90,7 @@ function geometry(doc) {
   const views = {};
   let view = null;
   const reps = []; // stack of open groups: rep id or null
-  const tags = /<(\/?)(svg|g|circle|line|polyline|polygon|rect|title)\b([^>]*?)(\/?)>/g;
+  const tags = /<(\/?)(svg|g|circle|line|polyline|polygon|path|rect|title)\b([^>]*?)(\/?)>/g;
   let m;
   let title = null;
   while ((m = tags.exec(doc))) {
@@ -129,6 +131,8 @@ function geometry(doc) {
     if (tag === 'circle') r.marks.push([`circle.${(a.class || '').split(' ')[0]}`, [+a.cx, +a.cy]]);
     else if (tag === 'line') r.marks.push(['line', [+a.x1, +a.y1, +a.x2, +a.y2]]);
     else if (tag === 'polyline' || (tag === 'polygon' && !r.arrow)) r.marks.push([tag, nums(a.points)]);
+    // Circles, ellipses and arcs (PK-6.3c): the numbers of the path, flags included.
+    else if (tag === 'path') r.marks.push([tag, a.d.match(/-?\d+(\.\d+)?(e-?\d+)?/g).map(Number)]);
   }
   // Plot coordinates relative to the plot's frame, so that plots drawn at different
   // sizes compare.

@@ -230,6 +230,10 @@ pub fn hit(vf: &ViewFrame, map: &Map, p: [f64; 2], tolerance: f64) -> Option<Tar
             (Shape::Arrow { to, .. }, false) => near(dist(px(to), p), HANDLE_R),
             (Shape::Arrow { from, to } | Shape::Segment { from, to }, true) => near(dist_to_segment(p, px(from), px(to)), STROKE_R),
             (Shape::Polyline { points }, true) => points.windows(2).any(|w| near(dist_to_segment(p, px(&w[0]), px(&w[1])), STROKE_R)),
+            (Shape::Ellipse { closed, .. }, true) => {
+                let pts: Vec<[f64; 2]> = r.shape.curve_points(64).iter().map(px).collect();
+                (*closed && inside(p, &pts)) || pts.windows(2).any(|w| near(dist_to_segment(p, w[0], w[1]), STROKE_R))
+            }
             (Shape::Polygon { points }, true) => {
                 let pts: Vec<[f64; 2]> = points.iter().map(px).collect();
                 inside(p, &pts) || pts.iter().zip(pts.iter().cycle().skip(1)).any(|(a, b)| near(dist_to_segment(p, *a, *b), STROKE_R))

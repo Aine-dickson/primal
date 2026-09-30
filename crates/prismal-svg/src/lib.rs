@@ -247,7 +247,7 @@ impl Map {
     }
 }
 
-const DRAWN: [&str; 6] = ["point", "arrow", "segment", "polyline", "polygon", "group"];
+const DRAWN: [&str; 7] = ["point", "arrow", "segment", "polyline", "polygon", "ellipse", "group"];
 
 fn view_block(vl: &Json, vf: &Json, clip: usize, opts: &Options) -> Block {
     let th = &opts.theme;
@@ -591,6 +591,13 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
                 accent = th.accent
             );
         }
+        "ellipse" => {
+            // A circle, ellipse or arc (PK-6.3c): a whole one filled as a polygon is, an
+            // arc stroked only.
+            let fill = if r["closed"] == true { format!("fill=\"{}\" fill-opacity=\"0.12\"", th.accent) } else { "fill=\"none\"".to_string() };
+            let cls = if r["closed"] == true { "shape" } else { "curve" };
+            let _ = write!(out, "<path class=\"{cls}\" d=\"{}\" {fill} stroke=\"{}\" stroke-width=\"{}\"{dash}/>", curve_path(r), th.accent, n(2.0 * u));
+        }
         "group" => {
             // Members are placed by the kernel; the group carries opacity and highlight
             // (D-043).
@@ -608,6 +615,30 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
         _ => {}
     }
     *out += "</g>";
+}
+
+/// The SVG path of an `ellipse` shape: elliptical arcs of at most a quarter turn each, so
+/// that no arc flag is ambiguous; a whole one is closed.
+pub fn curve_path(r: &Json) -> String {
+    let c = pt(&r["center"]);
+    let radii = pt(&r["radii"]);
+    let (rot, start, sweep) = (f(&r["rotation"]), f(&r["start"]), f(&r["sweep"]));
+    let (s, co) = rot.sin_cos();
+    let at = |a: f64| {
+        let (x, y) = (radii[0] * a.cos(), radii[1] * a.sin());
+        [c[0] + co * x - s * y, c[1] + s * x + co * y]
+    };
+    let pieces = (sweep.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
+    let p0 = at(start);
+    let mut d = format!("M{} {}", n(p0[0]), n(p0[1]));
+    for k in 1..=pieces {
+        let p = at(start + sweep * k as f64 / pieces as f64);
+        let _ = write!(d, " A{} {} {} 0 {} {} {}", n(radii[0]), n(radii[1]), n(rot.to_degrees()), (sweep > 0.0) as u8, n(p[0]), n(p[1]));
+    }
+    if r["closed"] == true {
+        d.push_str(" Z");
+    }
+    d
 }
 
 // ---------------------------------------------------------------- panel items

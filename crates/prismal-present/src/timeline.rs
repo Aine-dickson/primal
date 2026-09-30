@@ -105,7 +105,7 @@ pub struct CameraCue {
 /// The state of a representation `k` of the way through a reveal (D-042): a path is drawn
 /// up to `k`, anything else fades in; a group's members are handled one by one.
 fn reveal(r: &mut crate::frame::RepFrame, style: RevealStyle, k: f64) {
-    let path = matches!(r.shape, Shape::Polyline { .. } | Shape::Polygon { .. } | Shape::Segment { .. } | Shape::Arrow { .. });
+    let path = matches!(r.shape, Shape::Polyline { .. } | Shape::Polygon { .. } | Shape::Ellipse { .. } | Shape::Segment { .. } | Shape::Arrow { .. });
     if style == RevealStyle::Draw && path {
         r.drawn = Some(k);
     } else if !matches!(r.shape, Shape::Group { .. }) || style == RevealStyle::Fade {

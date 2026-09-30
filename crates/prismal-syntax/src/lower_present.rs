@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 /// Representation kinds of the first slice (PK-6.3).
 const KINDS: &[&str] = &[
-    "marker", "arrow", "segment", "polyline", "polygon", "trace", "function_graph", "series_plot", "axes", "grid", "label",
+    "marker", "arrow", "segment", "polyline", "polygon", "circle", "ellipse", "arc", "trace", "function_graph", "series_plot", "axes", "grid", "label",
     "equation", "formula", "table", "slider", "number_input", "toggle", "button", "group",
 ];
 

@@ -302,6 +302,112 @@ run lab_drops of FreeFall with DropLab {
 
 A case plays the model without a learner, so the button is never pressed. The player's tests press it (`crates/prismal-present/tests/labs.rs`).
 
+## Unwrapping a circle
+
+A geometry lesson: why the circumference of a circle is `2π r`. The circle rolls along a line without slipping, so each piece of its edge touches the line once. The part of the edge that has touched is laid on the line, and taken off the circle, so the circle unwinds onto the line; after one turn, the line is the whole edge.
+
+```text
+space Plane = euclidean(2)
+
+model Circle in Plane {
+  param {
+    r: Length = 1 m   in [0.25 m, 2 m]
+  }
+  state {
+    φ: Angle = 0                       // how far the circle has turned
+  }
+  discrete {
+    rolling: Boolean = true
+  }
+  derived {
+    unrolled: Length = r * φ           // the edge laid on the line so far
+    centre:   Point  = origin + (unrolled, r)
+    // The point of the edge that first touched the line, turned with the circle.
+    first:    Point  = centre + (r * cos(-90 deg - φ), r * sin(-90 deg - φ))
+  }
+  flow {
+    der(φ) = if rolling then 1 rev / (6 s) else 0
+  }
+  event done on rising(φ - 1 rev) {
+    set rolling = false
+  }
+}
+```
+
+- `φ` is how far the circle has turned; it grows at one turn per 6 s until `done`, at one full turn (`1 rev`).
+- Rolling without slipping: the centre has moved by `r φ`, the length of edge laid on the line (`unrolled`).
+- `first` is the point of the edge that touched the line first, turned with the circle.
+
+```text
+presentation Unwrap for Circle {
+  view line: spatial(Plane, scale: 1 m -> 60 px, y: up) {
+    axes
+    polyline(origin, origin + (unrolled, 0 m)) as laid
+    arc(centre, r, from: -90 deg, to: 270 deg - φ) as edge
+    segment(centre, first) as radius
+    marker(first) as seam
+  }
+  panel numbers {
+    label(unrolled)
+  }
+  observe {
+    laid_length = unrolled on done
+  }
+  timeline {
+    scene unwrap {
+      beat meet {
+        narrate "A circle of radius 1 metre. How long is the way around it?" for 4 s
+      }
+      beat roll {
+        run rate 1 until done
+      }
+      beat laid {
+        hold
+        highlight laid
+        narrate "Its edge, unwrapped, is a straight line: the circumference." for 4 s
+      }
+      beat measure {
+        reveal draw for 3 s in line {
+          segment(origin + (0 m, -0.4 m), origin + (2 * r, -0.4 m)) as d1
+          segment(origin + (2 * r, -0.6 m), origin + (4 * r, -0.6 m)) as d2
+          segment(origin + (4 * r, -0.4 m), origin + (6 * r, -0.4 m)) as d3
+        }
+        narrate "Three diameters, and a little more." for 3 s
+      }
+      beat name {
+        show formula("C", 2π * r, live: true)
+        narrate "The circumference is π diameters: C = 2 π r." for 4 s
+      }
+    }
+  }
+}
+```
+
+- `arc(centre, r, from: -90 deg, to: 270 deg - φ)` is the edge still on the circle: from the contact point at the bottom (`-90 deg`), counterclockwise, to `first`. At `φ = 0` it is the whole circle; after one turn it is empty.
+- `polyline(origin, origin + (unrolled, 0 m))` is the edge laid on the line. It is a polyline, not a segment, only to be drawn in the same colour as the arc.
+- In `measure`, three diameters are drawn under the line: they fall a little short of it. `name` shows `C = 2πr` with the value of `r`.
+
+The laid length after one turn is `2π r`, whatever the radius:
+
+```cases
+run one_turn of Circle with Unwrap {
+  expect {
+    end of roll        == 10 s within 1e-9 s
+    laid_length[1]     == 6.28318530717959 m within 1e-9 m    // 2π r
+  }
+}
+
+run bigger of Circle with Unwrap {
+  param { r = 1.5 m }
+  expect {
+    end of roll        == 10 s within 1e-9 s                 // one turn takes 6 s at any size
+    laid_length[1]     == 9.42477796076938 m within 1e-9 m    // 2π × 1.5 m
+  }
+}
+```
+
+The end of `roll` is found by locating the event `done`, so it is checked within a tolerance.
+
 ## Mistakes
 
 ```error

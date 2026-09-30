@@ -143,6 +143,13 @@ pub enum Shape {
     Status { status: String },
     /// A closed path through points.
     Polygon { points: Vec<[f64; 2]> },
+    /// An elliptical arc in view coordinates: the points `center + radii[0] cos(a) u +
+    /// radii[1] sin(a) v` for `a` from `start` to `start + sweep`, where `u` is the unit
+    /// vector at `rotation` and `v` is `u` turned by +90 degrees (from +x towards +y of the
+    /// view). Angles are in radians. `closed` for a whole circle or ellipse. Circles, ellipses
+    /// and arcs of the model's space become this shape, with the view's orientation and any
+    /// group's transform applied (PK-6.3c).
+    Ellipse { center: [f64; 2], radii: [f64; 2], rotation: f64, start: f64, sweep: f64, closed: bool },
     /// A model equation typeset from the IR (PK-6.5); `name` is the equation's name.
     Equation { name: String, lhs: Expr, rhs: Expr, symbols: Vec<Symbol>, layout: MathLayout },
     /// A button that requests an event (D-027).
@@ -151,6 +158,22 @@ pub enum Shape {
     Table { columns: Vec<String>, rows: Vec<Vec<String>> },
     /// A group's members, already placed by its transform (D-043).
     Group { members: Vec<RepFrame> },
+}
+
+impl Shape {
+    /// `n + 1` points along an `Ellipse` shape from its start to its end, in view
+    /// coordinates; empty for other shapes.
+    pub fn curve_points(&self, n: usize) -> Vec<[f64; 2]> {
+        let Shape::Ellipse { center, radii, rotation, start, sweep, .. } = self else { return vec![] };
+        let (s, c) = rotation.sin_cos();
+        (0..=n)
+            .map(|k| {
+                let a = start + sweep * k as f64 / n as f64;
+                let (x, y) = (radii[0] * a.cos(), radii[1] * a.sin());
+                [center[0] + c * x - s * y, center[1] + s * x + c * y]
+            })
+            .collect()
+    }
 }
 
 /// Applies `f` to every representation in `reps`, a group before its members.
@@ -291,6 +314,9 @@ pub enum CKind {
     Formula { lhs: String, rhs: Expr, params: Vec<String>, refs: Vec<(Id, usize)>, live: bool },
     Control { control: String, binding: Id, idx: usize, min: Option<f64>, max: Option<f64>, step: Option<f64> },
     Poly { points: Vec<CExpr>, closed: bool },
+    /// `circle`, `ellipse` and `arc` (PK-6.3c): radii are lengths, angles numbers (radians);
+    /// `ry` absent for a circle or an arc, `from` and `to` present for an arc only.
+    Round { center: CExpr, rx: CExpr, ry: Option<CExpr>, rotate: Option<CExpr>, from: Option<CExpr>, to: Option<CExpr> },
     Equation { name: String, lhs: Expr, rhs: Expr, refs: Vec<(Id, usize)>, live: bool },
     Button { event: Id, label: String },
     Table { value: CExpr, tys: Vec<Type>, every: f64, columns: Vec<String> },
@@ -549,6 +575,47 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
             }
             CKind::Poly { points, closed: rep.kind == "polygon" }
         }
+        "circle" | "ellipse" | "arc" => {
+            let ViewCtx::Spatial { space, .. } = ctx else { return Err(d("PK-E05", format!("a {} belongs in a spatial view", rep.kind))) };
+            let what = match rep.kind.as_str() {
+                "circle" => "a centre and a radius: `circle(P, 1 m)`",
+                "ellipse" => "a centre and two radii: `ellipse(P, 2 m, 1 m)`",
+                _ => "a centre and a radius: `arc(P, 1 m, from: 0 deg, to: 90 deg)`",
+            };
+            let n = if rep.kind == "ellipse" { 3 } else { 2 };
+            if rep.sources.len() != n {
+                return Err(needs(what));
+            }
+            let center = ce(source(rep, 0).ok_or_else(|| needs(what))?, Some(&Type::Point { space: space.clone() }))?.0;
+            let length = |e: &Expr| -> Result<CExpr, Vec<PDiag>> {
+                match ce(e, None)? {
+                    (c, Type::Quantity { dim }) if dim == Dim::length() => Ok(c),
+                    _ => Err(d("PK-E04", format!("a radius of a {} is a length: `1 m` (PK-6.3c)", rep.kind))),
+                }
+            };
+            let angle = |name: &str| -> Result<Option<CExpr>, Vec<PDiag>> {
+                let Some(e) = prop_expr(rep, name) else { return Ok(None) };
+                match ce(e, None)? {
+                    (c, Type::Quantity { dim }) if dim.is_none() => Ok(Some(c)),
+                    _ => Err(d("PK-E04", format!("`{name}` of a {} is an angle: `90 deg` (PK-6.3c)", rep.kind))),
+                }
+            };
+            let allowed: &[&str] = match rep.kind.as_str() {
+                "circle" => &[],
+                "ellipse" => &["rotate"],
+                _ => &["from", "to"],
+            };
+            if let Some(p) = rep.props.iter().find(|p| !allowed.contains(&p.name.as_str())) {
+                return Err(d("PK-E05", format!("a {} takes no `{}` (PK-6.3c)", rep.kind, p.name)));
+            }
+            let rx = length(source(rep, 1).ok_or_else(|| needs(what))?)?;
+            let ry = if rep.kind == "ellipse" { Some(length(source(rep, 2).ok_or_else(|| needs(what))?)?) } else { None };
+            let (from, to) = (angle("from")?, angle("to")?);
+            if rep.kind == "arc" && (from.is_none() || to.is_none()) {
+                return Err(needs(what));
+            }
+            CKind::Round { center, rx, ry, rotate: angle("rotate")?, from, to }
+        }
         "equation" => {
             let Some(Arg::Element { element }) = rep.sources.first() else { return Err(needs("the name of a model equation")) };
             let q = cm.ir.equations.iter().find(|q| &q.id == element).ok_or_else(|| needs("the name of a model equation"))?;
@@ -620,10 +687,10 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
             let mut members = vec![];
             let mut diags = vec![];
             for m in &rep.members {
-                if !["marker", "arrow", "segment", "polyline", "polygon", "group"].contains(&m.kind.as_str()) {
+                if !["marker", "arrow", "segment", "polyline", "polygon", "circle", "ellipse", "arc", "group"].contains(&m.kind.as_str()) {
                     diags.push(PDiag {
                         code: "PK-E05",
-                        message: format!("a group holds markers, arrows, segments, polylines, polygons and groups, not `{}` (PK-6.3b)", m.kind),
+                        message: format!("a group holds markers, arrows, segments, polylines, polygons, circles, ellipses, arcs and groups, not `{}` (PK-6.3b)", m.kind),
                         element: m.id.clone(),
                     });
                     continue;
@@ -809,6 +876,46 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             }
             let text = format!("{} through {} points", r.rep.kind, pts.len());
             (if *closed { Shape::Polygon { points: pts } } else { Shape::Polyline { points: pts } }, text)
+        }
+        CKind::Round { center, rx, ry, rotate, from, to } => {
+            let num = |c: &CExpr| match run.eval_state(c, vals, t) {
+                Ok(Value::Num(x)) => Ok(x),
+                Ok(_) => Err(None),
+                Err(s) => Err(Some(s)),
+            };
+            let opt = |c: &Option<CExpr>, default: f64| c.as_ref().map(num).unwrap_or(Ok(default));
+            let rx_v = num(rx);
+            let ry_v = ry.as_ref().map(num).unwrap_or_else(|| rx_v.clone());
+            match (eval(center), rx_v, ry_v, opt(rotate, 0.0), opt(from, 0.0), opt(to, std::f64::consts::TAU)) {
+                (Ok(c), Ok(a), Ok(b), Ok(rot), Ok(t1), Ok(t2)) if a >= 0.0 && b >= 0.0 => {
+                    // In the model's space: centre c, radii scaled by the group, axes turned
+                    // by the ellipse's rotation and the group's.
+                    let c = coords(&c);
+                    let (a, b, rot) = (a * tf.k, b * tf.k, rot + tf.angle);
+                    let (s, co) = rot.sin_cos();
+                    let cv = ctx.to_view(&c);
+                    let ue = ctx.to_view(&[c[0] + a * co, c[1] + a * s]);
+                    let ve = ctx.to_view(&[c[0] - b * s, c[1] + b * co]);
+                    let (u, v) = ([ue[0] - cv[0], ue[1] - cv[1]], [ve[0] - cv[0], ve[1] - cv[1]]);
+                    // A view with y up reverses the turning sense: angles change sign.
+                    let sense = if u[0] * v[1] - u[1] * v[0] >= 0.0 { 1.0 } else { -1.0 };
+                    let rotation = u[1].atan2(u[0]);
+                    let closed = r.rep.kind != "arc";
+                    let shape = Shape::Ellipse { center: cv, radii: [u[0].hypot(u[1]), v[0].hypot(v[1])], rotation, start: sense * t1, sweep: sense * (t2 - t1), closed };
+                    let name = r.rep.name.as_deref().map(|n| format!(" {n}")).unwrap_or_default();
+                    let at = format!("x = {} m, y = {} m", fmt_num(c[0]), fmt_num(c[1]));
+                    let deg = |x: f64| fmt_num(x.to_degrees());
+                    let text = match r.rep.kind.as_str() {
+                        "circle" => format!("circle{name} around {at}, radius {} m", fmt_num(a)),
+                        "ellipse" => format!("ellipse{name} around {at}, radii {} m and {} m, turned {} deg", fmt_num(a), fmt_num(b), deg(rot)),
+                        _ => format!("arc{name} around {at}, radius {} m, from {} deg to {} deg", fmt_num(a), deg(t1 + tf.angle), deg(t2 + tf.angle)),
+                    };
+                    (shape, text)
+                }
+                (Err(s), ..) => status(s),
+                (_, Err(Some(s)), ..) | (_, _, Err(Some(s)), ..) | (_, _, _, Err(Some(s)), ..) | (_, _, _, _, Err(Some(s)), _) | (_, _, _, _, _, Err(Some(s))) => status(s),
+                _ => (Shape::Status { status: "negative radius".into() }, format!("{}: not available (negative radius)", r.rep.name.clone().unwrap_or(r.rep.kind.clone()))),
+            }
         }
         CKind::Equation { name, lhs, rhs, refs, live } => {
             let symbols: Vec<Symbol> = refs

@@ -73,6 +73,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-051 | Inputs in v0: optional defaults, starting values from the run, piecewise-constant changes from runs and hosts (`set_input`) | Accepted |
 | D-052 | Video export: frames from the SVG renderer rasterized in process, encoding by an external encoder through a pipe, one canvas per clip, captions drawn and as a track | Accepted |
 | D-053 | Narration sound belongs to hosts, not programs: cues named after their beats, voiced by recordings named by cue or by synthesized speech; the timeline keeps the timing | Accepted |
+| D-054 | Round geometry: `circle`, `ellipse` and `arc` representations with radii in model units, carried in frames as exact elliptical arcs | Accepted |
 
 ---
 
@@ -983,3 +984,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** PK-9.2d; HI-5.1a; `Caption::cue` in `prismal-present`; `prismal-media` `voice` module; `web/player.js` narration sound and `web/check-voice.mjs`; guide chapter 8. Not yet done: voices for several languages (a voice directory per language is the natural extension), and fitting timing to recordings as an explicit, reported option.
 - **History:**
   - 2026-09-30 raised by the owner and accepted; details under the owner's standing delegation of 2026-09-30.
+
+## D-054: Round geometry in the representation set
+
+- **Status:** Accepted
+- **Original position:** PK-6.3's first-slice representation set has straight geometry only (`segment`, `polyline`, `polygon`); `marker` draws a point as a dot of fixed screen size. The guide's rolling wheel (chapter 7) was drawn as a square, noting that v0 had no circle.
+- **Raised by:** the owner, 2026-09-30, asking why the wheel was a square; and a lesson on the circumference of a circle, unwrapped onto a line, which needs a circle whose edge can be partly drawn.
+- **Builds on:** PK-5.5, PK-6.3, PK-6.3b, PK-12.1a, D-042, D-043, D-046.
+- **Question:** How are circles drawn, and what does a frame carry for them?
+- **Options considered:**
+  1. **A polygon of many points.** No new kind, but the language has no loops or collections to write the points, and a drawn polygon is not a circle to a reader, a renderer or a text alternative.
+  2. **Frames carry sampled points of new kinds.** Every renderer draws them, but curves are approximate when zoomed, frames grow, and the shape's meaning is lost to renderers.
+  3. **`circle`, `ellipse`, `arc` kinds carried as exact elliptical arcs in view coordinates.** Renderers draw true curves (SVG paths, canvas arcs) from centre, radii, rotation, start and sweep; the engine applies the view's orientation and groups' transforms, so no renderer handles angles of the model.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30 (the owner asked for the circle). Radii are lengths in the model's units; angles counterclockwise from the space's `x` axis; `arc` takes `from` and `to`, `ellipse` takes `rotate`. One frame shape, `ellipse`, serves all three; `closed` marks a whole circle or ellipse. Hit testing and view extents sample the curve.
+- **Reason:** a circle of a model's size is basic to geometry, physics and chemistry content; exact curves keep frames small and renderers simple; the same shape drawn part way (`reveal draw`, or an arc whose end follows the model) shows a circle being drawn or unwound.
+- **Consequences:** PK-6.3c; `CKind::Round` and `Shape::Ellipse` in `prismal-present`; both renderers; guide chapter 7 (the wheel is a circle) and chapter 8 (Unwrapping a circle); `prismal-present/tests/shapes.rs`. Not included: circles as model values (a point constrained to a circle, intersections), which belong to geometry types in the model kernel, not to representations; author styling (colour, dashes, fill) of representations.
+- **History:**
+  - 2026-09-30 raised by the owner and accepted under the owner's standing delegation of 2026-09-30.

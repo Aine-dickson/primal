@@ -414,6 +414,22 @@ function arrowHead(from, to, size) {
   return `${to[0]},${to[1]} ${bx - uy * s * 0.45},${by + ux * s * 0.45} ${bx + uy * s * 0.45},${by - ux * s * 0.45}`;
 }
 
+/// The path of an `ellipse` shape: arcs of at most a quarter turn each; a whole one closed.
+function curvePath(r) {
+  const [cx, cy] = r.center, [rx, ry] = r.radii;
+  const s = Math.sin(r.rotation), c = Math.cos(r.rotation);
+  const at = (a) => {
+    const x = rx * Math.cos(a), y = ry * Math.sin(a);
+    return `${cx + c * x - s * y} ${cy + s * x + c * y}`;
+  };
+  const pieces = Math.max(1, Math.ceil(Math.abs(r.sweep) / (Math.PI / 2)));
+  let d = `M${at(r.start)}`;
+  for (let k = 1; k <= pieces; k++) {
+    d += ` A${rx} ${ry} ${(r.rotation * 180) / Math.PI} 0 ${r.sweep > 0 ? 1 : 0} ${at(r.start + (r.sweep * k) / pieces)}`;
+  }
+  return r.closed ? `${d} Z` : d;
+}
+
 function drawRep(v, g, r, u, colorIndex) {
   const m = mapFor(v);
   const cls = ['rep'];
@@ -471,6 +487,11 @@ function drawRep(v, g, r, u, colorIndex) {
       svg('polygon', { class: 'shape', points: pts, 'stroke-width': 2 * u }, grp);
       break;
     }
+    case 'ellipse': {
+      // A circle, ellipse or arc (PK-6.3c), exact in view coordinates.
+      svg('path', { class: r.closed ? 'shape' : 'curve', d: curvePath(r), 'stroke-width': 2 * u }, grp);
+      break;
+    }
     case 'group': {
       // Members are placed by the kernel; the group carries opacity and highlight (D-043).
       if (r.highlighted) grp.classList.add('highlighted');
@@ -484,7 +505,7 @@ function drawRep(v, g, r, u, colorIndex) {
   }
   if (r.drawn != null) {
     // `reveal draw`: every stroke is drawn up to the fraction reached (D-042).
-    for (const e of grp.querySelectorAll('line, polyline, polygon')) {
+    for (const e of grp.querySelectorAll('line, polyline, polygon, path')) {
       if (e.parentNode.classList.contains('arrow') && e.tagName === 'polygon') {
         e.style.opacity = r.drawn > 0.95 ? 1 : 0;
         continue;
@@ -735,7 +756,7 @@ function renderFrame(frame) {
       const top = svg('g', {}, v.svg);
       let arrows = 0;
       for (const r of vf.reps) {
-        if (['point', 'arrow', 'segment', 'polyline', 'polygon', 'group'].includes(r.shape)) {
+        if (['point', 'arrow', 'segment', 'polyline', 'polygon', 'ellipse', 'group'].includes(r.shape)) {
           // Draggable representations are drawn last and outside the plot's clip.
           drawRep(v, r.drag ? top : reps, r, u, r.shape === 'arrow' ? arrows++ : 0);
         } else if (!['axes', 'grid'].includes(r.shape)) {

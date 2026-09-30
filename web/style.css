@@ -154,6 +154,7 @@ svg .gridline { stroke: var(--faint); }
 svg .frame { fill: none; stroke: var(--line); }
 svg .rep.draggable { cursor: grab; }
 svg .graph { fill: none; stroke: var(--accent); }
+svg .curve { fill: none; stroke: var(--accent); }
 svg .trace { fill: none; stroke: var(--muted); stroke-dasharray: 3 3; }
 svg .marker { fill: var(--rep-2); stroke: var(--surface); }
 svg .arrow line { stroke: var(--rep); }
