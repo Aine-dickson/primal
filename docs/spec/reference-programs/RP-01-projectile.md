@@ -18,7 +18,7 @@ model Projectile in Plane {
     g:     Acceleration  = 9.81 m/s^2
     k:     Quantity<1/L> = 0        where k >= 0                     // quadratic drag coefficient
     speed: Velocity      = 20 m/s   where speed > 0 m/s   symbol "v"
-    angle: Angle         = 45 deg   in (0 deg, 90 deg)    symbol "θ"  // dimensionless (D-021)
+    angle: Angle         = 45 deg   in (0 deg, 90 deg)    symbol "θ"  unit deg  // dimensionless (D-021)
   }
   state {
     pos: Point            = origin
@@ -41,7 +41,7 @@ model Projectile in Plane {
 
 Notes:
 
-- `speed` and `angle` are parameters, so a lesson or learner can change the launch (D-023); the initial velocity is computed from them (MK-6.7). Their display symbols `v` and `θ` are used by formulas (D-034, RP-08).
+- `speed` and `angle` are parameters, so a lesson or learner can change the launch (D-023); the initial velocity is computed from them (MK-6.7). Their display symbols `v` and `θ` are used by formulas (D-034, RP-08); `angle` is shown in degrees (MK-3.12).
 - Gravity and drag are named processes (MK-14.1), so each contribution can be observed or highlighted on its own. The processes do not change the combination: both contribute to `der(vel)` by the default sum.
 - `0` stands for the zero vector of the required type (D-030); the tuple `(0, -g)` is a vector because the flow target expects one (D-032).
 - `apex` has no operations; it exists so that the apex can be observed (PK-3.1 `on(E)`).
@@ -116,3 +116,4 @@ D1 applies to the IR: a surface syntax may lower `y <= 0` to `falling(y)` (MK-15
 
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied (display symbols, named processes, zero vectors).
+- 2026-09-30 `angle` declares its display unit `deg` (MK-3.12), found by the web player: RP-08 narrates and ranges the angle in degrees, and its explore slider showed radians.

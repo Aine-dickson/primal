@@ -3,7 +3,7 @@
 //! Identities follow declaration paths (D-036): `Model.name` for bindings,
 //! `Model.event.name` for events, and so on.
 
-use crate::expr::{BinOp, Builtin, Expr, Func, Lambda};
+use crate::expr::{BinOp, Builtin, Constant, Expr, Func, Lambda};
 use crate::units::Unit;
 use crate::*;
 
@@ -90,6 +90,10 @@ pub fn t0() -> Expr {
 pub fn elapsed() -> Expr {
     Expr::Builtin { builtin: Builtin::Elapsed }
 }
+/// The constant π, kept by name (D-039).
+pub fn pi() -> Expr {
+    Expr::Const { r#const: Constant::Pi }
+}
 pub fn origin(space: &str) -> Expr {
     Expr::Origin { origin: space.to_string() }
 }
@@ -97,7 +101,11 @@ pub fn param(i: usize) -> Expr {
     Expr::Param { param: i }
 }
 pub fn lambda(params: Vec<Type>, body: Expr) -> Expr {
-    Expr::Lambda { lambda: Lambda { params, body: Box::new(body) } }
+    Expr::Lambda { lambda: Lambda { params, body: Box::new(body), names: vec![] } }
+}
+/// A lambda that keeps its parameter names for display (D-034).
+pub fn lambda_named(names: &[&str], params: Vec<Type>, body: Expr) -> Expr {
+    Expr::Lambda { lambda: Lambda { params, body: Box::new(body), names: names.iter().map(|n| n.to_string()).collect() } }
 }
 pub fn apply(f: Expr, args: Vec<Expr>) -> Expr {
     Expr::Apply { apply: Box::new(f), args }
@@ -203,6 +211,12 @@ impl ModelBuilder {
     pub fn symbol(&mut self, id: &str, symbol: &str) {
         let b = self.model.bindings.iter_mut().find(|b| b.id == id).expect("binding");
         b.display.symbol = Some(symbol.into());
+    }
+
+    /// Sets the display unit of a binding (MK-3.12).
+    pub fn display_unit(&mut self, id: &str, unit: &str) {
+        let b = self.model.bindings.iter_mut().find(|b| b.id == id).expect("binding");
+        b.display.unit = Some(unit.into());
     }
 
     /// A constraint; `attached_to` records a `where` or `in` written on a parameter.

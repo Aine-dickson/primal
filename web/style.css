@@ -1,0 +1,159 @@
+:root {
+  --bg: #f6f6f3;
+  --surface: #ffffff;
+  --ink: #1d1f24;
+  --muted: #5d6270;
+  --line: #d9dad4;
+  --faint: #ecece7;
+  --accent: #2458c6;
+  --accent-ink: #ffffff;
+  --rep: #1d1f24;
+  --rep-2: #b3471d;
+  --rep-3: #1f7a4d;
+  --rep-4: #7a3fb0;
+  --bad: #b3261e;
+  --ok: #1f7a4d;
+  --hl: #e0a800;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171b;
+    --surface: #1d2026;
+    --ink: #e7e8eb;
+    --muted: #9ea3ae;
+    --line: #353a44;
+    --faint: #262a31;
+    --accent: #7ea6ff;
+    --accent-ink: #0d1120;
+    --rep: #e7e8eb;
+    --rep-2: #ff9d6e;
+    --rep-3: #6fd3a0;
+    --rep-4: #c9a2ff;
+    --bad: #ff8a80;
+    --ok: #6fd3a0;
+    --hl: #ffd24d;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
+button, select, input, textarea { font: inherit; color: inherit; }
+button {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 4px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button.accent { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible,
+.rep:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; max-width: 100%; }
+.hint { color: var(--muted); font-size: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.bar {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.bar h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; }
+.bar h1 span { color: var(--muted); font-weight: 400; }
+.bar label { display: flex; gap: 6px; align-items: center; color: var(--muted); min-width: 0; max-width: 100%; }
+.bar label select { color: var(--ink); min-width: 0; flex: 1 1 auto; }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); gap: 16px; padding: 16px; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.stage { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.views { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.view {
+  margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px; min-width: 0; display: flex; flex-direction: column; gap: 6px;
+}
+.view.wide { grid-column: 1 / -1; }
+.view figcaption { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
+.view svg { width: 100%; height: auto; display: block; touch-action: none; user-select: none; }
+.view-panel { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.view-panel:empty { display: none; }
+
+.overlay { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+
+.item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.item .what { font-size: 12px; color: var(--muted); }
+.item.highlighted { outline: 2px solid var(--hl); outline-offset: 3px; border-radius: 4px; }
+.control { display: flex; align-items: center; gap: 8px; }
+.control input[type=range] { width: min(260px, 60vw); accent-color: var(--accent); }
+.control output { font-family: var(--mono); min-width: 7ch; }
+.formula math { font-size: 1.25em; }
+.formula .values { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.label-value { font-family: var(--mono); }
+.status-value { color: var(--bad); }
+
+.captions { min-height: 2.2em; text-align: center; font-size: 17px; }
+.captions span { background: var(--ink); color: var(--bg); padding: 3px 10px; border-radius: 4px; }
+
+.transport { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+.transport-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.clock { font-family: var(--mono); color: var(--muted); }
+.speed { display: flex; gap: 6px; align-items: center; color: var(--muted); margin-left: auto; }
+#scrub { width: 100%; accent-color: var(--accent); }
+.beats { display: flex; height: 22px; border-radius: 4px; overflow: hidden; border: 1px solid var(--line); }
+.beats button {
+  border: 0; border-right: 1px solid var(--line); border-radius: 0; padding: 0 2px; min-width: 0;
+  font-size: 11px; color: var(--muted); background: var(--faint); overflow: hidden; white-space: nowrap;
+}
+.beats button:last-child { border-right: 0; }
+.beats button.current { background: var(--accent); color: var(--accent-ink); }
+.beats button.explore { background-image: repeating-linear-gradient(45deg, transparent 0 5px, color-mix(in srgb, var(--accent) 18%, transparent) 5px 10px); }
+.beats button.explore.current { background-color: var(--accent); }
+
+.status { margin: 0; min-height: 1.4em; color: var(--muted); }
+.status.bad { color: var(--bad); }
+
+.side { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; display: flex; flex-direction: column; }
+.tabs { display: flex; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: none; padding: 8px 12px; color: var(--muted); }
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab { padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#source {
+  width: 100%; min-height: 380px; resize: vertical; font: 12.5px/1.5 var(--mono);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; tab-size: 2; white-space: pre;
+}
+.diagnostics { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.diagnostics li button { text-align: left; width: 100%; border-color: var(--bad); }
+.diagnostics code { color: var(--bad); font-family: var(--mono); }
+.observations { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; }
+.observations dt { font-family: var(--mono); color: var(--muted); }
+.observations dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.observations dd div + div { border-top: 1px dashed var(--line); }
+.case { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 8px; }
+.case h3 { font-size: 13px; margin: 0; padding: 6px 8px; border-bottom: 1px solid var(--line); font-family: var(--mono); }
+.case ul { list-style: none; margin: 0; padding: 6px 8px; font-family: var(--mono); font-size: 12px; }
+.pass::before { content: "✓ "; color: var(--ok); }
+.fail::before { content: "✗ "; color: var(--bad); }
+.fail { color: var(--bad); }
+.description { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+
+/* SVG representations. Sizes (stroke widths, font sizes) are set per element by the
+   renderer in view units, so that they stay constant on screen at any zoom. */
+svg .axis { stroke: var(--muted); }
+svg .tick { fill: var(--muted); font-family: var(--sans); }
+svg .gridline { stroke: var(--faint); }
+svg .frame { fill: none; stroke: var(--line); }
+svg .rep.draggable { cursor: grab; }
+svg .graph { fill: none; stroke: var(--accent); }
+svg .marker { fill: var(--rep-2); stroke: var(--surface); }
+svg .arrow line { stroke: var(--rep); }
+svg .arrow polygon { fill: var(--rep); }
+svg .arrow.c1 line { stroke: var(--rep-2); } svg .arrow.c1 polygon { fill: var(--rep-2); }
+svg .arrow.c2 line { stroke: var(--rep-3); } svg .arrow.c2 polygon { fill: var(--rep-3); }
+svg .arrow.c3 line { stroke: var(--rep-4); } svg .arrow.c3 polygon { fill: var(--rep-4); }
+svg .segment { stroke: var(--rep); }
+svg .handle { fill: var(--surface); stroke: var(--accent); }
+svg .ring { fill: none; stroke: var(--hl); }
+svg .invalid line, svg .invalid .marker, svg .invalid .handle { stroke: var(--bad); stroke-dasharray: 4 3; }
+svg .invalid .marker { fill: none; }
+svg .rep-label { fill: var(--muted); font-family: var(--sans); }

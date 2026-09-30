@@ -2,7 +2,7 @@
 
 Candidate A amended as accepted in D-028: A's keyword-led statements, with grouped declaration and flow blocks, interval ranges and the timeline shorthand (owner amendment), C's view trees, nested interactions, explicit sequences and named processes, and B's default space.
 
-- **Status:** working syntax for the prototype parser. Non-binding until the syntax is frozen; keywords and spellings are subject to the keyword pass (comparison section 8.2).
+- **Status:** working syntax, implemented by the prototype parser (`crates/prismal-syntax`). Non-binding until the syntax is frozen; keywords and spellings are subject to the keyword pass (comparison section 8.2).
 - **Fixed parts:** the shared expression and type sublanguage of the study (`README.md`), with interval notation as the single range form.
 
 ## 1. Design
@@ -28,7 +28,7 @@ Candidate A amended as accepted in D-028: A's keyword-led statements, with group
 
 Every block keyword also has a one-line form for a single declaration (`param g: Acceleration = 9.81 m/s^2`, `flow der(x) = v`). Both parse to the same IR; the formatter prints blocks.
 
-**Intervals** are the one range notation: `[a, b]`, `(a, b)`, `[a, b)`, `(a, b]`, with `inf` for an unbounded end. `x in [a, b)` is the constraint `a <= x < b`. The formatter prints a parameter's `reject` constraint as an interval when it bounds only that parameter from both sides, as `where` otherwise.
+**Intervals** are the one range notation: `[a, b]`, `(a, b)`, `[a, b)`, `(a, b]`, with `inf` for an unbounded end. `x in [a, b)` is the constraint `a <= x < b`; an unbounded end gives a one-sided comparison (`in [0, inf)` is `0 <= x`). After a declaration's value, `in` starts the declaration's range; a membership test used as a value is written in parentheses: `ok: Boolean = (x in [0, 1))`. The formatter prints a parameter's `reject` constraint as an interval when it bounds only that parameter from both sides, as `where` otherwise.
 
 Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit deg`.
 
@@ -58,13 +58,14 @@ The formatter prints, from the IR: declarations grouped in blocks by role, in th
 ### 1.5 Lexical rules and reserved words (D-035)
 
 - **Source text** is UTF-8. Identifiers are a letter or `_` followed by letters, digits or `_`; letters include Unicode letters (`θ`, `ω`, `θ0`). Identifiers are case-sensitive.
-- **Numbers:** `12`, `0.5`, `1e-9`, `2.5e3`. A number directly followed by an identifier constant (`2π`) is a product.
-- **Units** follow a number and are written with unit symbols, `*`, `/` and integer powers: `9.81 m/s^2`, `4 N/m`, `0.01 /m`, `45 deg`. The unit ends at the first token that cannot continue it.
+- **Numbers:** `12`, `0.5`, `1e-9`, `2.5e3`. A number directly followed by `π` or `pi` (`2π`) is a product; any other name directly after a number is an error (write `2 * x`). A minus sign written on a number is part of the literal (`-5`).
+- **Units** follow a number and are written with unit symbols, `*`, `/` and integer powers: `9.81 m/s^2`, `4 N/m`, `0.01 /m`, `45 deg`. The unit ends at the first token that cannot continue it. A unit has no spaces inside it, so a space before `/`, `*` or `^` ends it: `0.01 /m` is a unit, while `4 / m` divides by the binding `m`. Unit symbols are recognized only directly after a number; elsewhere `m`, `s` and `g` are ordinary names.
 - **Operators** are ASCII: `+ - * / ^ == != < <= > >= = += -> .. | . , : ;` and the words `and`, `or`, `not`, `if`, `then`, `else`, `otherwise`. `|v|` is the norm.
 - **Comments:** `//` to end of line. `///` is a documentation comment; together with an ordinary comment block directly before a declaration it becomes that element's author notes in the IR (D-036).
-- **Statements** end at a newline or `;`. A line ending in an operator, `,` or an open bracket continues on the next line.
-- **Reserved words:** `model object space const param input state discrete derived fn flow process event on if zeno stop settle set contribute create destroy connect disconnect emit enter equation checked within constraint policy reject report where in intervenable private symbol unit rising falling crossing at every from start request presentation for view panel observe live over microstep show as drag propose permit timeline scene beat sequence run rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight animate camera bind release config expect exactly rel true false`.
-- **Built-in names** (not reserved, but predefined): `t`, `t0`, `elapsed`, `origin`, `der`, `inf`, `π`, `pi`, the SI units and named dimensions of MK section 3.
+- **Statements** end at a newline or `;`. Several statements on one line are separated by `;`. A line ending in an operator (other than a closing `|`), `,`, an open bracket or one of the operator words continues on the next line; so does every line inside `( )` or `[ ]`.
+- **Reserved words** (D-040), never names: `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request`.
+- **Contextual keywords** (D-040), recognized only where such a word is expected and ordinary names elsewhere (`process drag`, `view scene`): `for view panel observe live over microstep show as drag propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight animate camera bind release config expect exactly rel of with learner continue`.
+- **Built-in names** (not reserved, but predefined): `t`, `t0`, `elapsed`, `origin`, `der`, `π` and `pi` (D-039), `inf` (only as an interval bound), the SI units and named dimensions of MK section 3. Named dimensions: `Length`, `Mass`, `Time`, `Current`, `Amount`, `Area`, `Volume`, `Velocity`, `Acceleration`, `Frequency`, `Momentum`, `Force`, `Energy`, `Power`, `Pressure`, and `Angle` (dimensionless, D-021); base symbols `L M T I Θ N J` inside `Quantity<...>`.
 
 ---
 
@@ -413,7 +414,7 @@ presentation VectorPlot for VectorDemo {
     arrow(sum, from: A)
     label(length)
   }
-  observe { state = (sum, length, B) live }
+  observe { values = (sum, length, B) live }
 }
 ```
 
@@ -425,7 +426,7 @@ The RP-01 model with display symbols and one addition (D-027):
   param {
     ...
     speed: Velocity = 20 m/s   where speed > 0 m/s       symbol "v"
-    angle: Angle    = 45 deg   in (0 deg, 90 deg)        symbol "θ"
+    angle: Angle    = 45 deg   in (0 deg, 90 deg)        symbol "θ"  unit deg
   }
 
   event relaunch on request {
@@ -449,7 +450,7 @@ presentation ProjectileLesson for Projectile {
   timeline {
     scene launch {
       beat b1 {
-        in scene { marker(pos) as ball; arrow(vel, from: pos) }
+        in scene { marker(pos) as ball; arrow(vel, from: pos, scale: 1 m/s -> 2 px) }
         narrate "A ball is launched at 45 degrees." for 4 s
       }
       beat b2 { run rate 1 until landed }
@@ -464,7 +465,7 @@ presentation ProjectileLesson for Projectile {
         narrate "Watch the horizontal speed." for 3 s
       }
       beat b5 {
-        in scene { arrow((vel.x, 0), from: pos) }
+        in scene { arrow((vel.x, 0), from: pos, scale: 1 m/s -> 2 px) }
         run rate 0.5 until landed
       }
     }
@@ -510,3 +511,4 @@ run A_keep of Projectile with ProjectileLesson {
 
 - 2026-09-29 written after D-028 was accepted with amendment.
 - 2026-09-30 zero vectors written `0` (D-030); `sequence` dropped where D-033 orders run-directing actions; reference programs converted.
+- 2026-09-30 implemented by the text parser. Lexical rules made precise (units without spaces, names after numbers, statement separators, `in` after a declaration's value, `inf`); reserved words split into reserved words and contextual keywords (D-040); `π` kept by name (D-039); RP-07 observation `state` renamed `values`.

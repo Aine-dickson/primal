@@ -54,6 +54,11 @@ fn lookup(sym: &str) -> Option<(f64, Dim)> {
 }
 
 impl Unit {
+    /// True if `sym` is a unit symbol this implementation knows.
+    pub fn is_symbol(sym: &str) -> bool {
+        lookup(sym).is_some()
+    }
+
     /// Parses a unit expression: `m/s^2`, `N/m`, `/m`, `kg*m^2`, `deg`.
     pub fn parse(text: &str) -> Result<Unit, String> {
         let mut scale = 1.0;

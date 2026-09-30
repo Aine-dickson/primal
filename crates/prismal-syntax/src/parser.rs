@@ -1,0 +1,1360 @@
+//! Recursive-descent parser for the working syntax (D-028, D-035).
+//!
+//! Statements end at a newline or `;` (the lexer drops newlines that continue a statement).
+//! A statement that fails to parse is reported and skipped up to the next statement end at
+//! the same brace depth, so one error does not hide the rest of the file.
+
+use crate::ast::*;
+use crate::lexer::{Comment, Tok, Token};
+use crate::{Diag, Span};
+
+/// Reserved words: the words of the model language, expressions and top-level items
+/// (working syntax section 1.5, D-040). They are never names.
+pub const RESERVED: &[&str] = &[
+    "space", "model", "presentation", "run", "object", "const", "param", "input", "state", "discrete", "derived",
+    "fn", "flow", "process", "event", "equation", "constraint", "on", "if", "then", "else", "and", "or", "not",
+    "otherwise", "in", "where", "true", "false", "zeno", "stop", "settle", "set", "contribute", "create", "destroy",
+    "connect", "disconnect", "emit", "enter", "checked", "within", "policy", "reject", "report", "intervenable",
+    "private", "symbol", "unit", "rising", "falling", "crossing", "at", "every", "from", "start", "request",
+];
+
+/// Contextual keywords: words of presentations, timelines and runs, recognized only where
+/// such a word is expected (D-040). Elsewhere they are ordinary names (`process drag`).
+pub const CONTEXTUAL: &[&str] = &[
+    "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "propose", "permit",
+    "timeline", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
+    "explore", "limit", "keep", "fallback", "narrate", "highlight", "animate", "camera", "bind", "release", "config",
+    "expect", "exactly", "rel", "of", "with", "learner", "continue",
+];
+
+pub fn is_reserved(w: &str) -> bool {
+    RESERVED.contains(&w)
+}
+
+/// Unit symbols recognized after a number: the kernel's units and the presentation unit `px`.
+pub fn is_unit_symbol(s: &str) -> bool {
+    s == "px" || prismal_ir::Unit::is_symbol(s)
+}
+
+type P<T> = Result<T, Diag>;
+
+pub struct Parser<'a> {
+    toks: &'a [Token],
+    comments: &'a [Comment],
+    pos: usize,
+    pub diags: Vec<Diag>,
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(toks: &'a [Token], comments: &'a [Comment]) -> Parser<'a> {
+        Parser { toks, comments, pos: 0, diags: vec![] }
+    }
+
+    // ------------------------------------------------------------ token helpers
+
+    fn tok(&self) -> &'a Token {
+        &self.toks[self.pos.min(self.toks.len() - 1)]
+    }
+    fn peek(&self) -> &'a Tok {
+        &self.tok().tok
+    }
+    fn peek_at(&self, n: usize) -> &'a Tok {
+        &self.toks[(self.pos + n).min(self.toks.len() - 1)].tok
+    }
+    fn span(&self) -> Span {
+        self.tok().span
+    }
+    fn bump(&mut self) -> &'a Token {
+        let t = self.tok();
+        if self.pos < self.toks.len() - 1 {
+            self.pos += 1;
+        }
+        t
+    }
+    /// The span from `start` to the end of the last consumed token.
+    fn since(&self, start: Span) -> Span {
+        let end = if self.pos > 0 { self.toks[self.pos - 1].span.end } else { start.end };
+        Span { end: end.max(start.start), ..start }
+    }
+    fn is_word(&self, w: &str) -> bool {
+        matches!(self.peek(), Tok::Ident(s) if s == w)
+    }
+    fn is_word_at(&self, n: usize, w: &str) -> bool {
+        matches!(self.peek_at(n), Tok::Ident(s) if s == w)
+    }
+    fn eat_word(&mut self, w: &str) -> bool {
+        if self.is_word(w) {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+    fn expect_word(&mut self, w: &str) -> P<Span> {
+        if self.is_word(w) {
+            Ok(self.bump().span)
+        } else {
+            Err(self.unexpected(&format!("`{w}`")))
+        }
+    }
+    fn is_punct(&self, p: &str) -> bool {
+        matches!(self.peek(), Tok::Punct(q) if *q == p)
+    }
+    fn is_punct_at(&self, n: usize, p: &str) -> bool {
+        matches!(self.peek_at(n), Tok::Punct(q) if *q == p)
+    }
+    fn eat_punct(&mut self, p: &str) -> bool {
+        if self.is_punct(p) {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+    fn expect_punct(&mut self, p: &str) -> P<Span> {
+        if self.is_punct(p) {
+            Ok(self.bump().span)
+        } else {
+            Err(self.unexpected(&format!("`{p}`")))
+        }
+    }
+    fn at_sep(&self) -> bool {
+        matches!(self.peek(), Tok::Newline | Tok::Eof) || self.is_punct(";")
+    }
+    fn at_stmt_end(&self) -> bool {
+        self.at_sep() || self.is_punct("}")
+    }
+
+    fn describe(t: &Tok) -> String {
+        match t {
+            Tok::Ident(s) => format!("`{s}`"),
+            Tok::Num(n) => format!("number `{n}`"),
+            Tok::Str(_) => "a string".into(),
+            Tok::Punct(p) => format!("`{p}`"),
+            Tok::Newline => "end of line".into(),
+            Tok::Eof => "end of input".into(),
+        }
+    }
+    fn unexpected(&self, wanted: &str) -> Diag {
+        Diag::new("SX-E02", format!("expected {wanted}, found {}", Self::describe(self.peek())), self.span())
+    }
+
+    /// A declared name: an identifier that is not a reserved word.
+    fn name(&mut self, what: &str) -> P<Name> {
+        match self.peek() {
+            Tok::Ident(s) if is_reserved(s) => Err(Diag::new(
+                "SX-E07",
+                format!("`{s}` is a reserved word and cannot be used as {what}"),
+                self.span(),
+            )),
+            Tok::Ident(s) => {
+                let span = self.bump().span;
+                Ok(Name { text: s.clone(), span })
+            }
+            _ => Err(self.unexpected(what)),
+        }
+    }
+    /// Any identifier, reserved or not (observation names, argument names, words in runs).
+    fn any_name(&mut self, what: &str) -> P<Name> {
+        match self.peek() {
+            Tok::Ident(s) => {
+                let span = self.bump().span;
+                Ok(Name { text: s.clone(), span })
+            }
+            _ => Err(self.unexpected(what)),
+        }
+    }
+
+    fn skip_seps(&mut self) {
+        while matches!(self.peek(), Tok::Newline) || self.is_punct(";") {
+            self.bump();
+        }
+    }
+
+    /// Skips to the end of the current statement at this brace depth.
+    fn recover(&mut self) {
+        let mut depth = 0;
+        loop {
+            match self.peek() {
+                Tok::Eof => return,
+                Tok::Newline | Tok::Punct(";") if depth == 0 => {
+                    self.bump();
+                    return;
+                }
+                Tok::Punct("}") if depth == 0 => return,
+                Tok::Punct("{") => depth += 1,
+                Tok::Punct("}") => depth -= 1,
+                _ => {}
+            }
+            self.bump();
+        }
+    }
+
+    /// `{ item (sep item)* }`, recovering from errors in single items.
+    fn block<T>(&mut self, mut item: impl FnMut(&mut Self) -> P<Vec<T>>) -> P<Vec<T>> {
+        self.expect_punct("{")?;
+        let mut out = vec![];
+        loop {
+            self.skip_seps();
+            if self.is_punct("}") {
+                self.bump();
+                return Ok(out);
+            }
+            if matches!(self.peek(), Tok::Eof) {
+                return Err(Diag::new("SX-E02", "unclosed `{`", self.span()));
+            }
+            match item(self) {
+                Ok(v) => {
+                    out.extend(v);
+                    if !self.at_stmt_end() {
+                        let d = self.unexpected("end of statement");
+                        self.diags.push(d);
+                        self.recover();
+                    }
+                }
+                Err(d) => {
+                    self.diags.push(d);
+                    self.recover();
+                }
+            }
+        }
+    }
+
+    fn one<T>(x: P<T>) -> P<Vec<T>> {
+        x.map(|v| vec![v])
+    }
+
+    /// Author notes (D-036): the comment lines directly above `line`, with no blank line between.
+    fn notes_before(&self, line: u32) -> Vec<String> {
+        let mut lines = vec![];
+        let mut want = line;
+        for c in self.comments.iter().rev().filter(|c| c.line < line) {
+            if !c.own_line || c.line + 1 != want {
+                break;
+            }
+            lines.push(c.text.clone());
+            want = c.line;
+        }
+        if lines.is_empty() {
+            return vec![];
+        }
+        lines.reverse();
+        vec![lines.join("\n")]
+    }
+
+    // ------------------------------------------------------------ file
+
+    pub fn file(&mut self) -> File {
+        let mut items = vec![];
+        loop {
+            self.skip_seps();
+            if matches!(self.peek(), Tok::Eof) {
+                break;
+            }
+            match self.item() {
+                Ok(it) => {
+                    items.push(it);
+                    if !self.at_sep() {
+                        let d = self.unexpected("end of line");
+                        self.diags.push(d);
+                        self.recover();
+                    }
+                }
+                Err(d) => {
+                    self.diags.push(d);
+                    self.recover();
+                    if self.is_punct("}") {
+                        self.bump();
+                    }
+                }
+            }
+        }
+        File { items }
+    }
+
+    fn item(&mut self) -> P<Item> {
+        let start = self.span();
+        let notes = self.notes_before(start.line);
+        if self.eat_word("space") {
+            let name = self.name("a space name")?;
+            self.expect_punct("=")?;
+            let kind = self.name("a space kind")?;
+            let args = self.args()?;
+            return Ok(Item::Space(SpaceDecl { name, kind, args, notes, span: self.since(start) }));
+        }
+        if self.eat_word("model") {
+            let name = self.name("a model name")?;
+            let space = if self.eat_word("in") { Some(self.name("a space name")?) } else { None };
+            let members = self.block(|p| p.member())?;
+            return Ok(Item::Model(ModelDecl { name, space, members, notes, span: self.since(start) }));
+        }
+        if self.eat_word("presentation") {
+            let name = self.name("a presentation name")?;
+            self.expect_word("for")?;
+            let model = self.name("a model name")?;
+            let items = self.block(|p| p.pres_item())?;
+            return Ok(Item::Presentation(PresentationDecl { name, model, items, span: self.since(start) }));
+        }
+        if self.eat_word("run") {
+            return self.run_decl(start).map(Item::Run);
+        }
+        Err(self.unexpected("`space`, `model`, `presentation` or `run`"))
+    }
+
+    // ------------------------------------------------------------ model members
+
+    fn member(&mut self) -> P<Vec<Member>> {
+        let role = match self.peek() {
+            Tok::Ident(w) => match w.as_str() {
+                "const" => Some(RoleWord::Const),
+                "param" => Some(RoleWord::Param),
+                "input" => Some(RoleWord::Input),
+                "state" => Some(RoleWord::State),
+                "discrete" => Some(RoleWord::Discrete),
+                "derived" => Some(RoleWord::Derived),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(role) = role {
+            self.bump();
+            return if self.is_punct("{") {
+                self.block(|p| Self::one(p.decl(role)))
+            } else {
+                Ok(vec![self.decl(role)?])
+            }
+            .map(|v| v.into_iter().map(Member::Decl).collect());
+        }
+        let start = self.span();
+        if self.eat_word("flow") {
+            let flows = if self.is_punct("{") { self.block(|p| Self::one(p.flow_stmt()))? } else { vec![self.flow_stmt()?] };
+            return Ok(flows.into_iter().map(Member::Flow).collect());
+        }
+        if self.is_word("event") {
+            return Ok(vec![Member::Event(self.event_decl()?)]);
+        }
+        if self.eat_word("process") {
+            let notes = self.notes_before(start.line);
+            let name = self.name("a process name")?;
+            let mut flows = vec![];
+            let mut events = vec![];
+            let items = self.block(|p| {
+                if p.eat_word("flow") {
+                    let f = if p.is_punct("{") { p.block(|p| Self::one(p.flow_stmt()))? } else { vec![p.flow_stmt()?] };
+                    Ok(f.into_iter().map(Member::Flow).collect())
+                } else if p.is_word("event") {
+                    Ok(vec![Member::Event(p.event_decl()?)])
+                } else {
+                    Err(p.unexpected("`flow` or `event` in a process"))
+                }
+            })?;
+            for m in items {
+                match m {
+                    Member::Flow(f) => flows.push(f),
+                    Member::Event(e) => events.push(e),
+                    _ => unreachable!(),
+                }
+            }
+            return Ok(vec![Member::Process(ProcessDecl { name, flows, events, notes, span: self.since(start) })]);
+        }
+        if self.eat_word("fn") {
+            let name = self.name("a function name")?;
+            let params = self.typed_params()?;
+            self.expect_punct(":")?;
+            let result = self.type_expr()?;
+            self.expect_punct("=")?;
+            let body = self.expr()?;
+            return Ok(vec![Member::Fn(FnDecl { name, params, result, body, span: self.since(start) })]);
+        }
+        if self.eat_word("equation") {
+            let name = self.name("an equation name")?;
+            self.expect_punct(":")?;
+            let e = self.expr()?;
+            let (lhs, rhs) = match e.kind {
+                ExprKind::Compare(l, mut rest) if rest.len() == 1 && rest[0].0 == CmpOp::Eq => (*l, rest.remove(0).1),
+                _ => return Err(Diag::new("SX-E02", "an equation is written `lhs == rhs`", e.span)),
+            };
+            let checked = if self.eat_word("checked") {
+                self.expect_word("within")?;
+                Some(self.expr()?)
+            } else {
+                None
+            };
+            return Ok(vec![Member::Equation(EquationDecl { name, lhs, rhs, checked, span: self.since(start) })]);
+        }
+        if self.eat_word("constraint") {
+            let name = if matches!(self.peek(), Tok::Ident(_)) && self.is_punct_at(1, ":") {
+                let n = self.name("a constraint name")?;
+                self.bump();
+                Some(n)
+            } else {
+                None
+            };
+            let cond = self.expr()?;
+            let within = if self.eat_word("within") { Some(self.expr()?) } else { None };
+            let policy = if self.eat_word("policy") { Some(self.any_name("a policy")?) } else { None };
+            return Ok(vec![Member::Constraint(ConstraintDecl { name, cond, within, policy, span: self.since(start) })]);
+        }
+        if self.eat_word("object") {
+            let name = self.name("an object name")?;
+            self.skip_block()?;
+            return Ok(vec![Member::Object(name)]);
+        }
+        Err(self.unexpected("a declaration (`param`, `state`, `flow`, `event`, ...)"))
+    }
+
+    fn skip_block(&mut self) -> P<()> {
+        self.expect_punct("{")?;
+        let mut depth = 1;
+        while depth > 0 {
+            match self.bump().tok {
+                Tok::Punct("{") => depth += 1,
+                Tok::Punct("}") => depth -= 1,
+                Tok::Eof => return Err(Diag::new("SX-E02", "unclosed `{`", self.span())),
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn typed_params(&mut self) -> P<Vec<(Name, TypeExpr)>> {
+        self.expect_punct("(")?;
+        let mut out = vec![];
+        if !self.is_punct(")") {
+            loop {
+                let n = self.name("a parameter name")?;
+                self.expect_punct(":")?;
+                out.push((n, self.type_expr()?));
+                if !self.eat_punct(",") {
+                    break;
+                }
+            }
+        }
+        self.expect_punct(")")?;
+        Ok(out)
+    }
+
+    fn decl(&mut self, role: RoleWord) -> P<Decl> {
+        let start = self.span();
+        let notes = self.notes_before(start.line);
+        let name = self.name("a binding name")?;
+        let params = if self.is_punct("(") { Some(self.typed_params()?) } else { None };
+        self.expect_punct(":")?;
+        let ty = self.type_expr()?;
+        let value = if self.eat_punct("=") { Some(self.expr_no_in()?) } else { None };
+        let range = if self.eat_word("in") {
+            Some(Range::In(self.interval()?))
+        } else if self.eat_word("where") {
+            Some(Range::Where(self.expr()?))
+        } else {
+            None
+        };
+        let mut modifiers = vec![];
+        loop {
+            if self.eat_word("intervenable") {
+                modifiers.push(Modifier::Intervenable);
+            } else if self.eat_word("private") {
+                modifiers.push(Modifier::Private);
+            } else if self.eat_word("symbol") {
+                match self.peek().clone() {
+                    Tok::Str(s) => {
+                        self.bump();
+                        modifiers.push(Modifier::Symbol(s));
+                    }
+                    _ => return Err(self.unexpected("a symbol in quotes")),
+                }
+            } else if self.eat_word("unit") {
+                match self.unit()? {
+                    Some(u) => modifiers.push(Modifier::Unit(u)),
+                    None => return Err(self.unexpected("a unit")),
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(Decl { role, name, params, ty, value, range, modifiers, notes, span: self.since(start) })
+    }
+
+    fn flow_stmt(&mut self) -> P<FlowStmt> {
+        let start = self.span();
+        self.expect_word("der")?;
+        self.expect_punct("(")?;
+        let target = self.name("a state name")?;
+        self.expect_punct(")")?;
+        let contribute = if self.eat_punct("+=") {
+            true
+        } else if self.eat_punct("=") {
+            false
+        } else {
+            return Err(self.unexpected("`=` or `+=`"));
+        };
+        let expr = self.expr()?;
+        Ok(FlowStmt { target, contribute, expr, span: self.since(start) })
+    }
+
+    fn event_decl(&mut self) -> P<EventDecl> {
+        let start = self.span();
+        let notes = self.notes_before(start.line);
+        self.expect_word("event")?;
+        let name = self.name("an event name")?;
+        self.expect_word("on")?;
+        let trigger = self.trigger()?;
+        let enable = if self.eat_word("if") { Some(self.expr()?) } else { None };
+        let handler = if self.is_punct("{") { self.block(|p| Self::one(p.op()))? } else { vec![] };
+        // A Zeno clause may follow the handler on the next line.
+        if matches!(self.peek(), Tok::Newline) && self.is_word_at(1, "zeno") {
+            self.bump();
+        }
+        let zeno = if self.eat_word("zeno") {
+            if self.eat_word("stop") {
+                Some(ZenoClause::Stop)
+            } else if self.eat_word("settle") {
+                Some(ZenoClause::Settle(self.block(|p| Self::one(p.op()))?))
+            } else {
+                return Err(self.unexpected("`stop` or `settle`"));
+            }
+        } else {
+            None
+        };
+        Ok(EventDecl { name, trigger, enable, handler, zeno, notes, span: self.since(start) })
+    }
+
+    fn trigger(&mut self) -> P<TriggerExpr> {
+        let paren = |p: &mut Self| -> P<Expr> {
+            p.expect_punct("(")?;
+            let e = p.expr()?;
+            p.expect_punct(")")?;
+            Ok(e)
+        };
+        if self.eat_word("rising") {
+            return Ok(TriggerExpr::Rising(paren(self)?));
+        }
+        if self.eat_word("falling") {
+            return Ok(TriggerExpr::Falling(paren(self)?));
+        }
+        if self.eat_word("crossing") {
+            return Ok(TriggerExpr::Crossing(paren(self)?));
+        }
+        if self.eat_word("at") {
+            return Ok(TriggerExpr::At(self.expr()?));
+        }
+        if self.eat_word("every") {
+            let period = self.expr()?;
+            let from = if self.eat_word("from") { Some(self.expr()?) } else { None };
+            return Ok(TriggerExpr::Every(period, from));
+        }
+        if self.eat_word("start") {
+            return Ok(TriggerExpr::Start);
+        }
+        if self.eat_word("input") {
+            self.expect_punct("(")?;
+            let n = self.name("an input name")?;
+            self.expect_punct(")")?;
+            return Ok(TriggerExpr::Input(n));
+        }
+        if self.eat_word("request") {
+            if self.eat_punct("(") {
+                let n = self.name("a payload name")?;
+                self.expect_punct(":")?;
+                let t = self.type_expr()?;
+                self.expect_punct(")")?;
+                return Ok(TriggerExpr::Request(Some((n, t))));
+            }
+            return Ok(TriggerExpr::Request(None));
+        }
+        match self.peek() {
+            Tok::Ident(s) if !is_reserved(s) => Ok(TriggerExpr::On(self.name("an event name")?)),
+            _ => Err(self.unexpected("a trigger (`rising(g)`, `falling(g)`, `crossing(g)`, `at`, `every`, `start`, `input(i)`, `request` or an event name)")),
+        }
+    }
+
+    fn path(&mut self) -> P<Path> {
+        let name = self.name("a binding name")?;
+        let component = if self.eat_punct(".") { Some(self.name("a component")?) } else { None };
+        Ok(Path { name, component })
+    }
+
+    fn op(&mut self) -> P<OpStmt> {
+        let start = self.span();
+        if self.eat_word("set") {
+            let target = self.path()?;
+            self.expect_punct("=")?;
+            let value = self.expr()?;
+            return Ok(OpStmt::Set { target, value, span: self.since(start) });
+        }
+        if self.eat_word("contribute") {
+            let target = self.path()?;
+            self.expect_punct("+=")?;
+            let value = self.expr()?;
+            return Ok(OpStmt::Contribute { target, value, span: self.since(start) });
+        }
+        if self.eat_word("emit") {
+            let event = self.name("an event name")?;
+            let payload = if self.is_punct("(") && !self.tok().space_before {
+                self.bump();
+                let e = self.expr()?;
+                self.expect_punct(")")?;
+                Some(e)
+            } else {
+                None
+            };
+            return Ok(OpStmt::Emit { event, payload, span: self.since(start) });
+        }
+        for w in ["create", "destroy", "connect", "disconnect"] {
+            if self.is_word(w) {
+                return Err(Diag::new("SX-E06", format!("`{w}` needs collections, which the v0 IR does not have"), self.span()));
+            }
+        }
+        Err(self.unexpected("an operation (`set`, `contribute`, `emit`)"))
+    }
+
+    // ------------------------------------------------------------ types and units
+
+    fn type_expr(&mut self) -> P<TypeExpr> {
+        let start = self.span();
+        if self.eat_punct("(") {
+            let mut items = vec![self.type_expr()?];
+            while self.eat_punct(",") {
+                items.push(self.type_expr()?);
+            }
+            self.expect_punct(")")?;
+            return Ok(TypeExpr::Tuple { items, span: self.since(start) });
+        }
+        let name = self.name("a type")?;
+        let mut args = vec![];
+        if self.eat_punct("<") {
+            loop {
+                args.push(self.dim_expr()?);
+                if !self.eat_punct(",") {
+                    break;
+                }
+            }
+            self.expect_punct(">")?;
+        }
+        Ok(TypeExpr::Named { name, args, span: self.since(start) })
+    }
+
+    /// `M L^2 T^-2`, `1/L`, `L/T^2`, `M/(L T^2)` is not supported: write `M/L/T^2`.
+    fn dim_expr(&mut self) -> P<DimExpr> {
+        let start = self.span();
+        let mut factors = vec![];
+        let mut sign = 1;
+        loop {
+            let name = match self.peek().clone() {
+                Tok::Ident(s) => Name { text: s, span: self.bump().span },
+                Tok::Num(n) if n == 1.0 => Name { text: "1".into(), span: self.bump().span },
+                _ => return Err(self.unexpected("a dimension")),
+            };
+            let (mut num, mut den) = (1, 1);
+            if self.eat_punct("^") {
+                let neg = self.eat_punct("-");
+                if self.eat_punct("(") {
+                    let neg2 = self.eat_punct("-");
+                    num = self.int()?;
+                    self.expect_punct("/")?;
+                    den = self.int()?;
+                    self.expect_punct(")")?;
+                    if neg2 {
+                        num = -num;
+                    }
+                } else {
+                    num = self.int()?;
+                }
+                if neg {
+                    num = -num;
+                }
+            }
+            factors.push(DimFactor { name, num: sign * num, den });
+            if self.eat_punct("/") {
+                sign = -1;
+            } else if self.eat_punct("*") {
+            } else if !matches!(self.peek(), Tok::Ident(_)) {
+                break;
+            }
+        }
+        Ok(DimExpr { factors, span: self.since(start) })
+    }
+
+    fn int(&mut self) -> P<i32> {
+        match self.peek() {
+            Tok::Num(n) if n.fract() == 0.0 && n.abs() < 1e6 => {
+                let v = *n as i32;
+                self.bump();
+                Ok(v)
+            }
+            _ => Err(self.unexpected("an integer")),
+        }
+    }
+
+    /// A unit written without spaces after a number: `m/s^2`, `/m`, `N/m`, `deg`.
+    fn unit(&mut self) -> P<Option<UnitExpr>> {
+        let start = self.span();
+        let mut text = String::new();
+        match self.peek() {
+            Tok::Ident(s) if is_unit_symbol(s) => {
+                text.push_str(s);
+                self.bump();
+            }
+            Tok::Punct("/") => match self.peek_at(1) {
+                Tok::Ident(s) if is_unit_symbol(s) && !self.toks[self.pos + 1].space_before => {
+                    text.push('/');
+                    text.push_str(s);
+                    self.bump();
+                    self.bump();
+                }
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        }
+        loop {
+            if self.tok().space_before {
+                break;
+            }
+            if self.is_punct("^") {
+                self.bump();
+                let neg = !self.tok().space_before && self.eat_punct("-");
+                if self.tok().space_before {
+                    return Err(self.unexpected("an exponent written without spaces"));
+                }
+                let n = self.int()?;
+                text.push_str(&format!("^{}{n}", if neg { "-" } else { "" }));
+                continue;
+            }
+            if self.is_punct("*") || self.is_punct("/") {
+                let next = &self.toks[(self.pos + 1).min(self.toks.len() - 1)];
+                if let Tok::Ident(s) = &next.tok {
+                    if is_unit_symbol(s) && !next.space_before {
+                        text.push_str(if self.is_punct("*") { "*" } else { "/" });
+                        text.push_str(s);
+                        self.bump();
+                        self.bump();
+                        continue;
+                    }
+                }
+            }
+            break;
+        }
+        Ok(Some(UnitExpr { text, span: self.since(start) }))
+    }
+
+    // ------------------------------------------------------------ expressions
+
+    pub fn expr(&mut self) -> P<Expr> {
+        self.expr_in(true)
+    }
+    /// An expression in which `in` is not an operator: a declaration's value, where `in`
+    /// starts a range.
+    fn expr_no_in(&mut self) -> P<Expr> {
+        self.expr_in(false)
+    }
+
+    fn expr_in(&mut self, allow_in: bool) -> P<Expr> {
+        let start = self.span();
+        if self.eat_word("if") {
+            let c = self.expr()?;
+            self.expect_word("then")?;
+            let a = self.expr_in(allow_in)?;
+            self.expect_word("else")?;
+            let b = self.expr_in(allow_in)?;
+            return Ok(Expr { kind: ExprKind::If(Box::new(c), Box::new(a), Box::new(b)), span: self.since(start) });
+        }
+        let mut l = self.map_expr(allow_in)?;
+        while self.eat_word("otherwise") {
+            let r = self.map_expr(allow_in)?;
+            l = Expr { kind: ExprKind::Otherwise(Box::new(l), Box::new(r)), span: self.since(start) };
+        }
+        Ok(l)
+    }
+
+    fn map_expr(&mut self, allow_in: bool) -> P<Expr> {
+        let start = self.span();
+        let l = self.or_expr(allow_in)?;
+        if self.eat_punct("->") {
+            let r = self.or_expr(allow_in)?;
+            return Ok(Expr { kind: ExprKind::Map(Box::new(l), Box::new(r)), span: self.since(start) });
+        }
+        Ok(l)
+    }
+
+    fn or_expr(&mut self, allow_in: bool) -> P<Expr> {
+        let start = self.span();
+        let mut l = self.and_expr(allow_in)?;
+        while self.eat_word("or") {
+            let r = self.and_expr(allow_in)?;
+            l = Expr { kind: ExprKind::Binary(BinOp::Or, Box::new(l), Box::new(r)), span: self.since(start) };
+        }
+        Ok(l)
+    }
+
+    fn and_expr(&mut self, allow_in: bool) -> P<Expr> {
+        let start = self.span();
+        let mut l = self.not_expr(allow_in)?;
+        while self.eat_word("and") {
+            let r = self.not_expr(allow_in)?;
+            l = Expr { kind: ExprKind::Binary(BinOp::And, Box::new(l), Box::new(r)), span: self.since(start) };
+        }
+        Ok(l)
+    }
+
+    fn not_expr(&mut self, allow_in: bool) -> P<Expr> {
+        let start = self.span();
+        if self.eat_word("not") {
+            let e = self.not_expr(allow_in)?;
+            return Ok(Expr { kind: ExprKind::Not(Box::new(e)), span: self.since(start) });
+        }
+        self.cmp_expr(allow_in)
+    }
+
+    fn cmp_expr(&mut self, allow_in: bool) -> P<Expr> {
+        let start = self.span();
+        let first = self.add_expr()?;
+        let mut rest = vec![];
+        loop {
+            let op = match self.peek() {
+                Tok::Punct("==") => CmpOp::Eq,
+                Tok::Punct("!=") => CmpOp::Ne,
+                Tok::Punct("<") => CmpOp::Lt,
+                Tok::Punct("<=") => CmpOp::Le,
+                Tok::Punct(">") => CmpOp::Gt,
+                Tok::Punct(">=") => CmpOp::Ge,
+                Tok::Punct("=") => {
+                    return Err(Diag::new("SX-E02", "`=` gives a value; write `==` for equality (D-035)", self.span()));
+                }
+                _ => break,
+            };
+            self.bump();
+            rest.push((op, self.add_expr()?));
+        }
+        let e = if rest.is_empty() {
+            first
+        } else {
+            Expr { kind: ExprKind::Compare(Box::new(first), rest), span: self.since(start) }
+        };
+        if allow_in && self.is_word("in") && !self.is_punct_at(1, "{") {
+            self.bump();
+            let i = self.interval()?;
+            return Ok(Expr { kind: ExprKind::In(Box::new(e), i), span: self.since(start) });
+        }
+        Ok(e)
+    }
+
+    fn add_expr(&mut self) -> P<Expr> {
+        let start = self.span();
+        let mut l = self.mul_expr()?;
+        loop {
+            let op = if self.is_punct("+") {
+                BinOp::Add
+            } else if self.is_punct("-") {
+                BinOp::Sub
+            } else {
+                break;
+            };
+            self.bump();
+            let r = self.mul_expr()?;
+            l = Expr { kind: ExprKind::Binary(op, Box::new(l), Box::new(r)), span: self.since(start) };
+        }
+        Ok(l)
+    }
+
+    fn mul_expr(&mut self) -> P<Expr> {
+        let start = self.span();
+        let mut l = self.unary_expr()?;
+        loop {
+            let op = if self.is_punct("*") {
+                BinOp::Mul
+            } else if self.is_punct("/") {
+                BinOp::Div
+            } else {
+                break;
+            };
+            self.bump();
+            let r = self.unary_expr()?;
+            l = Expr { kind: ExprKind::Binary(op, Box::new(l), Box::new(r)), span: self.since(start) };
+        }
+        Ok(l)
+    }
+
+    fn unary_expr(&mut self) -> P<Expr> {
+        let start = self.span();
+        if self.eat_punct("-") {
+            let e = self.unary_expr()?;
+            return Ok(Expr { kind: ExprKind::Neg(Box::new(e)), span: self.since(start) });
+        }
+        self.pow_expr()
+    }
+
+    /// `^` binds tighter than unary minus and is right-associative: `-x^2` is `-(x^2)`.
+    fn pow_expr(&mut self) -> P<Expr> {
+        let start = self.span();
+        let base = self.postfix_expr()?;
+        if self.eat_punct("^") {
+            let e = self.unary_expr()?;
+            return Ok(Expr { kind: ExprKind::Binary(BinOp::Pow, Box::new(base), Box::new(e)), span: self.since(start) });
+        }
+        Ok(base)
+    }
+
+    fn postfix_expr(&mut self) -> P<Expr> {
+        let start = self.span();
+        let mut e = self.primary()?;
+        loop {
+            if self.is_punct(".") {
+                self.bump();
+                let n = self.any_name("a component or field name")?;
+                e = Expr { kind: ExprKind::Field(Box::new(e), n), span: self.since(start) };
+            } else if self.is_punct("(") && !self.tok().space_before {
+                let args = self.args()?;
+                e = Expr { kind: ExprKind::Call(Box::new(e), args), span: self.since(start) };
+            } else if self.is_punct("[") && !self.tok().space_before {
+                self.bump();
+                let i = self.expr()?;
+                self.expect_punct("]")?;
+                e = Expr { kind: ExprKind::Index(Box::new(e), Box::new(i)), span: self.since(start) };
+            } else {
+                return Ok(e);
+            }
+        }
+    }
+
+    /// `(a, name: b, ...)`.
+    fn args(&mut self) -> P<Vec<Arg>> {
+        self.expect_punct("(")?;
+        let mut out = vec![];
+        if !self.is_punct(")") {
+            loop {
+                let name = if matches!(self.peek(), Tok::Ident(_)) && self.is_punct_at(1, ":") {
+                    let n = self.any_name("an argument name")?;
+                    self.bump();
+                    Some(n)
+                } else {
+                    None
+                };
+                let value = self.expr()?;
+                out.push(Arg { name, value });
+                if !self.eat_punct(",") {
+                    break;
+                }
+            }
+        }
+        self.expect_punct(")")?;
+        Ok(out)
+    }
+
+    fn primary(&mut self) -> P<Expr> {
+        let start = self.span();
+        let t = self.peek().clone();
+        match t {
+            Tok::Num(v) => {
+                self.bump();
+                let unit = self.unit()?;
+                let lit = Expr { kind: ExprKind::Num(v, unit), span: self.since(start) };
+                // `2π`: a number directly followed by a named constant is a product (section 1.5).
+                if let Tok::Ident(s) = self.peek() {
+                    if !self.tok().space_before {
+                        if s == "π" || s == "pi" {
+                            let c = Expr { kind: ExprKind::Name(s.clone()), span: self.bump().span };
+                            return Ok(Expr { kind: ExprKind::Binary(BinOp::Mul, Box::new(lit), Box::new(c)), span: self.since(start) });
+                        }
+                        return Err(Diag::new(
+                            "SX-E02",
+                            format!("`{s}` directly after a number: write a space before a unit, or `*` for a product"),
+                            self.span(),
+                        ));
+                    }
+                }
+                Ok(lit)
+            }
+            Tok::Str(s) => {
+                self.bump();
+                Ok(Expr { kind: ExprKind::Str(s), span: start })
+            }
+            Tok::Ident(w) => match w.as_str() {
+                "true" | "false" => {
+                    self.bump();
+                    Ok(Expr { kind: ExprKind::Bool(w == "true"), span: start })
+                }
+                "start" | "end" if self.is_word_at(1, "of") => {
+                    self.bump();
+                    self.bump();
+                    let beat = self.name("a beat name")?;
+                    Ok(Expr { kind: ExprKind::BeatTime { start: w == "start", beat }, span: self.since(start) })
+                }
+                "if" => self.expr(),
+                _ if is_reserved(&w) => Err(self.unexpected("an expression")),
+                _ => {
+                    self.bump();
+                    Ok(Expr { kind: ExprKind::Name(w), span: start })
+                }
+            },
+            Tok::Punct("(") => {
+                self.bump();
+                let first = self.expr()?;
+                if self.eat_word("on") {
+                    let ev = self.name("an event name")?;
+                    let micro = if self.eat_word("microstep") { Some(self.int()? as u32) } else { None };
+                    self.expect_punct(")")?;
+                    return Ok(Expr { kind: ExprKind::On(Box::new(first), ev, micro), span: self.since(start) });
+                }
+                if self.eat_punct(")") {
+                    return Ok(Expr { span: self.since(start), ..first });
+                }
+                let mut items = vec![first];
+                while self.eat_punct(",") {
+                    items.push(self.expr()?);
+                }
+                self.expect_punct(")")?;
+                Ok(Expr { kind: ExprKind::Tuple(items), span: self.since(start) })
+            }
+            Tok::Punct("[") => {
+                self.bump();
+                let mut items = vec![];
+                if !self.is_punct("]") {
+                    loop {
+                        items.push(self.expr()?);
+                        if !self.eat_punct(",") {
+                            break;
+                        }
+                    }
+                }
+                self.expect_punct("]")?;
+                Ok(Expr { kind: ExprKind::List(items), span: self.since(start) })
+            }
+            Tok::Punct("|") => {
+                self.bump();
+                let e = self.expr()?;
+                self.expect_punct("|")?;
+                Ok(Expr { kind: ExprKind::Norm(Box::new(e)), span: self.since(start) })
+            }
+            _ => Err(self.unexpected("an expression")),
+        }
+    }
+
+    /// `[a, b]`, `(a, b)`, `[a, b)`, `(a, b]`, with `inf` or `-inf` for an unbounded end.
+    fn interval(&mut self) -> P<Interval> {
+        let start = self.span();
+        let lo_closed = if self.eat_punct("[") {
+            true
+        } else if self.eat_punct("(") {
+            false
+        } else {
+            return Err(self.unexpected("an interval (`[a, b]`, `(a, b)`, `[a, b)`, `(a, b]`)"));
+        };
+        let lo = self.bound()?;
+        self.expect_punct(",")?;
+        let hi = self.bound()?;
+        let hi_closed = if self.eat_punct("]") {
+            true
+        } else if self.eat_punct(")") {
+            false
+        } else {
+            return Err(self.unexpected("`]` or `)`"));
+        };
+        Ok(Interval { lo, lo_closed, hi, hi_closed, span: self.since(start) })
+    }
+
+    fn bound(&mut self) -> P<Bound> {
+        let inf_next = |p: &Self, n: usize| matches!(p.peek_at(n), Tok::Ident(s) if s == "inf") && matches!(p.peek_at(n + 1), Tok::Punct("," | "]" | ")"));
+        if inf_next(self, 0) {
+            self.bump();
+            return Ok(Bound::Inf);
+        }
+        if self.is_punct("-") && inf_next(self, 1) {
+            self.bump();
+            self.bump();
+            return Ok(Bound::Inf);
+        }
+        Ok(Bound::Value(Box::new(self.expr()?)))
+    }
+
+    // ------------------------------------------------------------ presentations
+
+    fn pres_item(&mut self) -> P<Vec<PresItem>> {
+        let start = self.span();
+        if self.eat_word("observe") {
+            let obs = if self.is_punct("{") { self.block(|p| Self::one(p.observation()))? } else { vec![self.observation()?] };
+            return Ok(vec![PresItem::Observe(obs)]);
+        }
+        if self.eat_word("view") {
+            let name = self.name("a view name")?;
+            self.expect_punct(":")?;
+            let kind = self.name("a view kind")?;
+            let args = self.args()?;
+            let reps = self.block(|p| Self::one(p.rep()))?;
+            return Ok(vec![PresItem::View(ViewDecl { name, kind, args, reps, span: self.since(start) })]);
+        }
+        if self.is_word("panel") {
+            let kind = self.any_name("`panel`")?;
+            let name = self.name("a panel name")?;
+            let reps = self.block(|p| Self::one(p.rep()))?;
+            return Ok(vec![PresItem::View(ViewDecl { name, kind, args: vec![], reps, span: self.since(start) })]);
+        }
+        if self.eat_word("permit") {
+            let who = self.name("a role")?;
+            let items = self.block(|p| Self::one(p.name("a permission")))?;
+            return Ok(vec![PresItem::Permit { who, items }]);
+        }
+        if self.eat_word("timeline") {
+            let scenes = self.block(|p| Self::one(p.scene()))?;
+            return Ok(vec![PresItem::Timeline(scenes)]);
+        }
+        Err(self.unexpected("`observe`, `view`, `panel`, `permit` or `timeline`"))
+    }
+
+    fn observation(&mut self) -> P<Observation> {
+        let start = self.span();
+        let name = self.any_name("an observation name")?;
+        self.expect_punct("=")?;
+        let expr = self.expr()?;
+        let of = if self.eat_word("of") { Some(self.name("an element name")?) } else { None };
+        let filter = if self.eat_word("where") { Some(self.expr()?) } else { None };
+        let schedule = if self.eat_word("live") {
+            Some(Schedule::Live)
+        } else if self.eat_word("every") {
+            Some(Schedule::Every(self.expr()?))
+        } else if self.eat_word("at") {
+            Some(Schedule::At(self.expr()?))
+        } else if self.eat_word("on") {
+            let ev = self.name("an event name")?;
+            let micro = if self.eat_word("microstep") { Some(self.int()? as u32) } else { None };
+            Some(Schedule::On(ev, micro))
+        } else if self.eat_word("over") {
+            Some(Schedule::Over(self.interval()?))
+        } else {
+            None
+        };
+        Ok(Observation { name, expr, of, filter, schedule, span: self.since(start) })
+    }
+
+    fn rep(&mut self) -> P<Rep> {
+        let start = self.span();
+        let kind = self.name("a representation")?;
+        let args = if self.is_punct("(") { self.args()? } else { vec![] };
+        let alias = if self.eat_word("as") { Some(self.name("a representation name")?) } else { None };
+        let interactions = if self.is_punct("{") { self.block(|p| Self::one(p.interaction()))? } else { vec![] };
+        Ok(Rep { kind, args, alias, interactions, span: self.since(start) })
+    }
+
+    fn interaction(&mut self) -> P<Interaction> {
+        let start = self.span();
+        self.expect_word("on")?;
+        let gesture = self.any_name("a gesture (`drag`)")?;
+        let part = if !self.is_word("as") { Some(self.name("a part")?) } else { None };
+        self.expect_word("as")?;
+        let bind = self.name("a name for the gesture value")?;
+        let proposals = self.block(|p| {
+            p.expect_word("propose")?;
+            let n = p.name("a binding name")?;
+            p.expect_punct("=")?;
+            Ok(vec![(n, p.expr()?)])
+        })?;
+        Ok(Interaction { gesture, part, bind, proposals, span: self.since(start) })
+    }
+
+    fn scene(&mut self) -> P<SceneDecl> {
+        let start = self.span();
+        self.expect_word("scene")?;
+        let name = self.name("a scene name")?;
+        let beats = self.block(|p| {
+            let s = p.span();
+            p.expect_word("beat")?;
+            let name = p.name("a beat name")?;
+            let actions = p.block(|p| Self::one(p.action()))?;
+            Ok(vec![BeatDecl { name, actions, span: p.since(s) }])
+        })?;
+        Ok(SceneDecl { name, beats, span: self.since(start) })
+    }
+
+    fn action(&mut self) -> P<Action> {
+        if self.eat_word("in") {
+            let view = self.name("a view name")?;
+            let reps = self.block(|p| Self::one(p.rep()))?;
+            return Ok(Action::In { view, reps });
+        }
+        if self.eat_word("narrate") {
+            let text = match self.peek().clone() {
+                Tok::Str(s) => {
+                    self.bump();
+                    s
+                }
+                _ => return Err(self.unexpected("narration text in quotes")),
+            };
+            let duration = if self.eat_word("for") { Some(self.expr()?) } else { None };
+            return Ok(Action::Narrate { text, duration });
+        }
+        if self.eat_word("run") {
+            self.expect_word("rate")?;
+            let rate = self.expr()?;
+            let until = if self.eat_word("until") { Some(self.name("an event name")?) } else { None };
+            return Ok(Action::Run { rate, until });
+        }
+        if self.eat_word("hold") {
+            return Ok(Action::Hold);
+        }
+        if self.eat_word("reset") {
+            return Ok(Action::Reset);
+        }
+        if self.eat_word("branch") {
+            return Ok(Action::Branch);
+        }
+        if self.eat_word("highlight") {
+            return Ok(Action::Highlight(self.name("a representation name")?));
+        }
+        if self.eat_word("seek") {
+            return Ok(Action::Seek(self.expr()?));
+        }
+        if self.eat_word("show") {
+            return Ok(Action::Show(self.rep()?));
+        }
+        if self.eat_word("explore") {
+            let limit = if self.eat_word("limit") { Some(self.expr()?) } else { None };
+            let mut keep = vec![];
+            if self.eat_word("keep") {
+                keep.push(self.name("a binding name")?);
+                while self.eat_punct(",") {
+                    keep.push(self.name("a binding name")?);
+                }
+            }
+            let reps = self.block(|p| Self::one(p.rep()))?;
+            let fallback = if self.eat_word("fallback") { self.block(|p| Self::one(p.action()))? } else { vec![] };
+            return Ok(Action::Explore { limit, keep, reps, fallback });
+        }
+        if self.eat_word("sequence") {
+            return Ok(Action::Sequence(self.block(|p| Self::one(p.action()))?));
+        }
+        if self.eat_word("intervene") {
+            return Ok(Action::Intervene(self.block(|p| Self::one(p.op()))?));
+        }
+        if self.eat_word("wait") {
+            if self.eat_word("until") {
+                return Ok(Action::WaitUntil(self.name("an event name")?));
+            }
+            return Ok(Action::Wait(self.expr()?));
+        }
+        if self.eat_word("request") {
+            return Ok(Action::Request(self.name("an event name")?));
+        }
+        for w in ["animate", "camera", "bind", "release"] {
+            if self.is_word(w) {
+                return Err(Diag::new("SX-E06", format!("the timeline action `{w}` is not yet defined by the working syntax"), self.span()));
+            }
+        }
+        Err(self.unexpected("a timeline action"))
+    }
+
+    // ------------------------------------------------------------ runs
+
+    fn run_decl(&mut self, start: Span) -> P<RunDecl> {
+        let name = self.name("a run name")?;
+        self.expect_word("of")?;
+        let model = self.name("a model name")?;
+        let presentation = if self.eat_word("with") { Some(self.name("a presentation name")?) } else { None };
+        let mut run = RunDecl {
+            name,
+            model,
+            presentation,
+            params: vec![],
+            config: vec![],
+            until: None,
+            learner: vec![],
+            expects: vec![],
+            span: start,
+        };
+        enum RunItem {
+            Params(Vec<(Name, Expr)>),
+            Config(Vec<(Name, Expr)>),
+            Until(Expr),
+            Learner(Vec<LearnerStep>),
+            Expect(Vec<Expect>),
+        }
+        let assign = |p: &mut Self| -> P<Vec<(Name, Expr)>> {
+            let n = p.name("a name")?;
+            p.expect_punct("=")?;
+            Ok(vec![(n, p.expr()?)])
+        };
+        let items = self.block(|p| {
+            if p.eat_word("param") {
+                let v = if p.is_punct("{") { p.block(assign)? } else { assign(p)? };
+                return Ok(vec![RunItem::Params(v)]);
+            }
+            if p.eat_word("config") {
+                let v = if p.is_punct("{") { p.block(assign)? } else { assign(p)? };
+                return Ok(vec![RunItem::Config(v)]);
+            }
+            if p.eat_word("until") {
+                return Ok(vec![RunItem::Until(p.expr()?)]);
+            }
+            if p.eat_word("learner") {
+                return Ok(vec![RunItem::Learner(p.block(|p| Self::one(p.learner_step()))?)]);
+            }
+            if p.eat_word("expect") {
+                let v = if p.is_punct("{") { p.block(|p| Self::one(p.expect()))? } else { vec![p.expect()?] };
+                return Ok(vec![RunItem::Expect(v)]);
+            }
+            Err(p.unexpected("`param`, `config`, `until`, `learner` or `expect`"))
+        })?;
+        for it in items {
+            match it {
+                RunItem::Params(v) => run.params.extend(v),
+                RunItem::Config(v) => run.config.extend(v),
+                RunItem::Until(e) => run.until = Some(e),
+                RunItem::Learner(v) => run.learner.extend(v),
+                RunItem::Expect(v) => run.expects.extend(v),
+            }
+        }
+        run.span = self.since(start);
+        Ok(run)
+    }
+
+    fn learner_step(&mut self) -> P<LearnerStep> {
+        let start = self.span();
+        self.expect_word("at")?;
+        let at = self.expr()?;
+        self.expect_punct(":")?;
+        let action = if self.eat_word("continue") {
+            LearnerAction::Continue
+        } else if self.eat_word("set") {
+            let mut control = vec![];
+            while !self.is_punct("=") {
+                control.push(self.any_name("a control")?);
+            }
+            self.bump();
+            LearnerAction::Set { control, value: self.expr()? }
+        } else {
+            return Err(self.unexpected("`set` or `continue`"));
+        };
+        Ok(LearnerStep { at, action, span: self.since(start) })
+    }
+
+    fn expect(&mut self) -> P<Expect> {
+        let start = self.span();
+        let word = |t: &Tok| matches!(t, Tok::Ident(w) if !is_reserved(w) && w != "of");
+        if word(self.peek()) && word(self.peek_at(1)) {
+            let mut words = vec![];
+            while matches!(self.peek(), Tok::Ident(_)) {
+                words.push(self.any_name("a word")?);
+            }
+            return Ok(Expect::Outcome { words, span: self.since(start) });
+        }
+        let e = self.expr_no_in()?;
+        if self.eat_word("in") {
+            let interval = self.interval()?;
+            return Ok(Expect::In { expr: e, interval, span: self.since(start) });
+        }
+        let (lhs, rhs) = match e.kind {
+            ExprKind::Compare(l, mut rest) if rest.len() == 1 && rest[0].0 == CmpOp::Eq => (*l, rest.remove(0).1),
+            _ => return Err(Diag::new("SX-E02", "an expectation is `a == b [within tol | exactly]` or `a in I`", e.span)),
+        };
+        let tol = if self.eat_word("exactly") {
+            Tolerance::Exact
+        } else if self.eat_word("within") {
+            if self.eat_word("rel") {
+                Tolerance::Rel(self.expr()?)
+            } else {
+                Tolerance::Abs(self.expr()?)
+            }
+        } else {
+            Tolerance::None
+        };
+        Ok(Expect::Compare { lhs, rhs, tol, span: self.since(start) })
+    }
+}

@@ -1,0 +1,306 @@
+//! Interaction (PK section 10): controls, direct manipulation through declared inverses,
+//! keyboard operation (PK-11.2), undo and redo, over an interactive session of the model.
+//!
+//! Every model action passes through the runtime's validation (PK-1.2). A rejected action is
+//! reported to the presentation (RC-10.5) and not logged; an action the presentation does
+//! not offer is refused before it reaches the model (PK-10.4).
+
+use crate::data::{observe, Data};
+use crate::frame::{subst, CKind, CRep, Frame, Projector, ViewCtx};
+use crate::text::unit_text;
+use crate::{PDiag, Program};
+use prismal_ir::present::Presentation;
+use prismal_ir::{Expr, Op, Target, Type, Unit};
+use prismal_kernel::{CModel, Value};
+use prismal_runtime::{Action, Config, Run, Session};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Key {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Why {
+    /// Refused by the presentation; the model never saw it (PK-10.4, PK-9.8).
+    Refused,
+    /// Rejected by the runtime's validation (RC-10.5).
+    Rejected,
+}
+
+/// An action that did not take effect, as reported to the presentation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Report {
+    pub why: Why,
+    pub message: String,
+}
+
+/// A preview during a drag (PK-10.5 to PK-10.7).
+#[derive(Clone, Debug)]
+pub struct Preview {
+    pub action: Action,
+    pub valid: bool,
+    pub message: Option<String>,
+}
+
+struct Drag {
+    rep: String,
+    ctx: ViewCtx,
+    crep: CRep,
+    previews: Vec<Preview>,
+    last_valid: Option<(Action, Run)>,
+}
+
+/// A literal of a value in coherent SI units, typed for `ty` (bare for dimensionless).
+pub fn si_literal(v: f64, ty: &Type) -> Expr {
+    match ty {
+        Type::Quantity { dim } if !dim.is_none() => Expr::Num { num: v, unit: Some(Unit { text: unit_text(dim), scale: 1.0, offset: 0.0, dim: *dim }) },
+        _ => Expr::Num { num: v, unit: None },
+    }
+}
+
+/// An interactive presentation of a model: one session, its views and its controls.
+pub struct Interactive<'a> {
+    pub cm: &'a CModel,
+    pub pres: &'a Presentation,
+    pub projector: Projector,
+    pub session: Session,
+    drag: Option<Drag>,
+    /// Actions that did not take effect, in order.
+    pub reports: Vec<Report>,
+    /// Previews of the last drag, kept after it ends for inspection.
+    pub last_previews: Vec<Preview>,
+}
+
+impl<'a> Interactive<'a> {
+    pub fn new(prog: &'a Program, presentation: &str, cfg: Config) -> Result<Interactive<'a>, Vec<PDiag>> {
+        let pres = prog.presentation(presentation);
+        let cm = prog.model(&pres.model);
+        let projector = Projector::new(cm, pres)?;
+        let session = Session::new(cm.clone(), cfg);
+        Ok(Interactive { cm, pres, projector, session, drag: None, reports: vec![], last_previews: vec![] })
+    }
+
+    fn rep(&self, name: &str) -> Option<(ViewCtx, CRep)> {
+        for (_, ctx, reps) in &self.projector.views {
+            for r in reps {
+                if r.rep.id == name || r.rep.name.as_deref() == Some(name) || r.rep.id.ends_with(&format!(".{name}")) {
+                    return Some((ctx.clone(), r.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    fn report<T>(&mut self, why: Why, message: String) -> Result<T, Report> {
+        let r = Report { why, message };
+        self.reports.push(r.clone());
+        Err(r)
+    }
+
+    fn commit(&mut self, action: Action) -> Result<(), Report> {
+        let t = self.session.now();
+        match self.session.commit(t, action) {
+            Ok(()) => Ok(()),
+            Err(d) => self.report(Why::Rejected, d.message),
+        }
+    }
+
+    fn current_value(&self, idx: usize) -> Value {
+        let run = &self.session.current;
+        run.state_at(run.end_time())[idx].clone()
+    }
+
+    /// Sets a control to a value (a pointer on a slider, a typed number).
+    pub fn set_control(&mut self, rep: &str, value: Expr) -> Result<(), Report> {
+        let Some((_, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("no control `{rep}`")) };
+        let CKind::Control { binding, .. } = &r.kind else { return self.report(Why::Refused, format!("`{rep}` is not a control")) };
+        let op = Op::Set { target: Target { binding: binding.clone(), component: None }, value };
+        self.commit(Action::Intervene(vec![op]))
+    }
+
+    /// Sets the control of a kind that targets a binding (learner scripts: `set slider a = 2`).
+    pub fn set_control_of(&mut self, control: &str, binding: &str, value: Expr) -> Result<(), Report> {
+        let found = self.projector.views.iter().flat_map(|v| v.2.iter()).find(|r| matches!(&r.kind, CKind::Control { control: c, binding: b, .. } if c == control && b == binding));
+        match found.map(|r| r.rep.id.clone()) {
+            Some(id) => self.set_control(&id, value),
+            None => self.report(Why::Refused, format!("no {control} for `{binding}` in this presentation (PK-10.4)")),
+        }
+    }
+
+    /// A key press on a focused control or draggable representation (PK-11.2).
+    pub fn key(&mut self, rep: &str, key: Key) -> Result<(), Report> {
+        let Some((ctx, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("nothing named `{rep}`")) };
+        let sign = if matches!(key, Key::Right | Key::Up) { 1.0 } else { -1.0 };
+        match &r.kind {
+            CKind::Control { idx, min, max, step, .. } => {
+                let step = step.or(min.zip(*max).map(|(a, b)| (b - a) / 100.0)).unwrap_or(1.0);
+                let Value::Num(v) = self.current_value(*idx) else { return self.report(Why::Refused, "not a numeric control".into()) };
+                let ty = self.cm.bindings[*idx].ty.clone();
+                self.set_control(rep, si_literal(v + sign * step, &ty))
+            }
+            _ if r.rep.inverse.is_some() => {
+                let Some(at) = self.part_position(&ctx, &r) else { return self.report(Why::Refused, format!("`{rep}` has no position")) };
+                let step = keyboard_step(&ctx, &r);
+                let vertical = matches!(key, Key::Up | Key::Down);
+                let mut to = at;
+                match &ctx {
+                    ViewCtx::Spatial { y_up, .. } if vertical => to[1] += if *y_up { -sign } else { sign } * step.1,
+                    _ if vertical => to[1] += sign * step.1,
+                    _ => to[0] += sign * step.0,
+                }
+                let part = r.rep.inverse.as_ref().and_then(|i| i.part.clone());
+                self.pointer_down(rep, part.as_deref())?;
+                self.pointer_move(to);
+                self.pointer_up().map(|_| ())
+            }
+            _ => self.report(Why::Refused, format!("`{rep}` has no keyboard operation")),
+        }
+    }
+
+    /// The view position of the part a representation is dragged by: a marker's position,
+    /// an arrow's head.
+    fn part_position(&self, ctx: &ViewCtx, r: &CRep) -> Option<[f64; 2]> {
+        let run = &self.session.current;
+        let t = run.end_time();
+        let vals = run.state_at(t);
+        match &r.kind {
+            CKind::Marker { pos, .. } => run.eval_state(pos, &vals, t).ok().map(|p| ctx.to_view(&crate::flat(&p))),
+            CKind::Arrow { vec, from, px_per_unit, .. } => {
+                let base = match from {
+                    Some(f) => crate::flat(&run.eval_state(f, &vals, t).ok()?),
+                    None => vec![0.0, 0.0],
+                };
+                let v = crate::flat(&run.eval_state(vec, &vals, t).ok()?);
+                let b = ctx.to_view(&base);
+                let y_up = matches!(ctx, ViewCtx::Spatial { y_up: true, .. });
+                Some([b[0] + v[0] * px_per_unit, b[1] + if y_up { -v[1] } else { v[1] } * px_per_unit])
+            }
+            _ => None,
+        }
+    }
+
+    /// Begins a drag on a representation, or one of its parts (PK-10.5).
+    pub fn pointer_down(&mut self, rep: &str, part: Option<&str>) -> Result<(), Report> {
+        let Some((ctx, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("nothing named `{rep}`")) };
+        let Some(inv) = &r.rep.inverse else { return self.report(Why::Refused, format!("`{rep}` declares no inverse, so it cannot be dragged (PK-5.6)")) };
+        if inv.part.as_deref() != part {
+            return self.report(Why::Refused, format!("`{rep}` is dragged by {}", inv.part.as_deref().map(|p| format!("its {p}")).unwrap_or("its body".into())));
+        }
+        self.drag = Some(Drag { rep: r.rep.id.clone(), ctx, crep: r, previews: vec![], last_valid: None });
+        Ok(())
+    }
+
+    /// Moves the pointer during a drag: the inverse proposes values, which are validated and
+    /// previewed but not committed (PK-10.6, PK-10.7). Returns whether the proposal is valid.
+    pub fn pointer_move(&mut self, p: [f64; 2]) -> bool {
+        let Some(drag) = &self.drag else { return false };
+        let inv = drag.crep.rep.inverse.as_ref().unwrap();
+        let gesture = drag.ctx.pointer(p);
+        let ops = inv.proposals.iter().map(|pr| Op::Set { target: Target { binding: pr.target.clone(), component: None }, value: subst(&pr.value, &gesture) }).collect();
+        let action = Action::Intervene(ops);
+        let t = self.session.now();
+        let result = self.session.propose(t, action.clone());
+        let drag = self.drag.as_mut().unwrap();
+        match result {
+            Ok(run) => {
+                drag.previews.push(Preview { action: action.clone(), valid: true, message: None });
+                drag.last_valid = Some((action, run));
+                true
+            }
+            Err(d) => {
+                drag.previews.push(Preview { action, valid: false, message: Some(d.message) });
+                false
+            }
+        }
+    }
+
+    /// The latest preview of the drag in progress.
+    pub fn preview(&self) -> Option<&Preview> {
+        self.drag.as_ref().and_then(|d| d.previews.last())
+    }
+
+    /// Ends a drag: the last valid proposal is committed as one intervention (PK-10.8).
+    /// Returns whether anything was committed.
+    pub fn pointer_up(&mut self) -> Result<bool, Report> {
+        let Some(drag) = self.drag.take() else { return Ok(false) };
+        self.last_previews = drag.previews;
+        match drag.last_valid {
+            Some((action, _)) => self.commit(action).map(|_| true),
+            None => Ok(false),
+        }
+    }
+
+    /// Cancels a drag: nothing is committed.
+    pub fn cancel(&mut self) {
+        if let Some(d) = self.drag.take() {
+            self.last_previews = d.previews;
+        }
+    }
+
+    pub fn undo(&mut self) {
+        self.session.undo();
+    }
+
+    pub fn redo(&mut self) {
+        self.session.redo();
+    }
+
+    /// An intervention submitted directly through the interaction path. The presentation
+    /// refuses targets it does not offer, and targets the model does not allow (PK-10.4).
+    pub fn submit(&mut self, ops: Vec<Op>) -> Result<(), Report> {
+        for op in &ops {
+            let Op::Set { target, .. } = op else { return self.report(Why::Refused, "only `set` interventions".into()) };
+            let Some(&i) = self.cm.index.get(&target.binding) else { return self.report(Why::Refused, format!("unknown binding `{}`", target.binding)) };
+            if !self.cm.bindings[i].intervenable {
+                return self.report(Why::Refused, format!("`{}` is not intervenable (D-023, RC-11.4)", self.cm.bindings[i].name));
+            }
+            let offered = self.projector.views.iter().flat_map(|v| v.2.iter()).any(|r| {
+                matches!(&r.kind, CKind::Control { binding, .. } if *binding == target.binding)
+                    || r.rep.inverse.as_ref().is_some_and(|inv| inv.proposals.iter().any(|p| p.target == target.binding))
+            });
+            if !offered {
+                return self.report(Why::Refused, format!("`{}` is not offered by this presentation (PK-10.4)", self.cm.bindings[i].name));
+            }
+        }
+        self.commit(Action::Intervene(ops))
+    }
+
+    /// The frame shown now: the committed state, or during a drag the last valid preview,
+    /// with the dragged representation marked valid or invalid (PK-10.6).
+    pub fn frame(&self) -> Frame {
+        let (run, valid) = match &self.drag {
+            Some(d) => (d.last_valid.as_ref().map(|x| &x.1).unwrap_or(&self.session.current), d.previews.last().map(|p| p.valid)),
+            None => (&self.session.current, None),
+        };
+        let t = run.end_time();
+        let vals = run.state_at(t);
+        let (mut views, overlay) = self.projector.frame(self.cm, run, &vals, t, &[]);
+        if let Some(d) = &self.drag {
+            for r in views.iter_mut().flat_map(|v| v.reps.iter_mut()).filter(|r| r.id == d.rep) {
+                r.valid = valid;
+            }
+        }
+        Frame { time: 0.0, run: "session".into(), t, views, overlay, captions: vec![], announcements: vec![] }
+    }
+
+    /// The current data of an observation of the presentation.
+    pub fn observe(&self, name: &str) -> Result<Data, String> {
+        let o = self.pres.observations.iter().find(|o| o.name == name).ok_or(format!("no observation `{name}`"))?;
+        observe(self.cm, &self.session.current, o, self.session.log())
+    }
+}
+
+/// The keyboard step of a draggable representation, in view units: its `step` property, or
+/// 1/100 of each plot axis span, or 10 px in a spatial view (PK-11.2).
+pub fn keyboard_step(ctx: &ViewCtx, r: &CRep) -> (f64, f64) {
+    if let Some(prismal_ir::present::Arg::Expr { expr: Expr::Num { num, unit: None } }) = r.rep.prop("step") {
+        return (*num, *num);
+    }
+    match ctx {
+        ViewCtx::Plot { x, y } => ((x.1 - x.0) / 100.0, (y.1 - y.0) / 100.0),
+        _ => (10.0, 10.0),
+    }
+}

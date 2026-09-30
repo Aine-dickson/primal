@@ -6,10 +6,11 @@
 pub mod build;
 pub mod dim;
 pub mod expr;
+pub mod present;
 pub mod units;
 
 pub use dim::{Dim, Ratio};
-pub use expr::{BinOp, Builtin, Expr, Func, Lambda};
+pub use expr::{BinOp, Builtin, Constant, Expr, Func, Lambda};
 pub use units::Unit;
 
 use serde::{Deserialize, Serialize};
@@ -28,11 +29,21 @@ pub struct Document {
     pub spaces: Vec<Space>,
     #[serde(default)]
     pub models: Vec<Model>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub presentations: Vec<present::Presentation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<present::RunCase>,
 }
 
 impl Document {
     pub fn new(spaces: Vec<Space>, models: Vec<Model>) -> Document {
-        Document { format: FORMAT.into(), version: VERSION.into(), spaces, models }
+        Document { format: FORMAT.into(), version: VERSION.into(), spaces, models, presentations: vec![], runs: vec![] }
+    }
+    pub fn model(&self, id: &str) -> Option<&Model> {
+        self.models.iter().find(|m| m.id == id)
+    }
+    pub fn presentation(&self, id: &str) -> Option<&present::Presentation> {
+        self.presentations.iter().find(|p| p.id == id)
     }
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).expect("IR serializes")

@@ -806,6 +806,18 @@ impl Run {
         compile_expr(&self.model, e, None).unwrap_or_else(|d| panic!("observation does not check: {d:?}")).0
     }
 
+    /// Evaluates a compiled expression on a state of this run at time `t`.
+    pub fn eval_state(&self, c: &CExpr, vals: &[Value], t: f64) -> Result<Value, Status> {
+        self.eval_on(c, vals, t)
+    }
+
+    /// The last simulation instant the run reached.
+    pub fn end_time(&self) -> f64 {
+        let c = self.committed.last().map(|c| c.t).unwrap_or(self.config.t0);
+        let s = self.segments.last().map(|s| s.step.t1).unwrap_or(c);
+        c.max(s)
+    }
+
     fn eval_on(&self, c: &CExpr, vals: &[Value], t: f64) -> Result<Value, Status> {
         let der = self.model.der_values(vals, t, self.config.t0).ok();
         c.eval(&Ctx { vals, der: der.as_deref(), t, t0: self.config.t0, args: &[] })

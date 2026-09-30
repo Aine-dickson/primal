@@ -654,6 +654,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Reason:** each choice keeps one spelling per construct (canonical printing, D-019), uses the kernel's own term where one exists, and avoids words whose common programming meaning contradicts the semantics.
 - **History:**
   - 2026-09-30 proposed by the keyword pass and accepted under the owner's standing delegation of 2026-09-30.
+  - 2026-09-30 the reserved-word list split into reserved words and contextual keywords (D-040).
 
 ## D-036: Comments and identities across text and visual editing
 
@@ -704,3 +705,37 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** MK-15.11 is reworded; the prototype implements it (`self_retriggering` in `crates/prismal-kernel/src/check.rs`); RP-01 and RP-03 are unchanged.
 - **History:**
   - 2026-09-30 found by the prototype, proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-039: Named mathematical constants in the IR
+
+- **Status:** Accepted
+- **Original position:** the working syntax predefines `π` and `pi` (section 1.5) and writes `2π` as a product (RP-05); the IR (`docs/spec/04-ir.md` section 6) has no form for a named constant, so lowering would store π as a decimal literal.
+- **Raised by:** the text parser, lowering RP-05's `T: Time = 2π * sqrt(m / k)`.
+- **Builds on:** MK-10.6 (expressions keep their symbolic structure), D-034 (the formula representation typesets from the IR), IR-1.1.
+- **Question:** How does the IR store a named mathematical constant?
+- **Options considered:**
+  1. **As its value** (`{"num": 3.141592653589793}`). No IR change, but the formula for RP-05's period shows `6.28319 √(m/k)` and cannot be printed back as `2π`.
+  2. **As a named constant** `{"const": "pi"}`: dimensionless, with MK-3.8 applying as to a bare literal. One more expression form; typesetting and printing keep π.
+  3. **As a predefined binding** of every model. Mixes a mathematical constant with model state: it would enter dependency analysis and could be a target of interventions.
+- **Accepted position:** option 2, with `pi` the only constant in v0. Others are added when a program needs them; `e` is not predefined because it is a common binding name (the restitution in RP-03).
+- **Reason:** keeps the symbolic structure that MK-10.6 and D-034 require, at the cost of one small expression form. Evaluation is unchanged: `2 * π` in binary64 equals the folded value, so the measurements of RP-05 are identical.
+- **Consequences:** 04-ir section 6 gains the form, MK-10.8 states the rule, the kernel checks it as a dimensionless literal. `inf` is not a constant: it is only an interval bound, and an unbounded end lowers to a one-sided comparison, so the IR never holds an infinity (which JSON cannot represent).
+- **History:**
+  - 2026-09-30 found by the text parser, proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-040: Reserved words and contextual keywords
+
+- **Status:** Accepted
+- **Original position:** D-035 and working syntax section 1.5 reserve every keyword of the language, including those of presentations, timelines and runs (`drag`, `scene`, `rate`, `until`, `limit`, `release`, ...).
+- **Raised by:** the text parser. The reference programs use reserved words as names: RP-01 declares `process drag`, RP-07 and RP-08 name a view `scene`, RP-07 names an observation `state`. Read literally, D-035 rejects all three.
+- **Builds on:** D-035, D-028, D-002 (authors are scientists and educators, whose ordinary names include drag, scene, rate, limit and release).
+- **Question:** Which keywords are reserved?
+- **Options considered:**
+  1. **Every keyword reserved**, and the elements of the programs renamed (`air_drag`, `stage`). One simple rule, but ordinary scientific words become unusable as names, and the list grows with every presentation feature, breaking existing models.
+  2. **Reserve the words of the model language, expressions and top-level items; recognize presentation, timeline and run words only where such a word is expected** (contextual keywords, as in C# and Kotlin). No ambiguity arises: those words never occur where a model expression or the name of a model element can start, and the places that expect them (the actions of a beat, the schedule of an observation, the items of a run) never hold a name.
+  3. **Any word may be a name wherever the grammar expects a name.** Loses the guarantee that a model reads unambiguously to a person (`param { in: Real = 1 }`).
+- **Accepted position:** option 2. Reserved: `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request`. Every other keyword is contextual (working syntax section 1.5). The observation `state` of RP-07 is renamed `values`, because `state` begins a model block.
+- **Reason:** keeps the model language unambiguous for readers and the parser, and leaves natural scientific names to authors. The contextual list can grow with the presentation kernel without breaking existing models.
+- **Consequences:** working syntax section 1.5 lists the two groups; RP-07 changed (recorded in its history); the parser implements the split (`crates/prismal-syntax/src/parser.rs`).
+- **History:**
+  - 2026-09-30 found by the text parser, proposed and accepted under the owner's standing delegation of 2026-09-30.

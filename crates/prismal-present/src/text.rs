@@ -1,0 +1,244 @@
+//! Text for representations: numbers, quantities with units, and expressions printed with
+//! the model's display symbols (PK-6.5, PK-11.1, D-034).
+
+use prismal_ir::{BinOp, Builtin, Dim, Expr, Func, Type};
+use prismal_kernel::{CModel, Value};
+
+/// A number with at most six significant digits, without trailing zeros: `4.2`, `3.60555`.
+pub fn fmt_num(x: f64) -> String {
+    if x == 0.0 || !x.is_finite() {
+        return if x.is_nan() { "NaN".into() } else if x.is_infinite() { if x > 0.0 { "inf".into() } else { "-inf".into() } } else { "0".into() };
+    }
+    let mag = x.abs().log10().floor() as i32;
+    if !(-4..6).contains(&mag) {
+        let s = format!("{:.5e}", x);
+        let (m, e) = s.split_once('e').unwrap();
+        let m = m.trim_end_matches('0').trim_end_matches('.');
+        return format!("{m}e{e}");
+    }
+    let decimals = (5 - mag).max(0) as usize;
+    let s = format!("{:.*}", decimals, x);
+    let s = if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s };
+    if s == "-0" {
+        "0".into()
+    } else {
+        s
+    }
+}
+
+/// The coherent SI unit of a dimension: `m`, `m/s`, `m/s^2`, `kg`, `J`, `N`, `1/s`.
+pub fn unit_text(d: &Dim) -> String {
+    let named = [
+        ("L", "m"),
+        ("M", "kg"),
+        ("T", "s"),
+        ("L/T", "m/s"),
+        ("L/T^2", "m/s^2"),
+        ("M L^2/T^2", "J"),
+        ("M L/T^2", "N"),
+        ("M L^2/T^3", "W"),
+        ("M/T^2", "N/m"),
+        ("1/T", "1/s"),
+        ("1/L", "1/m"),
+        ("M L/T", "kg m/s"),
+    ];
+    if d.is_none() {
+        return String::new();
+    }
+    for (dim, text) in named {
+        if Dim::parse(dim).map(|x| x == *d).unwrap_or(false) {
+            return text.into();
+        }
+    }
+    let syms = ["m", "kg", "s", "A", "K", "mol", "cd"];
+    let mut parts = vec![];
+    for (i, r) in d.0.iter().enumerate() {
+        if r.is_zero() {
+            continue;
+        }
+        if r.n == 1 && r.d == 1 {
+            parts.push(syms[i].to_string());
+        } else if r.d == 1 {
+            parts.push(format!("{}^{}", syms[i], r.n));
+        } else {
+            parts.push(format!("{}^({}/{})", syms[i], r.n, r.d));
+        }
+    }
+    parts.join(" ")
+}
+
+fn with_unit(x: f64, unit: &str) -> String {
+    if unit.is_empty() {
+        fmt_num(x)
+    } else {
+        format!("{} {unit}", fmt_num(x))
+    }
+}
+
+/// A binding's value in its display unit when it declares one (MK-3.12): `60 deg`;
+/// otherwise as `fmt_value`.
+pub fn fmt_binding(cm: &CModel, idx: usize, v: &Value) -> String {
+    let b = &cm.bindings[idx];
+    let unit = cm.ir.binding(&b.id).and_then(|x| x.display.unit.as_ref()).and_then(|u| prismal_ir::Unit::parse(u).ok());
+    match (v, unit) {
+        (Value::Num(x), Some(u)) => with_unit((x - u.offset) / u.scale, &u.text),
+        _ => fmt_value(v, &b.ty),
+    }
+}
+
+/// A value of a type, in coherent SI units: `4.2`, `3 m`, `(4 m, -1 m)`, `true`.
+pub fn fmt_value(v: &Value, ty: &Type) -> String {
+    match (v, ty) {
+        (Value::Bool(b), _) => b.to_string(),
+        (Value::Num(x), Type::Quantity { dim } | Type::Instant { dim }) => with_unit(*x, &unit_text(dim)),
+        (Value::Num(x), _) => fmt_num(*x),
+        (Value::Vec(a), Type::Vector { dim, .. }) => {
+            let u = unit_text(dim);
+            format!("({})", a.as_slice().iter().map(|x| with_unit(*x, &u)).collect::<Vec<_>>().join(", "))
+        }
+        (Value::Point(a), _) => format!("({})", a.as_slice().iter().map(|x| with_unit(*x, "m")).collect::<Vec<_>>().join(", ")),
+        (Value::Vec(a), _) => format!("({})", a.as_slice().iter().map(|x| fmt_num(*x)).collect::<Vec<_>>().join(", ")),
+        (Value::Tuple(items), Type::Tuple { items: tys }) => {
+            format!("({})", items.iter().zip(tys).map(|(v, t)| fmt_value(v, t)).collect::<Vec<_>>().join(", "))
+        }
+        (Value::Tuple(items), _) => format!("({})", items.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")),
+        (Value::Case(c), Type::Enum { cases }) => cases.get(*c as usize).cloned().unwrap_or_default(),
+        (v, _) => v.to_string(),
+    }
+}
+
+/// The symbol shown for a binding: its display symbol, or its name (D-034).
+pub fn symbol(cm: &CModel, id: &str) -> String {
+    match cm.ir.binding(id) {
+        Some(b) => b.display.symbol.clone().unwrap_or_else(|| b.name.clone()),
+        None => id.rsplit('.').next().unwrap_or(id).to_string(),
+    }
+}
+
+fn prec(e: &Expr) -> u8 {
+    match e {
+        Expr::If { .. } | Expr::Otherwise { .. } => 0,
+        Expr::Bin { bin, .. } => match bin {
+            BinOp::Or => 1,
+            BinOp::And => 2,
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => 3,
+            BinOp::Add | BinOp::Sub => 4,
+            BinOp::Mul | BinOp::Div => 5,
+            BinOp::Pow => 7,
+        },
+        Expr::Neg { .. } | Expr::Not { .. } => 6,
+        Expr::Num { num, .. } if *num < 0.0 => 6,
+        _ => 8,
+    }
+}
+
+/// An expression in linear text with display symbols; `params` names lambda parameters.
+/// Products are written by juxtaposition, as in typeset mathematics: `0.5 m v^2`.
+pub fn print(e: &Expr, cm: &CModel, params: &[String]) -> String {
+    let p = |x: &Expr| print(x, cm, params);
+    let wrap = |x: &Expr, min: u8| if prec(x) < min { format!("({})", p(x)) } else { p(x) };
+    let axes = |space: Option<&str>| -> Vec<String> {
+        space
+            .and_then(|s| cm.spaces.iter().find(|x| x.id == s))
+            .map(|s| s.axes.clone())
+            .unwrap_or_else(|| vec!["x".into(), "y".into(), "z".into()])
+    };
+    match e {
+        Expr::Num { num, unit } => match unit {
+            Some(u) => format!("{} {}", fmt_num(*num), u.text),
+            None => fmt_num(*num),
+        },
+        Expr::Bool { bool } => bool.to_string(),
+        Expr::Case { case } => case.clone(),
+        Expr::Ref { r#ref } => symbol(cm, r#ref),
+        Expr::Param { param } => params.get(*param).cloned().unwrap_or_else(|| format!("x{}", param + 1)),
+        Expr::Builtin { builtin } => match builtin {
+            Builtin::T => "t".into(),
+            Builtin::T0 => "t0".into(),
+            Builtin::Elapsed => "elapsed".into(),
+        },
+        Expr::Const { .. } => "π".into(),
+        Expr::Origin { .. } => "origin".into(),
+        Expr::Der { der } => format!("der({})", symbol(cm, der)),
+        Expr::Neg { neg } => format!("-{}", wrap(neg, 6)),
+        Expr::Not { not } => format!("not {}", wrap(not, 6)),
+        Expr::Norm { norm } => format!("|{}|", p(norm)),
+        Expr::Bin { bin, l, r } => {
+            let me = prec(e);
+            let (ls, rs) = match bin {
+                BinOp::Pow => (wrap(l, 8), wrap(r, 8)),
+                BinOp::Sub | BinOp::Div => (wrap(l, me), wrap(r, me + 1)),
+                _ => (wrap(l, me), wrap(r, me)),
+            };
+            let op = match bin {
+                BinOp::Add => " + ",
+                BinOp::Sub => " - ",
+                BinOp::Mul => {
+                    // Juxtapose, except between two numbers.
+                    if matches!(**r, Expr::Num { .. }) {
+                        " * "
+                    } else {
+                        " "
+                    }
+                }
+                BinOp::Div => " / ",
+                BinOp::Pow => "^",
+                BinOp::And => " and ",
+                BinOp::Or => " or ",
+                BinOp::Eq => " == ",
+                BinOp::Ne => " != ",
+                BinOp::Lt => " < ",
+                BinOp::Le => " <= ",
+                BinOp::Gt => " > ",
+                BinOp::Ge => " >= ",
+            };
+            format!("{ls}{op}{rs}")
+        }
+        Expr::Call { call, args } => {
+            let name = match call {
+                Func::Sin => "sin",
+                Func::Cos => "cos",
+                Func::Tan => "tan",
+                Func::Sqrt => "sqrt",
+                Func::Exp => "exp",
+                Func::Log => "log",
+                Func::Abs => "abs",
+                Func::Min => "min",
+                Func::Max => "max",
+                Func::Atan2 => "atan2",
+            };
+            format!("{name}({})", args.iter().map(p).collect::<Vec<_>>().join(", "))
+        }
+        Expr::Apply { apply, args } => format!("{}({})", wrap(apply, 8), args.iter().map(p).collect::<Vec<_>>().join(", ")),
+        Expr::If { r#if, then, r#else } => format!("if {} then {} else {}", p(r#if), p(then), p(r#else)),
+        Expr::Tuple { tuple } => format!("({})", tuple.iter().map(p).collect::<Vec<_>>().join(", ")),
+        Expr::Comp { comp, axis } => {
+            let space = match &**comp {
+                Expr::Ref { r#ref } => cm.ir.binding(r#ref).and_then(|b| match &b.ty {
+                    Type::Point { space } | Type::Vector { space, .. } => Some(space.clone()),
+                    _ => None,
+                }),
+                _ => cm.ir.default_space.clone(),
+            };
+            let names = axes(space.as_deref());
+            format!("{}.{}", wrap(comp, 8), names.get(*axis).cloned().unwrap_or_else(|| axis.to_string()))
+        }
+        Expr::Lambda { lambda } => print(&lambda.body, cm, &lambda.names),
+        Expr::Otherwise { otherwise, default } => format!("{} otherwise {}", p(otherwise), p(default)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numbers() {
+        assert_eq!(fmt_num(4.200000000000001), "4.2");
+        assert_eq!(fmt_num(3.605551275463989), "3.60555");
+        assert_eq!(fmt_num(-1.0), "-1");
+        assert_eq!(fmt_num(1e-9), "1e-9");
+        assert_eq!(fmt_num(40.7747196738022), "40.7747");
+        assert_eq!(unit_text(&Dim::parse("L/T").unwrap()), "m/s");
+    }
+}

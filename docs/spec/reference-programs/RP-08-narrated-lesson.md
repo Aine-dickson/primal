@@ -36,7 +36,7 @@ presentation ProjectileLesson for Projectile {
   timeline {
     scene launch {
       beat b1 {
-        in scene { marker(pos) as ball; arrow(vel, from: pos) }
+        in scene { marker(pos) as ball; arrow(vel, from: pos, scale: 1 m/s -> 2 px) }
         narrate "A ball is launched at 45 degrees." for 4 s
       }
       beat b2 { run rate 1 until landed }
@@ -47,7 +47,7 @@ presentation ProjectileLesson for Projectile {
         narrate "Watch the horizontal speed." for 3 s
       }
       beat b5 {
-        in scene { arrow((vel.x, 0), from: pos) }  // horizontal component as a vector
+        in scene { arrow((vel.x, 0), from: pos, scale: 1 m/s -> 2 px) }  // horizontal component as a vector
         run rate 0.5 until landed
       }
     }
@@ -124,3 +124,5 @@ Exact values used: flight time at 45 degrees `T45 = 2.88320807823261 s`, at 60 d
 
 - 2026-09-29 written. D-027 accepted the same day.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied: `b5` shows the horizontal velocity as the vector `(vel.x, 0)` (an arrow needs a vector, PK-6.3); `b4` shows a `formula` with display symbols (D-034); the order of `seek` and `request` within a beat follows D-033; representation names (`ball`) per PK-6.1.
+- 2026-09-30 the velocity arrows of `b1` and `b5` declare their scale (`scale: 1 m/s -> 2 px`), which PK-5.5 requires for a vector that is not a length; found by the presentation prototype.
+- 2026-09-30 E1 to E16 confirmed by the presentation prototype (cases A to D).

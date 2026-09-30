@@ -74,6 +74,7 @@ pub fn projectile(relaunch: bool) -> Model {
     let angle = b.param("angle", Type::real(), num(45.0, "deg"));
     b.range(&angle, interval(r(&angle), num(0.0, "deg"), false, num(90.0, "deg"), false));
     b.symbol(&angle, "θ");
+    b.display_unit(&angle, "deg");
     let launch = || r("Projectile.speed") * tuple(vec![cos(r("Projectile.angle")), sin(r("Projectile.angle"))]);
     let pos = b.state("pos", Type::point("Plane"), origin("Plane"));
     let vel = b.state("vel", Type::vector("Plane", "L/T"), launch());
@@ -163,10 +164,10 @@ pub fn spring_mass() -> Model {
         Type::qty("M L^2 T^-2"),
         lit(0.5) * r(&m) * pow(r(&v), lit(2.0)) + lit(0.5) * r(&k) * pow(r(&x), lit(2.0)),
     );
-    let tt = b.derived("T", Type::qty("T"), lit(2.0 * std::f64::consts::PI) * sqrt(r(&m) / r(&k)));
+    let tt = b.derived("T", Type::qty("T"), lit(2.0) * pi() * sqrt(r(&m) / r(&k)));
     b.flow(&x, r(&v));
     b.flow(&v, -(r(&k) / r(&m)) * r(&x));
-    b.equation("period_law", r(&tt), lit(2.0 * std::f64::consts::PI) * sqrt(r(&m) / r(&k)), None);
+    b.equation("period_law", r(&tt), lit(2.0) * pi() * sqrt(r(&m) / r(&k)), None);
     b.equation("conservation", r(&energy), lit(0.5) * r(&k) * pow(r(&x0), lit(2.0)), Some(num(2e-5, "J")));
     b.event("pass", rising(r(&x)), vec![]);
     b.finish()
@@ -178,7 +179,7 @@ pub fn quadratic() -> Model {
     let mut b = ModelBuilder::new("QuadraticDemo");
     let a = b.param("a", Type::real(), lit(1.0));
     b.range(&a, interval(r(&a), lit(-5.0), true, lit(5.0), true));
-    b.derived("f", Type::func(vec![Type::real()], Type::real()), lambda(vec![Type::real()], r(&a) * pow(param(0), lit(2.0))));
+    b.derived("f", Type::func(vec![Type::real()], Type::real()), lambda_named(&["x"], vec![Type::real()], r(&a) * pow(param(0), lit(2.0))));
     b.finish()
 }
 

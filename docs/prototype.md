@@ -1,8 +1,8 @@
 # Rust Kernel Prototype
 
-The first implementation of Prismal's core semantics, built kernel-first (D-002): a Rust library and API that runs the first-slice reference programs (D-012) against the specification (`docs/spec/`). It has no text parser yet; programs are built through the IR API, which the working syntax (D-028) will lower to.
+The first implementation of Prismal's core semantics, built kernel-first (D-002): a Rust library and API that runs the first-slice reference programs (D-012) against the specification (`docs/spec/`). Programs are written in the working syntax (D-028) and lowered to the IR by the text parser, or built through the IR API.
 
-- **Status:** v0 prototype, 2026-09-30. All model-side expectations of RP-01 to RP-07 pass; RP-08's model-side behavior passes.
+- **Status:** v0 prototype, 2026-09-30. Every expectation of RP-01 to RP-08 is checked, model side and presentation side. The text parser reads all eight programs from their documents and lowers them, presentations and runs included, to the IR. The web player runs them in a browser.
 - **Build and test:** `cargo test` at the repository root (Rust 1.94 or later). `cargo run --release -p prismal-runtime --example report` prints the measured errors quoted below.
 
 ## Structure
@@ -11,9 +11,115 @@ The first implementation of Prismal's core semantics, built kernel-first (D-002)
 |---|---|---|
 | `crates/prismal-ir` | `04-ir.md` | IR types with JSON serialization (D-037), dimensions and units, a builder API |
 | `crates/prismal-kernel` | `01-model-kernel.md` | Type and dimension checking with expected-type propagation (D-030, D-032), static diagnostics MK-E01 to MK-E22, dependency analysis, compilation, evaluation with statuses |
+| `crates/prismal-syntax` | `docs/syntax-study/working-syntax.md`, `04-ir.md` | Lexer, parser to a syntax tree, lowering of spaces, models, presentations and runs to the IR with a source map, located diagnostics |
+| `crates/prismal-present` | `03-presentation-kernel.md`, `04-ir.md` section 7 | Presentation checks, observation, expectations, projection and frame descriptions, interaction, the explanation timeline |
+| `crates/prismal-web` and `web/` | D-018, `03-presentation-kernel.md` section 12 | The web player: the presentation kernel compiled to WebAssembly and a browser front end that renders frame descriptions |
 | `crates/prismal-runtime` | `02-runtime-contract.md` | Runs, `dopri5` and `rk4` with dense output, crossing detection and location, event iteration in superdense time, Zeno detection, constraints and equation checks, interventions and requests, time events, observation, an interactive session with undo and redo |
 
 The reference programs are in `crates/prismal-runtime/tests/common/mod.rs`, each mirroring its working-syntax text in `docs/spec/reference-programs/`. Each program has its own test file.
+
+## Text parser
+
+`crates/prismal-syntax` reads the working syntax (D-028, D-035, D-040) and lowers it to the IR the kernel checks and the runtime runs.
+
+1. **Lexer** (`lexer.rs`): tokens with line and column, comments kept for notes (D-036). Newlines end statements except inside `( )` and `[ ]` and after a continuing operator or word (working syntax section 1.5).
+2. **Parser** (`parser.rs`): recursive descent to a syntax tree (`ast.rs`) for all four top-level forms: `space`, `model`, `presentation`, `run`. A statement that fails to parse is reported and skipped to the next statement end at the same brace depth, so every error in a file is reported in one pass.
+3. **Lowering** (`lower.rs`, `lower_present.rs`): spaces, models, presentations and runs to the IR (04-ir sections 5 and 7), with a source map from each IR identity to its declaration.
+4. **Checking** (`check`): the kernel's static checks, with each diagnostic placed at the declaration of the element it names.
+
+`cargo run -p prismal-syntax --example prismalc -- FILE [--ir]` checks a source file or a Markdown document (its `text` and `cases` blocks) and prints the diagnostics, or the IR as JSON:
+
+```text
+bad.prismal:4:22: MK-E01: type or dimension mismatch: found Quantity<L T^-1>, expected Quantity<L T^-2>
+      flow { der(y) = v; der(v) = -g * 2 s }
+                         ^^^^^^^^^^^^^^^^^
+```
+
+### Lowering choices
+
+| Construct | IR | Reason |
+|---|---|---|
+| Identities | declaration paths: `Model.name`, `Model.event.name`, `Model.process.name`, `Model.equation.name`, `Model.constraint.name`, `Model.flow.n` (n-th flow in source order) | D-036; the same identities the builder API gives |
+| `where cond`, `in I` on a parameter | a `reject` constraint `name_range`, attached to the parameter | MK-12.4, 04-ir section 5.4 |
+| `constraint` without a name | named `c1`, `c2`, ... by position | the IR needs a name; a named constraint keeps its identity across edits |
+| Constraint without `policy` | `report` | MK-12.4 |
+| `every Δ` without `from` | `from t0` | MK-15.3 |
+| Process kind | `continuous` if the process has flows, otherwise `discrete` | MK-14.1: the IR carries the kind; the working syntax has no spelling for it yet |
+| `-5`, `-1e-8 m` | a negative literal | IR-1.1: one surface form of a negative literal (04-ir section 6) |
+| `2π` | `2 * {"const": "pi"}` | D-039 |
+| `in [0, inf)` | `0 <= x` | the IR holds no infinities (04-ir section 6) |
+| `a < b <= c` | `a < b and b <= c` | 04-ir section 6 |
+| `v.y` | component by the axes of the default space (`x`, `y`, `z` without one) | MK-4.2 |
+
+### Diagnostics of the text
+
+| Code | Meaning |
+|---|---|
+| SX-E01 | lexical error (unexpected character, unterminated string) |
+| SX-E02 | syntax error; includes `=` written where `==` is meant, and a name directly after a number |
+| SX-E03 | unknown name, event, space or component |
+| SX-E04 | unknown type or dimension |
+| SX-E05 | unknown unit (including `px` in a model) |
+| SX-E06 | construct not in the v0 IR (`fn`, `object`, collections, payloads) |
+| SX-E07 | reserved word used as a name (D-040) |
+| SX-E08 | form not allowed here (presentation forms in a model, `origin` without a default space, a range on a non-parameter, arity) |
+| SX-E09 | duplicate declaration (spaces, models, processes, events, equations, constraints; duplicate bindings are the kernel's MK-E22) |
+
+### Acceptance by text
+
+The reference programs are read from their documents in `docs/spec/reference-programs/`, so the documents are the test input.
+
+| Test | Content |
+|---|---|
+| `prismal-syntax/tests/documents.rs` | every `text` and `cases` block of the reference programs and of the working-syntax document parses (28 blocks); every reference-program document lowers |
+| `prismal-runtime/tests/text_programs.rs` | the lowered models of RP-01 to RP-08 equal the builder models of `tests/common` exactly, survive JSON and check; 19 diagnostic variants and model variant RP-03.V1, written as one-line text edits, give their named codes; (the `cases` blocks are run by `prismal-present`) |
+| `prismal-syntax/tests/rules.rs` | lexical rules, lowering choices, notes, located and recovered diagnostics |
+
+RP-01.D1 is not covered by text: it is stored in IR form because the working syntax has no level-style trigger.
+
+## Presentation prototype
+
+`crates/prismal-present` implements the presentation kernel (`03-presentation-kernel.md`) over the runtime, and the presentation and run IR (04-ir section 7), which the text parser now lowers.
+
+| Module | Content |
+|---|---|
+| `check` | static checks of a presentation against its model, PK-E01 to PK-E06 (03 section 16) |
+| `data` | observations of a run for every source (expression, event log, diagnostics, intervention log) and schedule (PK section 3) |
+| `expect` | headless evaluation of run cases (PK-4.2); a case whose presentation has a timeline is played as a lesson |
+| `frame` | representations compiled for their view with unit-aware scales (PK-5.5), projection on a state, frame descriptions with text alternatives (PK-6, PK-7.5, PK-11.1, PK-12.1) |
+| `interact` | controls, drag transactions with validated previews, keyboard operation, undo and redo, refusal of actions a presentation does not offer (PK section 10, PK-11.2) |
+| `timeline` | the lesson player: time mapping, D-033 order at a beat's start, `wait_until` from located event instants, explore beats on a branch with and without `keep`, video fallbacks, captions, announcements, frames at any presentation instant and export (PK sections 8, 9) |
+| `text` | numbers, quantities with units, expressions printed with display symbols (D-034) |
+
+`cargo run -p prismal-present --example cases -- FILE...` runs the cases of a program headless and reports every expectation (for a lesson, also the beat timings).
+
+Representations implemented: `marker`, `arrow`, `segment`, `function_graph`, `label`, `formula`, `slider`, `number_input`, `toggle`, `axes`, `grid`. Others are reported as PK-E06, never dropped.
+
+### Acceptance
+
+| Test | Content |
+|---|---|
+| `prismal-present/tests/cases.rs` | every case written in the working syntax (RP-01 to RP-05, RP-08) runs headless: all 36 expectations pass, including event lists, empty diagnostics and beat timings; the presentation and run IR survive JSON |
+| `prismal-present/tests/rp06.rs` | RP-06's learner script through the presentation, E1 to E14; every frame shows one `a` in the graph, slider, formula and marker (E10) |
+| `prismal-present/tests/rp07.rs` | RP-07's drag of `u`'s head through its declared inverse; the frame after the drag, E1 to E5 |
+| `prismal-present/tests/rp08.rs` | RP-08 cases A (keep), B (no keep), C (video) and D (restricted), E1 to E16, including bit-identical landings on replay, captions, announcements, two identical exports, and the fallback report |
+| `prismal-present/tests/checks.rs` | PK-E01 to PK-E06 on edits of RP-06, RP-07 and RP-08 |
+
+## Web player
+
+`crates/prismal-web` wraps the presentation kernel for a browser (D-018); `web/` renders what it returns. Build and run instructions are in `web/README.md`.
+
+| Part | Content |
+|---|---|
+| `Player` (`prismal-web/src/lib.rs`) | compiles source text or a Markdown document, located diagnostics (parser, kernel and presentation checks mapped through the source map), a catalogue of presentations and cases, opening a presentation as a lesson or an interactive session, layout (views, coordinate systems, content extent, beats, captions, explore windows), frame descriptions, observations as text, gestures, lesson inputs, cases |
+| `mathml` | formulas typeset as MathML from the IR (D-034): fractions, powers, roots, components as subscripts, function application, display symbols, units |
+| `examples` | the reference programs embedded from their documents at build time, assembled as the acceptance tests read them |
+| `wasm` | JavaScript bindings (`wasm-bindgen`); values cross as JSON strings |
+| `web/player.js` | spatial views as SVG in view coordinates (grid and axes with ticks in metres, zoom and pan when permitted), plot views as SVG with their ranges, panels and overlays as HTML (sliders, number inputs, toggles, MathML formulas with live values, labels), drags with pointer capture, keyboard operation, lesson transport, captions, announcements, text alternatives |
+
+A lesson is replayed from the learner's recorded inputs whenever one is added (`timeline::play` with the inputs), which the determinism of playback (PK-8.7) makes safe: frames before the new input are unchanged, which a test checks. Zoom, pan, pause and seeking are the renderer's; they never reach the model.
+
+Acceptance: `prismal-web/tests/player.rs` loads every example, runs the 36 case expectations through the player, checks located diagnostics, RP-06's slider, drag, rejected drag and undo, RP-07's drag of `u`'s head, and RP-08's lesson (MathML of `R`, explore input at 60 deg landing at R60, unchanged earlier frames, refusal outside the explore beat, video medium). The front end was also driven in a headless browser through the same scripts (drags, keys, the explore slider, compile errors, phone width, light and dark themes).
 
 ## Coverage of the reference programs
 
@@ -24,9 +130,9 @@ The reference programs are in `crates/prismal-runtime/tests/common/mod.rs`, each
 | RP-03 | E1 to E15, D1 to D3, model variant V1 | - |
 | RP-04 | E1 to E11, D1, D2 | - |
 | RP-05 | E1 to E10, D1 to D3 | - |
-| RP-06 | E1 to E9, E14 (interventions, rejection, drag previews and commit, undo, redo, non-intervenable target) | E10 to E13: frames, text alternatives, keyboard drag (presentation) |
-| RP-07 | E1 to E5 (model values after the drag), D1 to D6 | Rendering of E5 (presentation) |
-| RP-08 | Relaunch on the learner's branch (E5) and on the lesson run (E9); requestability (D-027) | Timeline timing, captions, explore beats, video export (presentation) |
+| RP-06 | E1 to E14, through the presentation and on the session alone | - |
+| RP-07 | E1 to E5 through the presentation (frame after the drag), D1 to D6 | - |
+| RP-08 | E1 to E16: cases A to D | Audio narration (not required: PK-11.3) |
 
 Every run in the suite is also run twice and compared bit for bit (RC-14.5).
 
@@ -51,14 +157,28 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 
 - **D-038.** The specification's rule for self-retriggering events (MK-15.11) contradicted the reference programs: read literally it accepted the bouncing ball without a Zeno policy; read as RP-03 describes it, it rejected the valid projectile. The rule now follows flows, specialized on the discrete values the handler sets.
 - **Diagnostics come in groups.** An invalid variant can produce a secondary diagnostic besides the named one (RP-01.D4 also gives MK-E16, because the invalid flow condition defeats the specialization of D-038). The suite requires the named diagnostic to be among those reported.
+- **D-039.** The IR had no form for `π`, so `2π` could only be stored as `6.283...` and formulas (D-034) could not show it. Named constants are now kept by name.
+- **D-040.** The reserved-word list of D-035 rejected names the reference programs use (`process drag`, `view scene`, the observation `state`). Presentation, timeline and run words are now contextual keywords; RP-07's observation is renamed `values`.
+- **Lexical rules made precise** in the working syntax: a unit has no spaces inside it (`0.01 /m` is a unit, `4 / m` a division); only `π` may follow a number directly; after a declaration's value `in` starts its range, so a membership test there needs parentheses.
+- **RP-08 arrows without scales.** `arrow(vel, from: pos)` draws a velocity in a view whose scale maps lengths; PK-5.5 requires a declared scale of the vector's dimension, as the specification's own example (13.1) has. The presentation checker rejected RP-08 (PK-E04); the program now declares `scale: 1 m/s -> 2 px` (its history records it).
+- **Formulas need parameter names.** `formula(f)` shows `f(x) = a x^2` (D-034), but IR lambdas kept no parameter names. Lambdas now carry display-only `names` (04-ir section 6).
+- **Exact event instants at the end of a wait.** After `run rate 0.5 until landed`, the time mapping's arithmetic (`0 + 0.5 × elapsed presentation time`) gave an instant just before the landing, so the explore branch and the relaunch of RP-08 happened before the landing and playback passed it twice. A beat ended by `wait_until(E)` now shows `E`'s located instant exactly (PK-9.3a).
+- **Rules the timeline needed**, recorded as elaborations in 03: the mapping persists across beats (PK-8.2a), reading time and highlight duration (PK-9.2b), waits while holding (PK-9.4a), lesson run end and run versions (PK-9.5a), refusal of learner actions (PK-9.8a), keyboard steps (PK-11.2a; RP-06's marker declares no step, so it moves by 1/100 of the axis span), announcements (PK-11.3a).
+- **Display units were not used.** RP-08 narrates the launch angle in degrees and ranges its explore slider in degrees, but the slider showed radians: RP-01's `angle` declared no display unit, and the presentation kernel ignored display units in text alternatives and live formula values although PK-11.1 requires them. RP-01's `angle` now declares `unit deg` (its history records it) and the kernel formats a binding's value in its display unit (`text::fmt_binding`).
+- **Keyboard operation of arrow heads.** PK-11.2 requires every drag to be available from the keyboard; the kernel only moved markers. A keyboard step now moves the part a representation is dragged by (a marker, an arrow's head).
 - **`emit` semantics.** A first version made the emitted event itself due; MK-15.10 makes the events triggered `on(E)` due. Fixed and covered by a unit test with the cascade limit (RC-8.3).
 
 ## Not implemented
 
 | Item | Where specified |
 |---|---|
-| Text parser for the working syntax | D-028, `docs/syntax-study/working-syntax.md` |
-| Presentation kernel: views, representations, frames, timeline engine, accessibility output | `03-presentation-kernel.md` |
+| Formatter (canonical printing) and matching identities against a previous IR (the parser assigns path identities afresh) | working syntax section 1.4, D-036 |
+| Declared functions (`fn`), contained objects (`object`), enumeration types and cases: no IR form or no spelling yet | MK-10.3, MK section 7, 04-ir section 3 |
+| Representations `trace`, `series_plot`, `table`, `polyline`, `polygon`, `group`, `equation`, `button` (and the syntax for data sources such as `trace(pos every 0.02 s)`) | PK-6.3 |
+| Timeline actions `animate`, `camera`, `bind`, `release`, `hide`, `reveal`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
+| Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
+| Renderers: video and image output (the web player renders interactively) | PK section 12 |
+| Time advancing in interactive sessions of dynamic models (the web player opens them at their initial state) | RC section 12 |
 | Inputs (`input` bindings, `on input`) | RC section 11.2 |
 | Snapshots and backward seek within a dynamic run (undo recomputes from the start) | RC section 14.1 |
 | Payloads of requested and emitted events | MK-15.1 |
@@ -69,3 +189,6 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 ## History
 
 - 2026-09-30 prototype written; RP-01 to RP-07 model-side expectations and RP-08 model behavior pass; D-038 raised.
+- 2026-09-30 text parser (`prismal-syntax`): all eight programs read from their documents lower to the builder IR; diagnostic variants reproduced as text edits; cases run from text; D-039 and D-040 raised.
+- 2026-09-30 presentation prototype (`prismal-present`), presentation and run IR (04-ir section 7) and their lowering: every expectation of RP-01 to RP-08 checked; RP-08 arrows given scales; lambda parameter names; elaborations of 03 and its static diagnostics.
+- 2026-09-30 web player (`prismal-web`, `web/`): RP-06 to RP-08 interactive in a browser, cases of every program; display units in text alternatives (RP-01 `angle` in degrees); keyboard steps for arrow heads.

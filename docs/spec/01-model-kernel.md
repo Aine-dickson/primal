@@ -311,7 +311,7 @@ The first slice (D-001) exercises neither dynamic collections nor relations. The
 ## 10. Expressions and functions
 
 - **Restates:** R-17, R-46.
-- **Decisions:** D-007, D-013, D-029.
+- **Decisions:** D-007, D-013, D-029, D-039.
 - **Prior art:** follows pure functional expression languages (and Modelica functions, which are side-effect free apart from declared external calls). Follows FRP (Elliott and Hudak) in treating a derived binding as a time-varying value defined for every instant, not as a cached result.
 
 - **MK-10.1** An **expression** is a pure, deterministic term: literals, binding reads, operators, function applications, conditionals, collection expressions, and status handling (MK-5.5). Evaluating an expression never changes state (R-17).
@@ -321,6 +321,7 @@ The first slice (D-001) exercises neither dynamic collections nor relations. The
 - **MK-10.5** Evaluation that does not terminate within the runtime's evaluation limit yields `invalid` (runtime contract).
 - **MK-10.6** Every expression keeps its symbolic structure in the IR. Its evaluated value is separate from it (R-48: expression is not evaluated value). This lets equations and definitions be displayed, differentiated symbolically by libraries, and consumed by a later acausal solver (D-007).
 - **MK-10.7** A **derived function value** is a derived binding (MK-6.4) of function type whose body MAY read model bindings, for example `f(x) = a * x^2` with `a` a parameter. Like every derived binding it is evaluated at every instant on current values, so an application `f(2)` always uses the current `a`; nothing is captured or stored. Its dependencies (section 13) are the bindings its body reads. A stored binding (constant, parameter, input, state) of function type MUST hold a closed function: one that reads no bindings other than its parameters and constants (D-029).
+- **MK-10.8** The **named constant** `π` (also written `pi`) is a dimensionless literal kept by name in the IR, so that formulas show it (D-039, D-034). MK-3.8 applies to it as to a bare literal.
 
 ---
 
@@ -710,6 +711,7 @@ Positions that elaborate accepted decisions without changing them are specified 
 | D-032 | Tuple literals are typed as vectors by their expected type (Accepted; raised by syntax study S-5) | 4, 18 |
 | D-038 | Self-retriggering decided through flows, specialized on the handler's constant discrete writes (Accepted; raised by the prototype) | 15.4 |
 | D-029 | Derived function values may read bindings; declared and stored functions stay closed (Accepted; raised by syntax study S-1) | 10, 18 |
+| D-039 | Named mathematical constants are kept by name in the IR (Accepted; raised by the text parser) | 10 |
 
 **Elaborations (in this specification only):**
 

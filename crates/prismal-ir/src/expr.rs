@@ -31,6 +31,21 @@ pub enum Builtin {
     Elapsed,
 }
 
+/// Named mathematical constants, kept by name so that formulas typeset them (D-034, D-039).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Constant {
+    Pi,
+}
+
+impl Constant {
+    pub fn value(self) -> f64 {
+        match self {
+            Constant::Pi => std::f64::consts::PI,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Func {
@@ -50,6 +65,9 @@ pub enum Func {
 pub struct Lambda {
     pub params: Vec<Type>,
     pub body: Box<Expr>,
+    /// Parameter names as written, for display only (`f(x) = a x^2`, D-034).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<String>,
 }
 
 /// An expression. Serialized with one distinguishing field per form.
@@ -75,6 +93,9 @@ pub enum Expr {
     },
     Builtin {
         builtin: Builtin,
+    },
+    Const {
+        r#const: Constant,
     },
     Origin {
         origin: Id,

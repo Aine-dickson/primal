@@ -75,7 +75,7 @@ impl<'a, 'b> Tc<'a, 'b> {
     fn needs_ctx(e: &Expr) -> bool {
         match e {
             Expr::Tuple { .. } => true,
-            Expr::Num { unit: None, .. } => true,
+            Expr::Num { unit: None, .. } | Expr::Const { .. } => true,
             Expr::Neg { neg } => Self::needs_ctx(neg),
             Expr::If { then, r#else, .. } => Self::needs_ctx(then) && Self::needs_ctx(r#else),
             _ => false,
@@ -127,6 +127,8 @@ impl<'a, 'b> Tc<'a, 'b> {
                 Builtin::T0 => (CExpr::Time0, Type::Instant { dim: Dim::time() }),
                 Builtin::Elapsed => (CExpr::Elapsed, Type::Quantity { dim: Dim::time() }),
             }),
+            // A named constant is a bare dimensionless literal (MK-3.8, D-039).
+            Expr::Const { r#const } => self.num(r#const.value(), None, exp),
             Expr::Origin { origin } => match self.space_dim(origin) {
                 Some(n) => Some((CExpr::Const(Value::Point(Arr::zeros(n))), Type::Point { space: origin.clone() })),
                 None => self.err("MK-E00", format!("unknown space `{origin}`")),
@@ -449,6 +451,7 @@ fn derivative_type(t: &Type) -> Option<Type> {
 fn const_number(e: &Expr) -> Option<f64> {
     match e {
         Expr::Num { num, unit: None } => Some(*num),
+        Expr::Const { r#const } => Some(r#const.value()),
         Expr::Neg { neg } => const_number(neg).map(|x| -x),
         Expr::Bin { bin: BinOp::Div, l, r } => Some(const_number(l)? / const_number(r)?),
         _ => None,

@@ -1,0 +1,17 @@
+[package]
+name = "prismal-present"
+description = "Prismal presentation kernel: observation, expectations, projection, frames, interaction and the explanation timeline (docs/spec/03-presentation-kernel.md)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+prismal-ir = { path = "../prismal-ir" }
+prismal-kernel = { path = "../prismal-kernel" }
+prismal-runtime = { path = "../prismal-runtime" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+prismal-syntax = { path = "../prismal-syntax" }
+serde_json.workspace = true

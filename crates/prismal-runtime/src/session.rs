@@ -60,6 +60,21 @@ impl Session {
         }
     }
 
+    /// The committed interventions, in order (RC-11.5).
+    pub fn log(&self) -> &[Scheduled] {
+        &self.log
+    }
+
+    /// The model this session runs.
+    pub fn model(&self) -> &CModel {
+        &self.model
+    }
+
+    /// The simulation instant at which the next intervention applies: the end of the run.
+    pub fn now(&self) -> f64 {
+        self.current.end_time()
+    }
+
     pub fn log_len(&self) -> usize {
         self.log.len()
     }

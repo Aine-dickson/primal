@@ -40,7 +40,7 @@ presentation VectorPlot for VectorDemo {
     arrow(sum, from: A)
     label(length)
   }
-  observe { state = (sum, length, B) live }
+  observe { values = (sum, length, B) live }
 }
 ```
 
@@ -79,3 +79,5 @@ D6 is a positive control for the literal rule: it MUST be accepted.
 
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied; D6 extended with the zero-vector literal (D-030).
+- 2026-09-30 observation `state` renamed `values`: `state` is a reserved word of the model language (D-040), found by the text parser.
+- 2026-09-30 E1 to E5 confirmed through the presentation prototype.

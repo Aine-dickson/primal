@@ -80,3 +80,4 @@ E6 to E8 use `within 1e-12` because `4 + 0.1 + 0.1` is not exactly `4.2` in bina
 
 - 2026-09-29 written.
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied: `f` is a derived function value (D-029); the displayed equation is `formula(f)`, typeset from the IR, not a string (D-034).
+- 2026-09-30 E1 to E14 confirmed through the presentation prototype. The marker declares no keyboard step, so E13 uses the default of PK-11.2a (1/100 of the `y` axis span, `0.25`).
