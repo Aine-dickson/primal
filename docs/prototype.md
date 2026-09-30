@@ -325,7 +325,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
 | Undirected relations as a declared property, relations between relations or across containers, creation and destruction as interventions (set aside by D-059), unbounded populations (D-057 option 1); function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
-| Drags on members of a group; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
+| `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |

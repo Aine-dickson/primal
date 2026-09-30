@@ -384,3 +384,36 @@ fn clicks_on_an_empty_point() {
     assert_eq!(r["ok"], false, "{r}");
     assert_eq!(count(&mut h), 4);
 }
+
+/// The guide's dial (D-062): a member of a turned group is found by the pointer and by Tab,
+/// and dragging it up the screen lengthens the hand.
+#[test]
+fn drags_on_members_of_groups() {
+    let (mut h, _) = Host::open("g7-dial", "Knob");
+    let size = [640.0, 480.0];
+    let dims = json!({ "width": size[0], "height": size[1] });
+    let length = |h: &mut Host| -> f64 {
+        let f = h.frame(0.0);
+        f["views"][0]["reps"][0]["members"][1]["at"][1].as_f64().unwrap()
+    };
+    let f = h.frame(0.0);
+    let tip = &f["views"][0]["reps"][0]["members"][1];
+    assert_eq!(tip["drag"], "body", "{tip}");
+    let at = pt(&tip["at"]);
+    let [x, y] = px(&f["views"][0], at, size);
+    let hover = h.pointer("move", "scene", x, y, dims.clone());
+    assert!(hover["hover"]["rep"].as_str().unwrap().ends_with("tip"), "{hover}");
+    let before = length(&mut h);
+    assert_eq!(h.pointer("down", "scene", x, y, dims.clone())["action"], "drag");
+    h.pointer("move", "scene", x, y - 25.0, dims.clone());
+    let up = h.pointer("up", "scene", x, y - 25.0, dims.clone());
+    assert_eq!(up["committed"], true, "{up}");
+    assert!(length(&mut h) < before, "the tip moved up the screen: {before} to {}", length(&mut h));
+    // The dragged member took focus; Tab leaves it (it is the only one) and comes back.
+    assert!(h.frame(0.0)["focus"].as_str().unwrap().ends_with("tip"));
+    assert_eq!(h.key("Tab", json!({}))["handled"], false);
+    let t = h.key("Tab", json!({}));
+    assert!(t["focus"].as_str().unwrap().ends_with("tip"), "{t}");
+    let k = h.key("ArrowUp", json!({}));
+    assert_eq!(k["handled"], true, "{k}");
+}

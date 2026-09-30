@@ -219,9 +219,24 @@ fn inside(p: [f64; 2], poly: &[[f64; 2]]) -> bool {
 /// plus `tolerance` pixels. Draggable representations are drawn over the others, later ones
 /// on top; invisible ones are not targets. A click takes the body.
 pub fn hit(vf: &ViewFrame, map: &Map, p: [f64; 2], tolerance: f64) -> Option<Target> {
+    hit_in(&vf.reps, map, p, tolerance)
+}
+
+/// Targeting among representations, the members of groups included (D-043): a group's
+/// members are placed in the frame already, and the later ones are on top.
+fn hit_in(reps: &[RepFrame], map: &Map, p: [f64; 2], tolerance: f64) -> Option<Target> {
     let px = |v: &[f64; 2]| map.to_px(*v);
     let near = |d: f64, r: f64| d <= r + tolerance;
-    for r in vf.reps.iter().rev() {
+    for r in reps.iter().rev() {
+        if let Shape::Group { members } = &r.shape {
+            if r.opacity.is_some_and(|o| o < 0.05) {
+                continue;
+            }
+            if let Some(t) = hit_in(members, map, p, tolerance) {
+                return Some(t);
+            }
+            continue;
+        }
         let part = match (&r.drag, &r.click) {
             (Some(part), _) => part.clone(),
             (None, Some(_)) => "body".to_string(),
@@ -273,11 +288,14 @@ pub fn tolerance(pointer: &str) -> f64 {
 /// the draggable and clickable ones, controls and buttons, in the order the presentation declares them;
 /// then those over the presentation.
 pub fn focus_order(frame: &Frame) -> Vec<&RepFrame> {
-    frame
-        .views
-        .iter()
-        .flat_map(|v| v.reps.iter())
-        .chain(frame.overlay.iter())
-        .filter(|r| r.drag.is_some() || r.click.is_some() || matches!(r.shape, Shape::Control { .. } | Shape::Button { .. }))
-        .collect()
+    fn walk<'a>(r: &'a RepFrame, out: &mut Vec<&'a RepFrame>) {
+        if let Shape::Group { members } = &r.shape {
+            members.iter().for_each(|m| walk(m, out));
+        } else if r.drag.is_some() || r.click.is_some() || matches!(r.shape, Shape::Control { .. } | Shape::Button { .. }) {
+            out.push(r);
+        }
+    }
+    let mut out = vec![];
+    frame.views.iter().flat_map(|v| v.reps.iter()).chain(frame.overlay.iter()).for_each(|r| walk(r, &mut out));
+    out
 }

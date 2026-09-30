@@ -324,6 +324,19 @@ impl ViewCtx {
         }
     }
 
+    /// A pointer position in view coordinates as a point in the frame of a group (D-043):
+    /// the value of a drag on a member of the group.
+    pub fn pointer_in(&self, p: [f64; 2], tf: &Tf) -> Expr {
+        match self {
+            ViewCtx::Spatial { space, px_per_m, y_up } => {
+                let m = [p[0] / px_per_m, if *y_up { -p[1] } else { p[1] } / px_per_m];
+                let l = tf.unapply(m);
+                origin(space) + tuple(vec![num(l[0], "m"), num(l[1], "m")])
+            }
+            _ => self.pointer(p),
+        }
+    }
+
     /// A pointer position in view coordinates as a model expression: a point of the view's
     /// space, or the pair of plot coordinates. This is the value of a gesture (PK-5.6).
     pub fn pointer(&self, p: [f64; 2]) -> Expr {
@@ -412,8 +425,42 @@ impl Tf {
         [self.k * (c * x - s * y), self.k * (s * x + c * y)]
     }
 
+    /// The transform of the groups enclosing a member, outermost first, at a state: as
+    /// projection composes them (D-043).
+    pub fn of_groups(chain: &[CRep], run: &Run, vals: &[Value], t: f64) -> Option<Tf> {
+        let mut tf = Tf::ID;
+        for g in chain {
+            let CKind::Group { at, rotate, scale, .. } = &g.kind else { return None };
+            let at = match at {
+                Some(c) => coords(&tf.apply(run.eval_state(c, vals, t).ok()?)),
+                None => tf.at.to_vec(),
+            };
+            let num = |c: &Option<CExpr>, d: f64| match c.as_ref().map(|c| run.eval_state(c, vals, t)) {
+                Some(Ok(Value::Num(x))) => Some(x),
+                Some(Ok(_)) | None => Some(d),
+                Some(Err(_)) => None,
+            };
+            tf = Tf { at: [at[0], at[1]], angle: tf.angle + num(rotate, 0.0)?, k: tf.k * num(scale, 1.0)? };
+        }
+        Some(tf)
+    }
+
+    /// Model coordinates in the view's space as coordinates in the group's frame: the
+    /// inverse of `apply` on points.
+    pub fn unapply(&self, m: [f64; 2]) -> [f64; 2] {
+        let (x, y) = ((m[0] - self.at[0]) / self.k, (m[1] - self.at[1]) / self.k);
+        let (s, c) = self.angle.sin_cos();
+        [c * x + s * y, -s * x + c * y]
+    }
+
+    /// A point in the group's frame as model coordinates in the view's space.
+    pub fn point(&self, a: [f64; 2]) -> [f64; 2] {
+        let r = self.turn(&a);
+        [self.at[0] + r[0], self.at[1] + r[1]]
+    }
+
     /// A value in the group's frame as a value in the view's space.
-    fn apply(&self, v: Value) -> Value {
+    pub fn apply(&self, v: Value) -> Value {
         if self.at == [0.0, 0.0] && self.angle == 0.0 && self.k == 1.0 {
             return v;
         }
@@ -762,10 +809,6 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, full: &Rep) -> Result<CRep, Vec<P
                         message: format!("a group holds markers, arrows, segments, polylines, polygons, circles, ellipses, arcs and groups, not `{}` (PK-6.3b)", m.kind),
                         element: m.id.clone(),
                     });
-                    continue;
-                }
-                if m.inverse.is_some() {
-                    diags.push(PDiag { code: "PK-E06", message: "a drag on a member of a group is not implemented by the prototype".into(), element: m.id.clone() });
                     continue;
                 }
                 match compile_rep(cm, ctx, m) {

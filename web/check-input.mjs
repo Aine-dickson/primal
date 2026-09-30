@@ -136,6 +136,19 @@ await open('g7-wheel/WheelView');
 const valveFill = await ev(`getComputedStyle(document.querySelector('[data-rep$="valve"] circle.marker')).fill`);
 check('the valve is drawn in the red of the theme', ['rgb(198, 40, 40)', 'rgb(255, 138, 128)'].includes(valveFill), valveFill);
 
+// D-062: a member of a turned group is dragged in the group's frame.
+await open('g7-dial/Knob');
+const tipSel = '[data-rep$="tip"] circle.marker';
+check('the dial tip can be grabbed', !!(await ev(`document.querySelector('${tipSel}')`)));
+const tipBefore = await title('Knob.view.scene.dial.tip');
+const [tx, ty] = await center(tipSel);
+await mouse('mousePressed', tx, ty);
+await mouse('mouseMoved', tx, ty - 20);
+await mouse('mouseReleased', tx, ty - 20);
+await sleep(200);
+const tipAfter = await title('Knob.view.scene.dial.tip');
+check('dragging the tip up lengthens the hand', tipAfter !== tipBefore, `${tipBefore} to ${tipAfter}`);
+
 // RP-08 permits zoom and pan.
 await open('rp08/ProjectileLesson@1');
 const vb = () => ev(`document.querySelector('#views svg').getAttribute('viewBox')`);

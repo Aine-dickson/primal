@@ -80,6 +80,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-057 | Collections whose membership changes: a declared capacity (`Drop[max 50]`), `create` and `destroy` in handlers, events per member, `set b.x` from the container; elaborated to members with a liveness binding | Accepted |
 | D-059 | Members as payloads (`on request(b in balls)`), several payloads per event, drags and clicks on members; requests refused with a reason | Accepted |
 | D-060 | Clicks on an empty point of a view: `on click as q request E(q)` in the view, the point as payload | Accepted |
+| D-062 | Drags on members of a group: the gesture's value is the pointer in the group's frame | Accepted |
 | D-061 | Author styles: `color:` from a named palette each medium maps to its theme; `line:` solid, dashed or dotted | Accepted |
 
 ---
@@ -1151,5 +1152,21 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. Ten colors (`red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `gray`, `ink`) and three lines (`solid`, `dashed`, `dotted`). Markers take a color; stroked kinds take both; other kinds and groups take neither (PK-E05). Styles are decoration: not in text alternatives, never the only encoding (PK-11.4). Styles bound to model values (color scales) are later work.
 - **Reason:** names keep the frame description medium-independent (PK-12.1a) and let every renderer keep contrast in its own theme; a small fixed palette is what educational diagrams use, and the names read as intent. Option 2 was set aside for dark themes and medium independence, option 3 as more than content needs.
 - **Consequences:** PK-6.6a; HI-5.2; 04-ir (`word` arguments `color`, `line`); working syntax; lowering of style words; `compile_rep` checks and strips style properties before each kind's checks; `RepFrame` gains `color` and `line`; `prismal-svg` themes gain a palette (`Theme::color`, `COLORS`); the web player's style sheet gains `--color-*` for light and dark and draws `--c` and dash styles as `prismal-svg` does; guide chapter 7, Color and line (the wheel's spoke and valve), reference; tests `prismal-svg/tests/styles.rs`.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-062: Drags on members of a group
+
+- **Status:** Accepted
+- **Original position:** D-043 placed a group's members by a shared transform; a member that declared an inverse was refused (PK-E06, "not implemented by the prototype"), so a hand of a dial, a handle on a rotating body or a knob in a turned panel could not be dragged.
+- **Raised by:** PROJECT-STATE next steps, item 3 (input follow-ups).
+- **Builds on:** PK-5.6, PK-6.3b, PK-10.2a, PK-10.5, PK-11.2, D-023, D-043, D-047.
+- **Question:** In which frame does a dragged member of a group read the pointer?
+- **Options considered:**
+  1. **The group's frame.** The member is written in the group's frame (`marker(origin + (r, 0 m))`), so the proposal reads the pointer there too: `propose r = p.x` is the distance along the hand whatever the group's placement, turn and scale. The runtime inverts the transform at the instant shown.
+  2. **The view's space.** The gesture value is the same as outside a group; the author undoes the placement and turn in the proposal by hand, repeating the group's expressions.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. Nested groups compose; the transform is evaluated on the committed state at the instant shown, so a drag that moves the group does not move the frame under the pointer while it is in progress. Hit testing, the focus order and keyboard steps include members of groups.
+- **Reason:** a member's geometry and its inverse are then written in one frame, which is the point of a group; option 2 would make every inverse in a group restate the group's transform, and break when the group changes.
+- **Consequences:** PK-6.3b amended; `Tf::of_groups`, `Tf::unapply`, `ViewCtx::pointer_in`; `Interactive` finds representations inside groups with their enclosing groups (drags, keys); the host's `hit` and `focus_order` recurse into groups; guide chapter 7 (a dial in a turned group); tests `prismal-present/tests/group_drags.rs`, the raw input test `drags_on_members_of_groups`, and `web/check-input.mjs` in a browser.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

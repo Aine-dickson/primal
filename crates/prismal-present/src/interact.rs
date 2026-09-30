@@ -6,7 +6,7 @@
 //! not offer is refused before it reaches the model (PK-10.4).
 
 use crate::data::{observe, Data};
-use crate::frame::{subst, CKind, CRep, Frame, Projector, ViewCtx};
+use crate::frame::{subst, CKind, CRep, Frame, Projector, Tf, ViewCtx};
 use crate::text::unit_text;
 use crate::{PDiag, Program};
 use prismal_ir::present::Presentation;
@@ -49,6 +49,8 @@ struct Drag {
     rep: String,
     ctx: ViewCtx,
     crep: CRep,
+    /// The groups enclosing a dragged member of a group, outermost first (D-043).
+    groups: Vec<CRep>,
     previews: Vec<Preview>,
     last_valid: Option<(Action, Run)>,
 }
@@ -118,14 +120,40 @@ impl Interactive {
     }
 
     fn rep(&self, name: &str) -> Option<(ViewCtx, CRep)> {
-        for (_, ctx, reps) in &self.projector.views {
+        self.rep_in(name).map(|(ctx, r, _)| (ctx, r))
+    }
+
+    /// A representation by identity or name, searched in groups too, with the groups that
+    /// enclose it, outermost first.
+    fn rep_in(&self, name: &str) -> Option<(ViewCtx, CRep, Vec<CRep>)> {
+        fn find(reps: &[CRep], name: &str, chain: &mut Vec<CRep>) -> Option<CRep> {
             for r in reps {
                 if r.rep.id == name || r.rep.name.as_deref() == Some(name) || r.rep.id.ends_with(&format!(".{name}")) {
-                    return Some((ctx.clone(), r.clone()));
+                    return Some(r.clone());
                 }
+                if let CKind::Group { members, .. } = &r.kind {
+                    chain.push(r.clone());
+                    if let Some(m) = find(members, name, chain) {
+                        return Some(m);
+                    }
+                    chain.pop();
+                }
+            }
+            None
+        }
+        for (_, ctx, reps) in &self.projector.views {
+            let mut chain = vec![];
+            if let Some(r) = find(reps, name, &mut chain) {
+                return Some((ctx.clone(), r, chain));
             }
         }
         None
+    }
+
+    /// The transform of the groups enclosing a representation at the instant shown.
+    fn groups_tf(&self, groups: &[CRep]) -> Option<Tf> {
+        let run = &self.session.current;
+        Tf::of_groups(groups, run, &run.state_at(self.t), self.t)
     }
 
     fn report<T>(&mut self, why: Why, message: String) -> Result<T, Report> {
@@ -225,7 +253,7 @@ impl Interactive {
 
     /// A key press on a focused control or draggable representation (PK-11.2).
     pub fn key(&mut self, rep: &str, key: Key) -> Result<(), Report> {
-        let Some((ctx, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("nothing named `{rep}`")) };
+        let Some((ctx, r, groups)) = self.rep_in(rep) else { return self.report(Why::Refused, format!("nothing named `{rep}`")) };
         let sign = if matches!(key, Key::Right | Key::Up) { 1.0 } else { -1.0 };
         match &r.kind {
             CKind::Control { idx, min, max, step, .. } => {
@@ -235,7 +263,7 @@ impl Interactive {
                 self.set_control(rep, si_literal(v + sign * step, &ty))
             }
             _ if r.rep.inverse.is_some() => {
-                let Some(at) = self.part_position(&ctx, &r) else { return self.report(Why::Refused, format!("`{rep}` has no position")) };
+                let Some(at) = self.part_position(&ctx, &r, &groups) else { return self.report(Why::Refused, format!("`{rep}` has no position")) };
                 let step = keyboard_step(&ctx, &r);
                 let vertical = matches!(key, Key::Up | Key::Down);
                 let mut to = at;
@@ -255,18 +283,21 @@ impl Interactive {
 
     /// The view position of the part a representation is dragged by: a marker's position,
     /// an arrow's head.
-    fn part_position(&self, ctx: &ViewCtx, r: &CRep) -> Option<[f64; 2]> {
+    fn part_position(&self, ctx: &ViewCtx, r: &CRep, groups: &[CRep]) -> Option<[f64; 2]> {
         let run = &self.session.current;
         let t = self.t;
         let vals = run.state_at(t);
+        // In a group, values are in the group's frame (D-043).
+        let tf = self.groups_tf(groups)?;
+        let eval = |c| run.eval_state(c, &vals, t).ok().map(|v| tf.apply(v));
         match &r.kind {
-            CKind::Marker { pos, .. } => run.eval_state(pos, &vals, t).ok().map(|p| ctx.to_view(&crate::flat(&p))),
+            CKind::Marker { pos, .. } => eval(pos).map(|p| ctx.to_view(&crate::flat(&p))),
             CKind::Arrow { vec, from, px_per_unit, .. } => {
                 let base = match from {
-                    Some(f) => crate::flat(&run.eval_state(f, &vals, t).ok()?),
-                    None => vec![0.0, 0.0],
+                    Some(f) => crate::flat(&eval(f)?),
+                    None => crate::flat(&tf.apply(prismal_kernel::Value::Point(prismal_kernel::Arr::from_slice(&[0.0, 0.0])))),
                 };
-                let v = crate::flat(&run.eval_state(vec, &vals, t).ok()?);
+                let v = crate::flat(&eval(vec)?);
                 let b = ctx.to_view(&base);
                 let y_up = matches!(ctx, ViewCtx::Spatial { y_up: true, .. });
                 Some([b[0] + v[0] * px_per_unit, b[1] + if y_up { -v[1] } else { v[1] } * px_per_unit])
@@ -277,7 +308,7 @@ impl Interactive {
 
     /// Begins a drag on a representation, or one of its parts (PK-10.5).
     pub fn pointer_down(&mut self, rep: &str, part: Option<&str>) -> Result<(), Report> {
-        let Some((ctx, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("nothing named `{rep}`")) };
+        let Some((ctx, r, groups)) = self.rep_in(rep) else { return self.report(Why::Refused, format!("nothing named `{rep}`")) };
         let Some(inv) = &r.rep.inverse else { return self.report(Why::Refused, format!("`{rep}` declares no inverse, so it cannot be dragged (PK-5.6)")) };
         if inv.part.as_deref() != part {
             return self.report(Why::Refused, format!("`{rep}` is dragged by {}", inv.part.as_deref().map(|p| format!("its {p}")).unwrap_or("its body".into())));
@@ -287,7 +318,7 @@ impl Interactive {
         if !r.shown(run, &run.state_at(self.t), self.t) {
             return self.report(Why::Refused, format!("`{rep}` is not shown now: its member is not alive"));
         }
-        self.drag = Some(Drag { rep: r.rep.id.clone(), ctx, crep: r, previews: vec![], last_valid: None });
+        self.drag = Some(Drag { rep: r.rep.id.clone(), ctx, crep: r, groups, previews: vec![], last_valid: None });
         Ok(())
     }
 
@@ -296,7 +327,15 @@ impl Interactive {
     pub fn pointer_move(&mut self, p: [f64; 2]) -> bool {
         let Some(drag) = &self.drag else { return false };
         let inv = drag.crep.rep.inverse.as_ref().unwrap();
-        let gesture = drag.ctx.pointer(p);
+        // A member of a group is dragged in the group's frame, where it is written (D-043).
+        let gesture = if drag.groups.is_empty() {
+            drag.ctx.pointer(p)
+        } else {
+            match self.groups_tf(&drag.groups) {
+                Some(tf) => drag.ctx.pointer_in(p, &tf),
+                None => return false,
+            }
+        };
         let ops = inv.proposals.iter().map(|pr| Op::Set { target: Target::of(pr.target.clone()), value: subst(&pr.value, &gesture) }).collect();
         let action = Action::Intervene(ops);
         let t = self.t;

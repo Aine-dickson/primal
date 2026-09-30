@@ -223,6 +223,37 @@ run quarter_turn of Wheel with WheelView {
 }
 ```
 
+A member of a group may be dragged. The gesture's value is then the pointer's point **in the group's frame**, the frame the member is written in (D-062):
+
+```text
+space Plane = euclidean(2)
+
+model Dial in Plane {
+  param { r: Length = 1 m  in [0.2 m, 3 m] }
+  state { x: Length = 0 m }
+  flow { der(x) = 1 m/s }
+}
+
+presentation Knob for Dial {
+  view scene: spatial(Plane, scale: 1 m -> 50 px, y: up) {
+    group(at: origin + (2 m, 1 m), rotate: 90 deg) as dial {
+      segment(origin, origin + (r, 0 m))
+      marker(origin + (r, 0 m), color: blue) as tip { on drag as p { propose r = p.x } }
+    }
+  }
+  observe { length = r live }
+}
+```
+
+```cases
+run dial of Dial with Knob {
+  expect { length == 1 m exactly }
+}
+```
+
+- The group turns its members a quarter turn, so the hand points up the screen. In the group's frame the tip is at `(r, 0 m)`, and `p.x` is how far along the hand the pointer is: dragging the tip up lengthens the hand, dragging it sideways does not. Written in the view's space, the same proposal would need the group's placement and turn undone by hand.
+- Arrow keys step the tip in the view, as for any drag, and the proposal reads the step in the group's frame.
+
 ## Checks on a presentation
 
 A presentation is checked against its model before anything is shown. Some mistakes:
