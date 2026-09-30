@@ -12,7 +12,7 @@ pub mod units;
 pub use dim::{Dim, Ratio};
 pub mod elaborate;
 
-pub use expr::{Agg, Arm, BinOp, Builtin, Constant, Expr, Func, Lambda};
+pub use expr::{Agg, Arm, BinOp, Builtin, Constant, Expr, Func, Guarded, Lambda};
 pub use units::Unit;
 
 use serde::{Deserialize, Serialize};
@@ -216,9 +216,11 @@ pub struct Each {
     pub over: Id,
 }
 
-/// A contained object or a collection of fixed membership (MK-7.11, MK-8.1, D-055): `count`
-/// members (one when absent: a contained object) of the object type `object`, each with the
-/// overrides, read in the container's scope, where `{"builtin": "index"}` is its number.
+/// A contained object or a collection (MK-7.11, MK-8.1, D-055): `count` members (one when
+/// absent: a contained object) of the object type `object`, each with the overrides, read in
+/// the container's scope, where `{"builtin": "index"}` is its number. With `capacity`, the
+/// membership changes during a run (D-057): `count` members at the start (none when absent),
+/// more made by `create`, removed by `destroy`, and at most `capacity` made in one run.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Part {
     pub id: Id,
@@ -226,6 +228,8 @@ pub struct Part {
     pub object: Id,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overrides: Vec<present::Override>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -254,9 +258,21 @@ pub struct Target {
     pub binding: Id,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component: Option<usize>,
+    /// The member whose binding `binding` is, when a container's handler writes it:
+    /// `set b.vel = ...` (`{"var": "b"}`), `set ball.vel = ...` (D-057, MK-7.10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<Expr>,
 }
 
-/// Operations (MK section 16). Structural operations are reserved with collections.
+impl Target {
+    pub fn of(binding: impl Into<Id>) -> Target {
+        Target { binding: binding.into(), component: None, member: None }
+    }
+}
+
+/// Operations (MK section 16). `create` and `destroy` act on collections whose membership
+/// changes (D-057); elaboration turns them into `set` and `destroy` on liveness bindings and
+/// `if`; `connect` and `disconnect` are reserved with relations.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
@@ -266,6 +282,23 @@ pub enum Op {
         event: Id,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<Expr>,
+    },
+    /// `create drops { pos = p }`: a new member of the collection `part`, its stored
+    /// bindings starting at the overrides, read in the handler's scope (MK section 16).
+    Create {
+        part: Id,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        overrides: Vec<present::Override>,
+    },
+    /// `destroy b`: the member leaves its collection. After elaboration `member` is a
+    /// reference to the member's liveness binding (D-057); destroying a member twice in one
+    /// transition is not a conflict (MK-16.5).
+    Destroy { member: Expr },
+    /// The operations `then`, performed only when `if` holds on the state before the
+    /// transition. Made by elaboration (D-057); conflicts count only operations performed.
+    If {
+        r#if: Expr,
+        then: Vec<Op>,
     },
 }
 
@@ -306,6 +339,10 @@ pub struct Event {
     /// and the handler as `{"payload": id}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload: Option<Payload>,
+    /// `for b in drops { event ... }`: a container's event repeated for each member of a
+    /// collection, named `var` in its trigger, condition and handler (D-057).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub each: Option<Each>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }

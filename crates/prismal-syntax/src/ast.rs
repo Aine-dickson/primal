@@ -68,12 +68,14 @@ pub struct ObjectDecl {
 }
 
 /// A contained object (`ball: Ball`) or a collection of `count` members (`row: Ball[3]`),
-/// with overrides of its members' bindings (D-055).
+/// with overrides of its members' bindings (D-055). A collection whose membership changes
+/// has a capacity: `drops: Drop[max 50]`, `drops: Drop[3, max 50]` (D-057).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartDecl {
     pub name: Name,
     pub object: Name,
     pub count: Option<u32>,
+    pub capacity: Option<u32>,
     pub overrides: Vec<(Name, Expr)>,
     pub notes: Vec<String>,
     pub span: Span,
@@ -159,6 +161,8 @@ pub struct ProcessDecl {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EventDecl {
+    /// `for b in drops { event ... }`: the loop variable and the collection (D-057).
+    pub each: Option<(Name, Name)>,
     pub name: Name,
     pub trigger: TriggerExpr,
     pub enable: Option<Expr>,
@@ -188,9 +192,12 @@ pub enum ZenoClause {
     Settle(Vec<OpStmt>),
 }
 
-/// A binding, or one component of it (`set vel.y = 0 m/s`).
+/// A binding, or one component of it (`set vel.y = 0 m/s`), possibly of a member
+/// (`set b.vel = ...`, `set row[2].vel.y = ...`, D-057). `b.vel` is read as a binding and a
+/// component by the parser; lowering decides which it is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Path {
+    pub member: Option<Expr>,
     pub name: Name,
     pub component: Option<Name>,
 }
@@ -200,6 +207,10 @@ pub enum OpStmt {
     Set { target: Path, value: Expr, span: Span },
     Contribute { target: Path, value: Expr, span: Span },
     Emit { event: Name, payload: Option<Expr>, span: Span },
+    /// `create drops { pos = p }` (D-057).
+    Create { part: Name, overrides: Vec<(Name, Expr)>, span: Span },
+    /// `destroy b` (D-057).
+    Destroy { member: Expr, span: Span },
 }
 
 #[derive(Clone, Debug, PartialEq)]

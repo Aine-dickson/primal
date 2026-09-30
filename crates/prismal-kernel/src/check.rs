@@ -73,7 +73,12 @@ impl<'a, 'b> Tc<'a, 'b> {
     }
 
     fn err(&mut self, code: &'static str, message: String) -> Typed {
-        self.diags.push(Diagnostic { code, message, element: self.element.clone() });
+        // One expression may be checked several times, as in the members a `create` may
+        // make (D-057): a diagnostic is reported once.
+        let d = Diagnostic { code, message, element: self.element.clone() };
+        if !self.diags.contains(&d) {
+            self.diags.push(d);
+        }
         None
     }
 
@@ -146,6 +151,28 @@ impl<'a, 'b> Tc<'a, 'b> {
                 },
             },
             Expr::Match { r#match, arms } => self.match_expr(r#match, arms, exp),
+            // `min` or `max` over the members alive (D-057): quantities of one type.
+            Expr::Extreme { extreme, terms } => {
+                let mut t: Option<Type> = exp.cloned();
+                let mut out = vec![];
+                for g in terms {
+                    let w = self.expect(&g.when, &Type::Boolean)?;
+                    let v = match &t {
+                        Some(want) => self.expect(&g.value, want)?,
+                        None => {
+                            let (v, vt) = self.expr(&g.value, None)?;
+                            t = Some(vt);
+                            v
+                        }
+                    };
+                    out.push((w, v));
+                }
+                match t {
+                    Some(t @ Type::Quantity { .. }) => Some((CExpr::Extreme(*extreme, out), t)),
+                    Some(other) => self.err("MK-E01", format!("`min` and `max` compare quantities, not {}", show(&other))),
+                    None => self.err("MK-E26", "`min` or `max` over no member has no value".into()),
+                }
+            }
             // Members and aggregates are replaced by elaboration before checking (D-055).
             Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } => {
                 self.err("MK-E00", "a member or an aggregate in a model that was not elaborated (D-055)".into())
@@ -812,6 +839,9 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
         }
         tc.payload = e.payload.as_ref().map(|p| (e.id.clone(), cevents.len(), p.ty.clone()));
         let enable = e.enable.as_ref().and_then(|x| tc.expect(x, &Type::Boolean));
+        if e.each.is_some() {
+            tc.err("MK-E00", format!("event `{}` is repeated per member in a model that was not elaborated (D-057)", e.name));
+        }
         let handler = check_ops(&mut tc, model, &index, &e.handler, false);
         let zeno = match &e.zeno {
             None => None,
@@ -927,6 +957,29 @@ fn check_ops(tc: &mut Tc, model: &Model, index: &HashMap<Id, usize>, ops: &[Op],
     let mut targets: Vec<(usize, Option<usize>)> = vec![];
     for op in ops {
         match op {
+            Op::Set { target, .. } | Op::Contribute { target, .. } if target.member.is_some() => {
+                tc.err("MK-E00", format!("a member's binding `{}` in a model that was not elaborated (D-057)", target.binding));
+            }
+            Op::Create { .. } | Op::Destroy { member: Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } } => {
+                tc.err("MK-E00", "`create` or `destroy` in a model that was not elaborated (D-057)".into());
+            }
+            // After elaboration a destroy names the member's liveness binding (D-057).
+            Op::Destroy { member } => match member {
+                Expr::Ref { r#ref } if index.get(r#ref).is_some_and(|&i| model.bindings[i].role == Role::Discrete && model.bindings[i].ty == Type::Boolean) => {
+                    out.push(COp::Destroy { binding: index[r#ref] });
+                }
+                _ => {
+                    tc.err("MK-E00", "`destroy` names a member of a collection".into());
+                }
+            },
+            // Conditional operations are checked on their own: which of them are performed is
+            // known only in the transition, where conflicts are decided (D-057).
+            Op::If { r#if, then } => {
+                if let Some(c) = tc.expect(r#if, &Type::Boolean) {
+                    let inner = check_ops(tc, model, index, then, intervention);
+                    out.push(COp::If { cond: c, ops: inner });
+                }
+            }
             Op::Set { target, value } | Op::Contribute { target, value } => {
                 let Some(&bi) = index.get(&target.binding) else {
                     tc.err("MK-E00", format!("unknown target `{}`", target.binding));
@@ -1088,13 +1141,25 @@ fn closure_derived(model: &Model, index: &HashMap<Id, usize>, refs: &[Id]) -> BT
 fn self_retriggering(model: &Model, index: &HashMap<Id, usize>, guard: &Expr, handler: &[Op]) -> bool {
     let mut written = BTreeSet::new();
     let mut consts: HashMap<Id, Expr> = HashMap::new();
-    for op in handler {
-        if let Op::Set { target, value } = op {
-            if let Some(&i) = index.get(&target.binding) {
-                written.insert(i);
-                if model.bindings[i].role == Role::Discrete && matches!(value, Expr::Bool { .. } | Expr::Num { .. } | Expr::Case { .. }) {
-                    consts.insert(target.binding.clone(), value.clone());
-                }
+    // The bindings the handler may set, with their values; a destroy sets a liveness binding
+    // to false and a conditional operation may be performed (D-057).
+    fn sets(ops: &[Op], out: &mut Vec<(Id, Expr)>) {
+        for op in ops {
+            match op {
+                Op::Set { target, value } => out.push((target.binding.clone(), value.clone())),
+                Op::Destroy { member: Expr::Ref { r#ref } } => out.push((r#ref.clone(), Expr::Bool { bool: false })),
+                Op::If { then, .. } => sets(then, out),
+                _ => {}
+            }
+        }
+    }
+    let mut all = vec![];
+    sets(handler, &mut all);
+    for (binding, value) in all {
+        if let Some(&i) = index.get(&binding) {
+            written.insert(i);
+            if model.bindings[i].role == Role::Discrete && matches!(value, Expr::Bool { .. } | Expr::Num { .. } | Expr::Case { .. }) {
+                consts.insert(binding, value);
             }
         }
     }

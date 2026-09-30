@@ -267,7 +267,7 @@ impl<'a> ModelCx<'a> {
                 }
                 Member::Parts(ps) => {
                     for p in ps {
-                        let pi = PartInfo { id: format!("{id}.part.{}", p.name.text), object: p.object.text.clone(), many: p.count.is_some() };
+                        let pi = PartInfo { id: format!("{id}.part.{}", p.name.text), object: p.object.text.clone(), many: p.count.is_some() || p.capacity.is_some() };
                         if info.parts.insert(p.name.text.clone(), pi).is_some() {
                             self.err("SX-E09", format!("part `{}` declared twice", p.name.text), p.name.span);
                         }
@@ -310,11 +310,14 @@ impl<'a> ModelCx<'a> {
                 // Kept, so that its uses are known and not reported again.
                 self.err("SX-E03", format!("unknown object type `{}`", p.object.text), p.object.span);
                 let object = format!("{}.{}", self.name, p.object.text);
-                self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object, count: p.count, overrides: vec![], notes: p.notes.clone() });
+                self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object, count: p.count, capacity: p.capacity, overrides: vec![], notes: p.notes.clone() });
                 continue;
             };
-            if p.count == Some(0) {
+            if p.count == Some(0) && p.capacity.is_none() {
                 self.err("SX-E08", "a collection has at least one member", p.span);
+            }
+            if p.capacity == Some(0) {
+                self.err("SX-E08", "a collection holds at least one member", p.span);
             }
             let mut overrides = vec![];
             for (n, e) in &p.overrides {
@@ -327,7 +330,7 @@ impl<'a> ModelCx<'a> {
                 self.index_ok = false;
                 overrides.push(prismal_ir::present::Override { binding: b, value });
             }
-            self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object: obj.id, count: p.count, overrides, notes: p.notes.clone() });
+            self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object: obj.id, count: p.count, capacity: p.capacity, overrides, notes: p.notes.clone() });
         }
     }
 
@@ -678,6 +681,23 @@ impl<'a> ModelCx<'a> {
     }
 
     fn event(&mut self, e: &ast::EventDecl, process: Option<&Id>) {
+        // `for b in drops { event ... }`: the loop variable is in scope (D-057).
+        let each = match &e.each {
+            Some((var, over)) => match self.parts.get(&over.text).cloned() {
+                Some(p) => {
+                    if !p.many {
+                        self.err("SX-E08", format!("`{}` is one object; `for` goes over a collection", over.text), over.span);
+                    }
+                    self.vars.push((var.text.clone(), p.object.clone()));
+                    Some(Each { var: var.text.clone(), over: p.id })
+                }
+                None => {
+                    self.err("SX-E03", format!("unknown collection `{}`", over.text), over.span);
+                    None
+                }
+            },
+            None => None,
+        };
         let trigger = match &e.trigger {
             ast::TriggerExpr::Rising(g) => Trigger::Rising { guard: self.expr(g, &[]) },
             ast::TriggerExpr::Falling(g) => Trigger::Falling { guard: self.expr(g, &[]) },
@@ -719,6 +739,9 @@ impl<'a> ModelCx<'a> {
             window: None,
         });
         self.payload = None;
+        if each.is_some() {
+            self.vars.pop();
+        }
         self.map.insert(id.clone(), e.span);
         self.model.events.push(Event {
             id,
@@ -729,6 +752,7 @@ impl<'a> ModelCx<'a> {
             zeno,
             process: process.cloned(),
             payload,
+            each,
             notes: e.notes.clone(),
         });
     }
@@ -741,13 +765,71 @@ impl<'a> ModelCx<'a> {
                 let payload = payload.as_ref().map(|p| self.expr(p, &[]));
                 Op::Emit { event: self.event_id(event), payload }
             }
+            // D-057: the overrides name the member's bindings and are read in this scope.
+            ast::OpStmt::Create { part, overrides, .. } => {
+                let Some(p) = self.parts.get(&part.text).cloned() else {
+                    self.err("SX-E03", format!("unknown collection `{}`", part.text), part.span);
+                    return Op::Create { part: part.text.clone(), overrides: vec![] };
+                };
+                if !p.many {
+                    self.err("SX-E08", format!("`{}` is one object; `create` makes a member of a collection", part.text), part.span);
+                }
+                let obj = self.objects.get(&p.object).cloned().unwrap_or_default();
+                let mut ovs = vec![];
+                for (n, e) in overrides {
+                    let Some(b) = obj.bindings.get(&n.text).cloned() else {
+                        self.err("SX-E03", format!("an object `{}` has no binding `{}`", p.object, n.text), n.span);
+                        continue;
+                    };
+                    let value = self.expr(e, &[]);
+                    ovs.push(prismal_ir::present::Override { binding: b, value });
+                }
+                Op::Create { part: p.id, overrides: ovs }
+            }
+            ast::OpStmt::Destroy { member, span } => match self.member_expr(member, &[]) {
+                Some((sel, _)) => Op::Destroy { member: sel },
+                None => {
+                    self.err("SX-E08", "`destroy` names a member: `destroy b`, `destroy row[2]`", *span);
+                    Op::Destroy { member: Self::placeholder() }
+                }
+            },
         }
     }
 
+    /// A target of an operation: a binding of the scope, or a binding of a member it
+    /// contains (`set b.vel = ...`, D-057). `b.vel` is a member's binding when `b` names a
+    /// member and is not a binding.
     fn target(&mut self, p: &ast::Path) -> Target {
-        let binding = self.binding(&p.name);
-        let component = p.component.as_ref().map(|c| self.axis(c));
-        Target { binding, component }
+        let names_member = |cx: &Self, n: &str| !cx.bindings.contains_key(n) && (cx.vars.iter().any(|(v, _)| v == n) || cx.parts.contains_key(n));
+        let (member, name, component) = match (&p.member, &p.component) {
+            (Some(m), _) => (Some(m.clone()), p.name.clone(), p.component.clone()),
+            (None, Some(c)) if names_member(self, &p.name.text) => {
+                (Some(ast::Expr { kind: ExprKind::Name(p.name.text.clone()), span: p.name.span }), c.clone(), None)
+            }
+            (None, _) => (None, p.name.clone(), p.component.clone()),
+        };
+        let component = component.as_ref().map(|c| self.axis(c));
+        let Some(m) = member else {
+            return Target { binding: self.binding(&name), component, member: None };
+        };
+        match self.member_expr(&m, &[]) {
+            Some((sel, ty)) => {
+                let binding = match self.objects.get(&ty).and_then(|o| o.bindings.get(&name.text)).cloned() {
+                    Some(id) => id,
+                    None => {
+                        if self.objects.contains_key(&ty) {
+                            self.err("SX-E03", format!("an object `{ty}` has no binding `{}`", name.text), name.span);
+                        }
+                        name.text.clone()
+                    }
+                };
+                Target { binding, component, member: Some(sel) }
+            }
+            None => {
+                self.err("SX-E03", "a target is a binding, or a member's binding: `set b.vel = ...`", m.span);
+                Target { binding: name.text.clone(), component, member: None }
+            }
+        }
     }
 
     pub(crate) fn binding(&mut self, n: &ast::Name) -> Id {
@@ -1138,7 +1220,7 @@ fn obj_info(m: &Model) -> ObjInfo {
             .iter()
             .map(|p| {
                 let object = p.object.rsplit('.').next().unwrap_or(&p.object).to_string();
-                (p.name.clone(), PartInfo { id: p.id.clone(), object, many: p.count.is_some() })
+                (p.name.clone(), PartInfo { id: p.id.clone(), object, many: p.count.is_some() || p.capacity.is_some() })
             })
             .collect(),
     }

@@ -150,7 +150,7 @@ impl Interactive {
     pub fn set_control(&mut self, rep: &str, value: Expr) -> Result<(), Report> {
         let Some((_, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("no control `{rep}`")) };
         let CKind::Control { binding, .. } = &r.kind else { return self.report(Why::Refused, format!("`{rep}` is not a control")) };
-        let op = Op::Set { target: Target { binding: binding.clone(), component: None }, value };
+        let op = Op::Set { target: Target::of(binding.clone()), value };
         self.commit(Action::Intervene(vec![op]))
     }
 
@@ -159,6 +159,17 @@ impl Interactive {
         let Some((_, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("no button `{rep}`")) };
         let CKind::Button { event, .. } = &r.kind else { return self.report(Why::Refused, format!("`{rep}` is not a button")) };
         self.commit(Action::Request(event.clone()))
+    }
+
+    /// Requests an event declared `on request` at the instant shown, with its payload when it
+    /// declares one (D-027, D-050). `event` is the event's identity or name.
+    pub fn request(&mut self, event: &str, payload: Option<Expr>) -> Result<(), Report> {
+        let found = self.cm.ir.events.iter().find(|e| e.id == event || e.name == event).map(|e| e.id.clone());
+        let Some(id) = found else { return self.report(Why::Refused, format!("no event `{event}`")) };
+        self.commit(match payload {
+            Some(v) => Action::RequestWith(id, v),
+            None => Action::Request(id),
+        })
     }
 
     /// The environment supplies a new value of an input at the instant shown (RC-11.6, D-051).
@@ -249,7 +260,7 @@ impl Interactive {
         let Some(drag) = &self.drag else { return false };
         let inv = drag.crep.rep.inverse.as_ref().unwrap();
         let gesture = drag.ctx.pointer(p);
-        let ops = inv.proposals.iter().map(|pr| Op::Set { target: Target { binding: pr.target.clone(), component: None }, value: subst(&pr.value, &gesture) }).collect();
+        let ops = inv.proposals.iter().map(|pr| Op::Set { target: Target::of(pr.target.clone()), value: subst(&pr.value, &gesture) }).collect();
         let action = Action::Intervene(ops);
         let t = self.t;
         let result = self.session.propose(t, action.clone());

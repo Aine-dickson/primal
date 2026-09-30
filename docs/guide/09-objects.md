@@ -209,11 +209,93 @@ run conserved of Stars with Sky {
 
 The tolerance is a relative `2e-12`: the sums are computed in floating point, and the bodies' speeds grow to kilometres per second.
 
+## Members that come and go
+
+The collections so far keep their members for the whole run. A fountain does not: it throws a drop every half second, and each drop is gone when it falls back. A collection whose membership changes declares the most members it makes in one run, with `max` (D-057):
+
+```text
+space Plane = euclidean(2)
+
+model Fountain in Plane {
+  object Drop {
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow {
+      der(pos) = vel
+      der(vel) = (0 m/s^2, -9.81 m/s^2)
+    }
+  }
+  param { speed: Velocity = 5 m/s }
+  parts { drops: Drop[max 40] }
+  event spray on every 0.5 s {
+    create drops { vel = (1 m/s, speed) }
+  }
+  for d in drops {
+    event land on falling(d.pos.y) { destroy d }
+  }
+  derived {
+    flying:  Real   = count(drops)
+    highest: Length = max(d.pos.y for d in drops) otherwise 0 m
+  }
+}
+```
+
+- `drops: Drop[max 40]` starts empty and makes at most 40 drops in a run. `Drop[3, max 40]` would start with three.
+- `create drops { vel = (1 m/s, speed) }` in a handler makes the next drop, with a starting value for its velocity; its position starts where `Drop` says, at the origin. The values are read when the event happens, so they may use the model's state or the event's payload.
+- `for d in drops { event land ... }` gives every drop its own `land` event, which reads the drop as `d`. When a drop falls back through zero height, `destroy d` removes it.
+- A drop that is not made yet, or already destroyed, does nothing: it does not move, its events do not happen, and aggregates leave it out. `count(drops)` is the number of drops in the air.
+- `max` over no drop has no value (at the start, before the first spray, and between drops if the fountain stops), so `highest` says what to use then with `otherwise`.
+
+| Form | Does |
+|---|---|
+| `c: T[max m]`, `c: T[n, max m]` | a collection that starts with none or `n` members and makes at most `m` in a run |
+| `create c { x = e ... }` | makes the next member, with starting values; several `create` in one handler make several members |
+| `destroy b` | removes the member `b`: a loop variable, a contained member, or `c[k]` |
+| `for b in c { event ... }` | an event of the model for each member |
+| `set b.x = e` | in such an event, writes the member's binding (a model may write its members' state) |
+
+The `k`-th drop made is `drops[k]` for the whole run: `drops[1]` is the first drop, which lands after `2 × 5 / 9.81 = 1.0194 s`. Its number is never given to another drop, so its name, its marker and its trace belong to one drop. Read by number, a drop holds its starting values before it is made and its last values after it is destroyed.
+
+```text
+presentation Spray for Fountain {
+  view scene: spatial(Plane, scale: 1 m -> 50 px, y: up) {
+    axes
+    for d in drops { marker(d.pos) as drop }
+  }
+  panel numbers {
+    label(flying)
+    label(highest)
+  }
+  observe {
+    n     = flying live
+    top   = highest live
+    first = drops[1].pos.y live
+  }
+}
+```
+
+A marker is drawn for each drop in the air, and only while it is there. At 1.2 s the first drop has landed; the second, thrown at 0.5 s, is at `5 × 0.7 - 4.905 × 0.7² = 1.09655 m`, and the third, thrown at 1 s, is lower:
+
+```cases
+run early of Fountain with Spray {
+  until t0 + 1.2 s
+  expect {
+    n     == 2 within 1e-12
+    top   == 1.09655 m within 1e-9 m
+    first == 0 m within 1e-9 m
+  }
+}
+```
+
+The capacity is part of the model: it says how long the fountain can run. 40 drops, one every half second, last until 19.5 s; a run past 20 s stops there with the diagnostic that `drops.capacity` is exceeded. Choose a capacity that covers the longest run the presentation shows.
+
 ## Names in results
 
 Each member's bindings and events have names built from the member: `row[2].pos`, `moon.bounce`. They appear in diagnostics, event logs and text alternatives. A mistake in the object type is reported once for each member, and located at the line in the object type.
 
-Collections in v0 have a fixed number of members. Creating and destroying objects while a run goes on, and relations between objects, come later.
+Relations between objects (a spring between two chosen balls, a link that can be made and broken) come later.
 
 ## Mistakes
 
@@ -258,11 +340,37 @@ model M in Plane {
 
 `Ball` has no `g` to give a value to: an override names a binding of the object.
 
+```error
+// error: MK-E26
+space Plane = euclidean(2)
+model M in Plane {
+  object Ball {
+    state { pos: Point = origin }
+  }
+  parts { row: Ball[3] }
+  event more on every 1 s { create row }
+}
+```
+
+`row` has a fixed membership. To make members during a run, declare how many it can make: `row: Ball[3, max 10]`.
+
+```error
+// error: SX-E08
+space Plane = euclidean(2)
+model M in Plane {
+  param { speed: Velocity = 1 m/s }
+  event halt on every 1 s { destroy speed }
+}
+```
+
+`destroy` removes a member of a collection; `speed` is a binding.
+
 ## Exercises
 
 1. Add a fourth ball to `row`. Which expectations change?
 2. Give each ball in `row` a different radius with an override (`r = index * 0.05 m`), and show the radius as a `circle(b.pos, b.r)` in the view.
 3. Chain three masses with springs: each mass is pulled towards its neighbours. Write the force on member `b` as a sum over the others with a filter that keeps only neighbours. (Hint: give each member its number as a parameter, `n = index`, and compare numbers.)
+4. Make the fountain throw two drops at each spray, one to each side (`vel = (1 m/s, speed)` and `vel = (-1 m/s, speed)`). How many drops are in the air at 1.2 s?
 
 <details>
 <summary>A solution to exercise 2</summary>

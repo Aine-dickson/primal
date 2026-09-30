@@ -129,6 +129,10 @@ pub struct Rep {
     /// The members of a `group`, drawn with its transform (PK-6.3b, D-043).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<Rep>,
+    /// Drawn only while this holds: a representation of a member of a collection whose
+    /// membership changes is shown while the member is alive (D-057). Made by elaboration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<Expr>,
 }
 
 impl Rep {

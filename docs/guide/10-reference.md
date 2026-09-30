@@ -118,6 +118,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `else`, `if`, `then` | conditional values; `if` also filters an aggregate and enables an event | 1, 5, 9 |
 | `emit` | an operation that makes another event happen | 5 |
 | `enum`, `match` | enumerations and a choice by case | 5 |
+| `create`, `destroy` | operations that make a member of a collection and remove one | 9 |
 | `equation` | a named relation, shown and optionally checked | 6 |
 | `event` | something that happens at an instant, with operations | 5 |
 | `every` | an event every Δ; a sampled source (`pos every 0.1 s`); an observation schedule | 4, 5, 6 |
@@ -127,7 +128,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `falling`, `rising` | an event when a value crosses zero downwards or upwards | 5 |
 | `flow` | how continuous state changes: `der(x) = e` | 4 |
 | `fn` | a declared function | 2 |
-| `for` | a loop over a collection's members, in flows, aggregates and views; also `narrate ... for d`, `presentation P for M` | 7, 8, 9 |
+| `for` | a loop over a collection's members, in flows, events, aggregates and views; also `narrate ... for d`, `presentation P for M` | 7, 8, 9 |
 | `from` | the start of `every Δ from τ0` | 5 |
 | `hide`, `reveal`, `highlight` | timeline actions on representations | 8 |
 | `hold`, `run`, `rate`, `until`, `seek`, `reset`, `wait` | timeline control of the simulation: pause, play at a rate until an event, jump, restart, wait | 8 |
@@ -137,6 +138,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `intervenable` | state the learner may change | 3 |
 | `learner` | a run's scripted learner inputs | 8 |
 | `live`, `over`, `microstep` | observation schedules: current value, over an interval, at a microstep | 6 |
+| `max` | the capacity of a collection whose members come and go (`Drop[max 40]`); also the aggregate `max(...)` | 9 |
 | `model` | what exists and how it behaves | 1 |
 | `narrate`, `scene`, `sequence`, `timeline` | a lesson's narration, scenes, ordered actions and timeline | 8 |
 | `object`, `parts` | an object type, and the objects and collections a model holds | 9 |
@@ -165,7 +167,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `zeno`, `settle` | what happens when an event repeats without end | 5 |
 | `zoom` | the zoom of a `camera` action | 8 |
 | `contribute` | an operation adding to discrete state; not implemented (MK-E11) | reserved for later |
-| `create`, `destroy`, `connect`, `disconnect` | structural operations on collections and relations | reserved for later |
+| `connect`, `disconnect` | operations on relations | reserved for later |
 | `enter` | reserved | reserved for later |
 | `animate`, `bind`, `release` | timeline actions, parsed and reported as not yet implemented | reserved for later |
 

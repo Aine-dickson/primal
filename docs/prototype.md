@@ -189,6 +189,22 @@ Acceptance: `prismal-present/tests/objects.rs` (a row of bouncing balls and a Mo
 
 Found on the way: a ball bouncing on a floor that is not at zero fell through after about fifty bounces, because the sign reference after a bounce was the rounding-level sign of the guard; fixed by RC-7.2a (D-056).
 
+### Members that come and go
+
+Collections whose membership changes (D-057) declare a capacity, the most members a run makes (`drops: Drop[max 40]`, `Drop[2, max 4]`), and are elaborated to that many members, the `k`-th member made being `drops[k]` for the whole run. Nothing below elaboration knows about membership, except three small forms.
+
+| Part | Content |
+|---|---|
+| Syntax | `c: T[max m]`, `c: T[n, max m]`; `create c { x = e ... }` and `destroy b` in handlers and settle clauses; `for b in c { event ... }` in a model; `set b.x = e`, `set c[k].x.y = e` |
+| Elaboration | per member a private liveness binding `part.alive@c[k]`, per collection a count `part.created` and a `stop` constraint `c.capacity`; flows guarded by liveness (`if alive then e else 0`), events enabled only while alive, equations satisfied and constraints true while not alive; aggregates filtered by liveness; a create becomes one conditional operation per member it could make, reading the count on the state before the transition; events per member named `land[k]`; representations per member carry `when` |
+| Kernel | conditional operations (`if`) checked on their own; `destroy` of a liveness binding; the `extreme` expression for `min` and `max` over members alive (no value over none); identical diagnostics reported once |
+| Runtime | the transition performs the conditional operations whose condition holds before it, then decides conflicts on the operations performed: two destroys of a member do not conflict, a set on a member destroyed in the same transition does (MK-16.5) |
+| Presentation | representations whose `when` does not hold are not drawn and have no text alternative; a trace of a member starts when it is made; `Interactive::request` requests an event with a payload from a session |
+
+Acceptance: `prismal-present/tests/membership.rs` (a fountain that sprays a drop every half second and destroys it on landing, with counts, heights and a destroyed member read by number checked against closed forms; two creates in one request with a payload; the capacity stopping a run at the instant of the create; frames drawing only the members alive; a container reversing a member's velocity; conflicts; printing; diagnostics); guide chapter 9, Members that come and go.
+
+Found on the way: a type error in a `create` override was reported once for each member the create could make (the kernel now reports identical diagnostics once); aggregates over 30 or more members overflowed the 1 MB main-thread stack of debug builds, because they were folded into a chain as deep as the collection (they are now folded as a balanced tree, depth `log2 n`, which also sums pairwise).
+
 ## Media export
 
 `crates/prismal-media` turns a presentation into a video file or raster images (D-052). Frames are the SVG renderer's; the crate rasterizes them with resvg and leaves encoding to ffmpeg, fed raw RGBA frames through a pipe.
@@ -267,7 +283,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Item | Where specified |
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
-| Dynamic membership (`create`, `destroy`), relations, container events per member, drags on members of collections; payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, MK section 2, R-55 |
+| Relations (`connect`, `disconnect`), creation and destruction as interventions, unbounded populations (D-057 option 1), drags on members of collections; payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
 | Drags on members of a group; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
@@ -301,3 +317,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 narration sound (D-053): cues named after their beats; recordings, synthesized speech and music in video export; a Voice menu in the web player.
 - 2026-09-30 round geometry (D-054): `circle`, `ellipse`, `arc` as exact elliptical arcs in frames, drawn by both renderers; the guide's wheel is a circle; guide lesson Unwrapping a circle.
 - 2026-09-30 objects and fixed collections (D-055), elaborated before checking; guide chapter 9; sign references after a transition (RC-7.2a, D-056).
+- 2026-09-30 collections whose membership changes (D-057): capacity, `create`, `destroy`, events per member, member targets; aggregates folded as balanced trees.

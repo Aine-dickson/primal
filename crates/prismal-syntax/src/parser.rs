@@ -340,6 +340,23 @@ impl<'a> Parser<'a> {
         if self.is_word("event") {
             return Ok(vec![Member::Event(self.event_decl()?)]);
         }
+        // `for b in drops { event ... }`: events repeated per member (D-057).
+        if self.eat_word("for") {
+            let var = self.name("a member name")?;
+            self.expect_word("in")?;
+            let over = self.name("a collection")?;
+            let mut events = self.block(|p| {
+                if p.is_word("event") {
+                    Self::one(p.event_decl())
+                } else {
+                    Err(p.unexpected("`event` in a `for` block of a model"))
+                }
+            })?;
+            for e in &mut events {
+                e.each = Some((var.clone(), over.clone()));
+            }
+            return Ok(events.into_iter().map(Member::Event).collect());
+        }
         if self.eat_word("process") {
             let notes = self.notes_before(start.line);
             let name = self.name("a process name")?;
@@ -510,13 +527,20 @@ impl<'a> Parser<'a> {
         let name = self.name("a part name")?;
         self.expect_punct(":")?;
         let object = self.name("an object type")?;
-        let count = if self.eat_punct("[") {
-            let n = self.int()?;
+        // `[3]`, `[max 50]` or `[3, max 50]` (D-057).
+        let (mut count, mut capacity) = (None, None);
+        if self.eat_punct("[") {
+            if !self.is_word("max") {
+                count = Some(self.int()? as u32);
+                if self.eat_punct(",") && !self.is_word("max") {
+                    return Err(self.unexpected("`max` and the most members the collection holds"));
+                }
+            }
+            if self.eat_word("max") {
+                capacity = Some(self.int()? as u32);
+            }
             self.expect_punct("]")?;
-            Some(n as u32)
-        } else {
-            None
-        };
+        }
         let overrides = if self.is_punct("{") {
             self.block(|p| {
                 let n = p.name("a binding of the object")?;
@@ -526,7 +550,7 @@ impl<'a> Parser<'a> {
         } else {
             vec![]
         };
-        Ok(PartDecl { name, object, count, overrides, notes, span: self.since(start) })
+        Ok(PartDecl { name, object, count, capacity, overrides, notes, span: self.since(start) })
     }
 
     fn flow_stmt(&mut self) -> P<FlowStmt> {
@@ -585,7 +609,7 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        Ok(EventDecl { name, trigger, enable, handler, zeno, notes, span: self.since(start) })
+        Ok(EventDecl { each: None, name, trigger, enable, handler, zeno, notes, span: self.since(start) })
     }
 
     fn trigger(&mut self) -> P<TriggerExpr> {
@@ -645,10 +669,30 @@ impl<'a> Parser<'a> {
         Ok(Some((n, t)))
     }
 
+    /// `x`, `x.c`, or a member's binding: `b.x`, `b.x.c`, `row[2].x`, `row[2].x.c` (D-057).
     fn path(&mut self) -> P<Path> {
-        let name = self.name("a binding name")?;
-        let component = if self.eat_punct(".") { Some(self.name("a component")?) } else { None };
-        Ok(Path { name, component })
+        let start = self.span();
+        let first = self.name("a binding name")?;
+        if self.eat_punct("[") {
+            let i = self.expr()?;
+            self.expect_punct("]")?;
+            self.expect_punct(".")?;
+            let base = Expr { kind: ExprKind::Name(first.text.clone()), span: first.span };
+            let member = Some(Expr { kind: ExprKind::Index(Box::new(base), Box::new(i)), span: self.since(start) });
+            let name = self.name("a binding name")?;
+            let component = if self.eat_punct(".") { Some(self.name("a component")?) } else { None };
+            return Ok(Path { member, name, component });
+        }
+        if !self.eat_punct(".") {
+            return Ok(Path { member: None, name: first, component: None });
+        }
+        let second = self.name("a binding or a component")?;
+        if self.eat_punct(".") {
+            let third = self.name("a component")?;
+            let member = Some(Expr { kind: ExprKind::Name(first.text.clone()), span: first.span });
+            return Ok(Path { member, name: second, component: Some(third) });
+        }
+        Ok(Path { member: None, name: first, component: Some(second) })
     }
 
     fn op(&mut self) -> P<OpStmt> {
@@ -677,12 +721,30 @@ impl<'a> Parser<'a> {
             };
             return Ok(OpStmt::Emit { event, payload, span: self.since(start) });
         }
-        for w in ["create", "destroy", "connect", "disconnect"] {
+        // `create drops`, `create drops { pos = p }` (D-057).
+        if self.eat_word("create") {
+            let part = self.name("a collection")?;
+            let overrides = if self.is_punct("{") {
+                self.block(|p| {
+                    let n = p.name("a binding of the object")?;
+                    p.expect_punct("=")?;
+                    Ok(vec![(n, p.expr()?)])
+                })?
+            } else {
+                vec![]
+            };
+            return Ok(OpStmt::Create { part, overrides, span: self.since(start) });
+        }
+        if self.eat_word("destroy") {
+            let member = self.postfix_expr()?;
+            return Ok(OpStmt::Destroy { member, span: self.since(start) });
+        }
+        for w in ["connect", "disconnect"] {
             if self.is_word(w) {
-                return Err(Diag::new("SX-E06", format!("`{w}` needs collections, which the v0 IR does not have"), self.span()));
+                return Err(Diag::new("SX-E06", format!("`{w}` needs relations, which v0 does not have"), self.span()));
             }
         }
-        Err(self.unexpected("an operation (`set`, `contribute`, `emit`)"))
+        Err(self.unexpected("an operation (`set`, `contribute`, `emit`, `create`, `destroy`)"))
     }
 
     // ------------------------------------------------------------ types and units

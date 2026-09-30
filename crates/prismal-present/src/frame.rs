@@ -298,6 +298,18 @@ fn si_num(x: f64, dim: &Dim) -> Expr {
 pub struct CRep {
     pub rep: Rep,
     pub kind: CKind,
+    /// Drawn only while this holds: a member of a collection that changes, alive (D-057).
+    pub when: Option<CExpr>,
+}
+
+impl CRep {
+    /// Whether the representation is drawn on a state (D-057).
+    pub fn shown(&self, run: &Run, vals: &[Value], t: f64) -> bool {
+        match &self.when {
+            None => true,
+            Some(c) => matches!(run.eval_state(c, vals, t), Ok(Value::Bool(true))),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -733,7 +745,11 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
             ce(&subst(&p.value, &ctx.pointer([0.0, 0.0])), Some(&cm.bindings[i].ty))?;
         }
     }
-    Ok(CRep { rep: rep.clone(), kind })
+    let when = match &rep.when {
+        Some(w) => Some(compile_expr(cm, w, Some(&Type::Boolean)).map_err(|ds| d("PK-E02", ds.iter().map(|x| format!("{}: {}", x.code, x.message)).collect::<Vec<_>>().join("; ")))?.0),
+        None => None,
+    };
+    Ok(CRep { rep: rep.clone(), kind, when })
 }
 
 fn coords(v: &Value) -> Vec<f64> {
@@ -802,7 +818,17 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             Err(s) => status(s),
         },
         CKind::Trace { pos, every, label } => {
-            let pts: Vec<[f64; 2]> = samples(run, t, *every).filter_map(|s| run.eval_state(pos, &run.state_at(s), s).ok()).map(|v| ctx.to_view(&coords(&v))).collect();
+            // A member's trace starts when it is made and ends when it is destroyed (D-057).
+            let pts: Vec<[f64; 2]> = samples(run, t, *every)
+                .filter_map(|s| {
+                    let st = run.state_at(s);
+                    if !r.shown(run, &st, s) {
+                        return None;
+                    }
+                    run.eval_state(pos, &st, s).ok()
+                })
+                .map(|v| ctx.to_view(&coords(&v)))
+                .collect();
             let text = match (pts.first(), pts.last()) {
                 (Some(_), Some(_)) => format!("trace of {label}: {} samples every {} s up to t = {} s", pts.len(), fmt_num(*every), fmt_num(t - run.config.t0)),
                 _ => format!("trace of {label}: no samples"),
@@ -966,7 +992,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             match (at, num(rotate, 0.0), num(scale, 1.0)) {
                 (Ok(a), Ok(angle), Ok(k)) => {
                     let inner = Tf { at: [a[0], a[1]], angle: tf.angle + angle, k: tf.k * k };
-                    let ms: Vec<RepFrame> = members.iter().map(|m| project_in(cm, ctx, m, run, vals, t, inner)).collect();
+                    let ms: Vec<RepFrame> = members.iter().filter(|m| m.shown(run, vals, t)).map(|m| project_in(cm, ctx, m, run, vals, t, inner)).collect();
                     let name = r.rep.name.clone().unwrap_or("group".into());
                     let text = format!("{name}: {}", ms.iter().map(|m| m.text.as_str()).collect::<Vec<_>>().join("; "));
                     (Shape::Group { members: ms }, text)
@@ -1036,13 +1062,13 @@ impl Projector {
     pub fn frame(&self, cm: &CModel, run: &Run, vals: &[Value], t: f64, extra: &[(Option<Id>, CRep)]) -> (Vec<ViewFrame>, Vec<RepFrame>) {
         let mut out = vec![];
         for (id, ctx, reps) in &self.views {
-            let mut rs: Vec<RepFrame> = reps.iter().map(|r| project(cm, ctx, r, run, vals, t)).collect();
-            for (_, r) in extra.iter().filter(|(v, _)| v.as_deref() == Some(id.as_str())) {
+            let mut rs: Vec<RepFrame> = reps.iter().filter(|r| r.shown(run, vals, t)).map(|r| project(cm, ctx, r, run, vals, t)).collect();
+            for (_, r) in extra.iter().filter(|(v, r)| v.as_deref() == Some(id.as_str()) && r.shown(run, vals, t)) {
                 rs.push(project(cm, ctx, r, run, vals, t));
             }
             out.push(ViewFrame { id: id.clone(), kind: ctx.kind(), reps: rs, camera: None });
         }
-        let overlay = extra.iter().filter(|(v, _)| v.is_none()).map(|(_, r)| project(cm, &ViewCtx::Panel, r, run, vals, t)).collect();
+        let overlay = extra.iter().filter(|(v, r)| v.is_none() && r.shown(run, vals, t)).map(|(_, r)| project(cm, &ViewCtx::Panel, r, run, vals, t)).collect();
         (out, overlay)
     }
 }

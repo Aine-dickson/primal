@@ -264,6 +264,7 @@ Every binding has exactly one role. The role fixes when the value may change and
 - **MK-7.5** Every object, relation instance and binding has an identity. Identity is semantic: it does not depend on names, collection position, order of evaluation or appearance (R-12).
 - **MK-7.6** A **declared** element (written in the model definition) has an identity fixed in the IR, stable across edits that do not remove it (D-019). Its identity within a run is the path of declaration identities from the root.
 - **MK-7.7** A **created** element (made by a `create` or `connect` operation during a run) has an identity formed from the identity of the creating operation instance and a per-run counter. Identities are deterministic for a given model, run configuration and input history, so replay reproduces them (D-015). An identity is never reused within a run.
+- **MK-7.7a** (D-057) In v0 the `k`-th member a collection makes in a run, counting its starting members, has the identity of each declaration followed by `@` and the path `c[k]`, like a declared member (MK-8.3b). The counter is per collection and per run, so identities are deterministic and never reused within a run; iteration order is creation order (MK-8.3).
 
 ### 7.3 Composition
 
@@ -287,8 +288,9 @@ Every binding has exactly one role. The role fixes when the value may change and
 - **MK-8.2** Dynamic membership changes only through `create` and `destroy` operations (section 16), at event instants.
 - **MK-8.3** A collection's iteration order is the order of member identities (declared order, then creation order). Expressions over collections (`count`, `map`, `filter`, `any`, `all`, `sum`, `reduce`) use this order, so results are deterministic (D-015).
 - **MK-8.4** Every member of a collection is an object with its own bindings, flows and events. A flow or event declared on the member type applies to each member.
-- **MK-8.3a** (D-055) In v0 membership is declared and fixed: a part holds one object or `n` members, numbered from 1 in declaration order. `sum`, `min`, `max`, `any`, `all` and `count` take the members in that order, each named in the aggregate's body and optional filter. Over no member, `sum` is zero, `any` false, `all` true and `count` 0; `min` and `max` have no value. A filter of `min` or `max` may only compare members, which is decided without a value.
+- **MK-8.3a** (D-055) In v0 a collection declared without a capacity (MK-8.2a) has fixed membership: a part holds one object or `n` members, numbered from 1 in declaration order. `sum`, `min`, `max`, `any`, `all` and `count` take the members in that order, each named in the aggregate's body and optional filter. Over no member, `sum` is zero, `any` false, `all` true and `count` 0; `min` and `max` have no value. A filter of `min` or `max` may only compare members, which is decided without a value.
 - **MK-8.3b** (D-055) A model is elaborated before it is checked: each member becomes the bindings, flows, events, equations and constraints of its type, with the identity of each declaration followed by `@` and the member's path (`row[2]`, `cart.wheels[1]`) and the name `path.name` (MK-7.6). Checks apply to the elaborated model; a diagnostic about an element of a member refers to it and is located at its declaration.
+- **MK-8.2a** (D-057) In v0 a collection whose membership changes declares its **capacity**, the most members it makes in one run (`drops: Drop[max 50]`, or `Drop[2, max 50]` with two starting members), and is elaborated to that many members, each **alive** or not. A member not yet made or already destroyed has no flows, events, equations or constraints in effect, is left out of aggregates (`count` counts the members alive; `min` and `max` over none have no value, MK-5.5) and is not drawn (PK-5.1). Read by its number it has its starting values before it is made and its last values after it is destroyed. Making more members than the capacity stops the run at the `stop` constraint `c.capacity` (MK-12).
 - **MK-8.8** (D-055) A containing object may write the derivatives of its members' continuous state with flows over a collection (`for b in row { der(b.vel) += e }`, MK-7.10), read in its own scope with the member named. Interactions between members are written this way, with aggregates over the other members.
 
 ### 8.2 Relations
@@ -442,6 +444,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 
 - **MK-15.1** An **event** has identity, an owner, a **trigger**, an optional **enabling condition**, a **handler**, and an optional typed **payload**.
 - **MK-15.1a** In v0 a payload has a name and a type, declared where it enters the event: `on request(j: Momentum)` (the request supplies it) or `on E(j: Momentum)` (the payload `E` occurred or was emitted with, of the same type). Any other source is MK-E24. The payload is read by its name in the event's enabling condition and handler, and nowhere else. `emit E(v)` supplies the payload of `E`'s followers and requires `E` to declare a payload of `v`'s type. Every occurrence in the event log carries its payload (RC-15.1) (D-050).
+- **MK-15.1b** (D-057) A model may repeat an event for each member of a collection: `for d in drops { event land on falling(d.pos.y) { destroy d } }`. Each member has its own event, named `land[k]`, in effect while the member is alive; its trigger, condition and handler read the member as `d`, and its handler may write the member's bindings (`set d.vel = ...`, MK-7.10).
 - **MK-15.2** An event **occurs** at an event instant `(t, n)` (superdense time: `n` counts successive transitions at the same `t`). Locating `t` and ordering occurrences is the runtime contract; the kernel defines when an occurrence is due.
 
 ### 15.2 Triggers
@@ -515,6 +518,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 - **MK-16.4** Two `set` operations in one transition whose targets overlap are a **conflict**, even when they write equal values (R-26, D-005). A `set` and a `contribute` on overlapping targets are a conflict. Any number of `contribute` operations on one target combine and do not conflict.
 - **MK-16.5** Two `destroy` operations on one object are not a conflict (the result is the same); an operation targeting an object destroyed in the same transition is a conflict.
 - **MK-16.6** The runtime never resolves a conflict by picking a winner (R-26). A conflicted transition is rejected and reported; what follows is runtime policy (D-005).
+- **MK-16.1a** (D-057) In v0 `create c { x = e, ... }` makes the next member of `c` alive, its stored bindings `x` starting at `e`, read in the handler's scope on the state before the transition; bindings not given keep their declared starting values. Several creates of one collection in one handler make consecutive members. `destroy b` ends the member `b`. Creates of one collection from two events handled in the same transition conflict (MK-16.4) on the count of members made. Creation and destruction by intervention (MK-17.2) are not in v0: a presentation requests an event whose handler creates (MK-17.2a).
 
 ---
 
@@ -728,6 +732,7 @@ Positions that elaborate accepted decisions without changing them are specified 
 **Elaborations (in this specification only):**
 
 - Object types, parts and fixed collections, elaborated before checking (MK-7.13, MK-8.3a, MK-8.3b, MK-8.8; D-055).
+- Collections whose membership changes, with a declared capacity; `create`, `destroy` and events per member (MK-7.7a, MK-8.2a, MK-15.1b, MK-16.1a; D-057).
 
 - `Real` is binary64; non-finite results are `invalid`; integer overflow is `invalid` (2.2).
 - Quantities compute in coherent SI units; units affect input and display only (3.3).

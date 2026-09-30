@@ -214,11 +214,25 @@ pub enum Expr {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filter: Option<Box<Expr>>,
     },
+    /// The smallest (`min`) or largest (`max`) of the values whose condition holds, and no
+    /// value when none holds: `min` and `max` over a collection whose membership changes,
+    /// each term guarded by its member being alive. Made by elaboration only (D-057).
+    Extreme {
+        extreme: Func,
+        terms: Vec<Guarded>,
+    },
     /// The member a loop or an aggregate is at: `b` in `for b in row`. After `Aggregate`,
     /// which also has a `var` field: untagged forms are read in declaration order.
     Var {
         var: String,
     },
+}
+
+/// A term of an `extreme`: its value counts while `when` holds (D-057).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Guarded {
+    pub when: Expr,
+    pub value: Expr,
 }
 
 /// One arm of a `match`: the value when the scrutinee is `case`.
@@ -278,6 +292,10 @@ impl Expr {
                 body.iter().for_each(|b| b.walk(f));
                 filter.iter().for_each(|c| c.walk(f));
             }
+            Expr::Extreme { terms, .. } => terms.iter().for_each(|g| {
+                g.when.walk(f);
+                g.value.walk(f);
+            }),
             _ => {}
         }
     }

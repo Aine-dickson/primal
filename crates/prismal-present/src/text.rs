@@ -159,7 +159,7 @@ pub fn print(e: &Expr, cm: &CModel, params: &[String]) -> String {
             Builtin::Index => "index".into(),
         },
         // Elaboration replaces members and aggregates before anything is printed (D-055).
-        Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } => "…".into(),
+        Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } | Expr::Extreme { .. } => "…".into(),
         Expr::Const { .. } => "π".into(),
         Expr::Origin { .. } => "origin".into(),
         Expr::Der { der } => format!("der({})", symbol(cm, der)),

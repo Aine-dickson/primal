@@ -57,6 +57,11 @@ pub enum COp {
     Set { binding: usize, component: Option<usize>, value: CExpr },
     /// `emit E` or `emit E(value)`, the value becoming the payload of `E`'s followers (D-050).
     Emit { event: usize, payload: Option<CExpr> },
+    /// `destroy`: the liveness binding of a member becomes false; two in one transition do
+    /// not conflict (MK-16.5, D-057).
+    Destroy { binding: usize },
+    /// Operations performed when `cond` holds before the transition (D-057).
+    If { cond: CExpr, ops: Vec<COp> },
 }
 
 #[derive(Clone, Debug)]

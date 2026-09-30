@@ -172,7 +172,12 @@ impl<'a> Printer<'a> {
         for p in ps {
             notes(&mut s, &INDENT.repeat(2), &p.notes);
             let ty = self.root.object(&p.object).map(|o| o.name.clone()).unwrap_or_else(|| p.object.rsplit('.').next().unwrap_or(&p.object).to_string());
-            let count = p.count.map(|n| format!("[{n}]")).unwrap_or_default();
+            let count = match (p.count, p.capacity) {
+                (Some(n), Some(c)) => format!("[{n}, max {c}]"),
+                (None, Some(c)) => format!("[max {c}]"),
+                (Some(n), None) => format!("[{n}]"),
+                (None, None) => String::new(),
+            };
             let ovs: Vec<String> = p.overrides.iter().map(|o| format!("{} = {}", self.field_name(&o.binding), self.expr(&o.value))).collect();
             let head = format!("{INDENT}{INDENT}{}: {ty}{count}", p.name);
             match ovs.len() {
@@ -391,6 +396,11 @@ impl<'a> Printer<'a> {
                     Some(b) => format!("{}({} for {var} in {coll}{filter})", aggregate.name(), p(b)),
                 }
             }
+            // Made by elaboration only (D-057).
+            Expr::Extreme { extreme, terms } => {
+                let name = if *extreme == prismal_ir::Func::Min { "min" } else { "max" };
+                format!("{name}({})", terms.iter().map(|g| p(&g.value)).collect::<Vec<_>>().join(", "))
+            }
         }
     }
 
@@ -492,7 +502,27 @@ impl<'a> Printer<'a> {
             }
             sections.push(s);
         }
-        let events: Vec<String> = m.events.iter().filter(|e| e.process.is_none()).map(|e| self.event(e, 1)).collect();
+        // Consecutive events of one loop print as one `for` block (D-057).
+        let top: Vec<&Event> = m.events.iter().filter(|e| e.process.is_none()).collect();
+        let mut events: Vec<String> = vec![];
+        let mut i = 0;
+        while i < top.len() {
+            match &top[i].each {
+                Some(each) => {
+                    let mut s = format!("{INDENT}for {} in {} {{\n", each.var, self.part_name(&each.over));
+                    while i < top.len() && top[i].each.as_ref() == Some(each) {
+                        let _ = writeln!(s, "{}", self.event(top[i], 2));
+                        i += 1;
+                    }
+                    let _ = write!(s, "{INDENT}}}");
+                    events.push(s);
+                }
+                None => {
+                    events.push(self.event(top[i], 1));
+                    i += 1;
+                }
+            }
+        }
         if !events.is_empty() {
             sections.push(events.join("\n"));
         }
@@ -601,7 +631,10 @@ impl<'a> Printer<'a> {
     }
 
     fn target(&self, t: &Target) -> String {
-        let n = self.binding_name(&t.binding);
+        let n = match &t.member {
+            Some(m) => format!("{}.{}", self.member(m, &[]), self.field_name(&t.binding)),
+            None => self.binding_name(&t.binding),
+        };
         match t.component {
             Some(i) => format!("{n}.{}", self.axes.get(i).cloned().unwrap_or_else(|| i.to_string())),
             None => n,
@@ -616,6 +649,16 @@ impl<'a> Printer<'a> {
                 Some(p) => format!("emit {}({})", self.event_name(event), self.expr(p)),
                 None => format!("emit {}", self.event_name(event)),
             },
+            Op::Create { part, overrides } => {
+                let ovs: Vec<String> = overrides.iter().map(|o| format!("{} = {}", self.field_name(&o.binding), self.expr(&o.value))).collect();
+                match ovs.len() {
+                    0 => format!("create {}", self.part_name(part)),
+                    _ => format!("create {} {{ {} }}", self.part_name(part), ovs.join("; ")),
+                }
+            }
+            Op::Destroy { member } => format!("destroy {}", self.member(member, &[])),
+            // Made by elaboration only; printed for reading, not for parsing (D-057).
+            Op::If { r#if, then } => format!("if {} {{ {} }}", self.expr(r#if), then.iter().map(|o| self.op(o)).collect::<Vec<_>>().join("; ")),
         }
     }
 

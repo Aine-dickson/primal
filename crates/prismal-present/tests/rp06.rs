@@ -88,7 +88,7 @@ fn rp06_learner_script() {
     assert!((num_of(&i, "a_now") - 4.2).abs() <= 1e-12, "RP-06.E8");
     assert_eq!(log_len(&i), 4);
     // E9: `f` is derived: refused before reaching the model.
-    let attempt = vec![Op::Set { target: Target { binding: "QuadraticDemo.f".into(), component: None }, value: lambda(vec![Type::real()], param(0)) }];
+    let attempt = vec![Op::Set { target: Target::of("QuadraticDemo.f"), value: lambda(vec![Type::real()], param(0)) }];
     let e = i.submit(attempt).unwrap_err();
     assert_eq!(e.why, Why::Refused, "RP-06.E9 {e:?}");
     assert!((num_of(&i, "a_now") - 4.2).abs() <= 1e-12, "RP-06.E9 a unchanged");

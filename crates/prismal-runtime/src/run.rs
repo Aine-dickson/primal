@@ -805,13 +805,42 @@ impl<'a> Engine<'a> {
     #[allow(clippy::type_complexity)]
     fn transition(&mut self, ops: &[COp], intervention: bool) -> Result<Vec<(usize, Option<Value>)>, RunDiag> {
         let mut targets: Vec<(usize, Option<usize>)> = vec![];
+        let mut destroyed: Vec<usize> = vec![];
         let mut proposed = self.vals.clone();
         let mut emitted = vec![];
-        for op in ops {
+        // Conditional operations are read on the state before the transition (D-057).
+        let mut flat: Vec<&COp> = vec![];
+        fn performed<'o>(s: &Engine, ops: &'o [COp], out: &mut Vec<&'o COp>) -> Result<(), RunDiag> {
+            for op in ops {
+                match op {
+                    COp::If { cond, ops } => {
+                        if cond.eval(&s.ctx(&s.vals)).map_err(|st| s.diag(Category::Model, st.cause, None))?.boolean() {
+                            performed(s, ops, out)?;
+                        }
+                    }
+                    other => out.push(other),
+                }
+            }
+            Ok(())
+        }
+        performed(self, ops, &mut flat)?;
+        let conflict = |s: &Self, b: usize| s.diag(Category::Conflict, format!("two operations on `{}` in one transition", s.cm.bindings[b].name), None);
+        for op in flat {
             match op {
+                COp::If { .. } => unreachable!(),
+                // MK-16.5: destroying one member twice is not a conflict.
+                COp::Destroy { binding } => {
+                    if targets.iter().any(|(b, _)| b == binding) {
+                        return Err(conflict(self, *binding));
+                    }
+                    if !destroyed.contains(binding) {
+                        destroyed.push(*binding);
+                    }
+                    proposed[*binding] = Value::Bool(false);
+                }
                 COp::Set { binding, component, value } => {
-                    if targets.iter().any(|(b, c)| b == binding && (c.is_none() || component.is_none() || c == component)) {
-                        return Err(self.diag(Category::Conflict, format!("two operations on `{}` in one transition", self.cm.bindings[*binding].name), None));
+                    if destroyed.contains(binding) || targets.iter().any(|(b, c)| b == binding && (c.is_none() || component.is_none() || c == component)) {
+                        return Err(conflict(self, *binding));
                     }
                     targets.push((*binding, *component));
                     let v = value.eval(&self.ctx(&self.vals)).map_err(|s| self.diag(Category::Model, s.cause, None))?;
@@ -834,6 +863,16 @@ impl<'a> Engine<'a> {
                     };
                     emitted.push((*event, p));
                 }
+            }
+        }
+        // MK-16.5: an operation on a member destroyed in the same transition is a conflict. A
+        // member's bindings have the identity `declaration@path` of its liveness binding's
+        // path, or of a path inside it (D-057).
+        for &d in &destroyed {
+            let Some((_, path)) = self.cm.bindings[d].id.split_once('@') else { continue };
+            let inside = |id: &str| id.split_once('@').is_some_and(|(_, p)| p == path || p.starts_with(&format!("{path}.")));
+            if let Some(&(b, _)) = targets.iter().find(|(b, _)| inside(&self.cm.bindings[*b].id)) {
+                return Err(self.diag(Category::Conflict, format!("`{}` is set in the transition that destroys its member", self.cm.bindings[b].name), None));
             }
         }
         self.cm.update_derived(&mut proposed, self.t, self.cfg.t0).map_err(|s| self.diag(Category::Model, s.cause, None))?;

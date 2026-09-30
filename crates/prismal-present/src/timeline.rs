@@ -449,7 +449,7 @@ impl Player {
                         self.pb.refusals.push(Refusal { at: inp.at, input: describe(&inp.input), reason: format!("{beat} offers no {control} for `{binding}` (PK-9.8)") });
                         continue;
                     }
-                    let op = Op::Set { target: prismal_ir::Target { binding: binding.clone(), component: None }, value: value.clone() };
+                    let op = Op::Set { target: prismal_ir::Target::of(binding.clone()), value: value.clone() };
                     self.modify(inp.at, Action::Intervene(vec![op]));
                 }
             }

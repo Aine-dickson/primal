@@ -139,7 +139,7 @@ impl PresCx<'_, '_> {
         if each.is_some() {
             self.cx.vars.pop();
         }
-        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members }
+        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members, when: None }
     }
 
     fn view(&mut self, v: &ast::ViewDecl) -> Option<View> {
