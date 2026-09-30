@@ -297,6 +297,8 @@ Every binding has exactly one role. The role fixes when the value may change and
 
 - **MK-8.5** A **relation type** is a nominal declaration of endpoint roles (each typed by an object type), whether it is directed, and its bindings (relation properties). A **relation instance** has identity, its endpoints and its bindings (R-14).
 - **MK-8.6** Relation instances are held in a **relation set** owned by an object. Membership changes only through `connect` and `disconnect` operations. Destroying an object disconnects every relation instance with that object as an endpoint, in the same transition.
+- **MK-8.5a** (D-058) In v0 a relation type is declared in a model with its endpoint roles, each a member of a part of that model: `relation Spring(a in balls, b in balls) { ... }`, with the body of an object type, where `a` is the member at the endpoint. Relations are directed; several relations may join the same members. `s.a` is a member; `s.a == o` compares members and holds only for the same member of the same collection.
+- **MK-8.6a** (D-058) In v0 a relation set is a part whose type is a relation type (`springs: Spring[1, max 4] { a = balls[1], b = balls[2] }`), with the capacity, liveness and identities of MK-8.2a and MK-7.7a. Destroying a member disconnects, in the same transition, every relation of the relation sets of its container with that member at an endpoint. A derived binding of a member or relation that is not alive has no value.
 - **MK-8.7** A relation is semantic. A line or shape drawn between two objects is a representation and does not imply a relation (R-59). Geometry derived from endpoint positions is a derived binding, not the relation.
 
 The first slice (D-001) exercises neither dynamic collections nor relations. They are defined here so that later slices do not change the kernel.
@@ -518,6 +520,7 @@ where `x(t_a⁺)` is the value committed at `t_a` and `F_x` is the combined flow
 - **MK-16.4** Two `set` operations in one transition whose targets overlap are a **conflict**, even when they write equal values (R-26, D-005). A `set` and a `contribute` on overlapping targets are a conflict. Any number of `contribute` operations on one target combine and do not conflict.
 - **MK-16.5** Two `destroy` operations on one object are not a conflict (the result is the same); an operation targeting an object destroyed in the same transition is a conflict.
 - **MK-16.6** The runtime never resolves a conflict by picking a winner (R-26). A conflicted transition is rejected and reported; what follows is runtime policy (D-005).
+- **MK-16.1b** (D-058) In v0 `connect rs(x, y) { k = e }` makes the next relation of `rs` with the members `x`, `y` at its endpoints, in the order of the roles, and starting values; `disconnect s` ends the relation `s`. Starting values given by `create` and `connect` may set parameters of the member made (MK-6.6 concerns members already alive).
 - **MK-16.1a** (D-057) In v0 `create c { x = e, ... }` makes the next member of `c` alive, its stored bindings `x` starting at `e`, read in the handler's scope on the state before the transition; bindings not given keep their declared starting values. Several creates of one collection in one handler make consecutive members. `destroy b` ends the member `b`. Creates of one collection from two events handled in the same transition conflict (MK-16.4) on the count of members made. Creation and destruction by intervention (MK-17.2) are not in v0: a presentation requests an event whose handler creates (MK-17.2a).
 
 ---
@@ -733,6 +736,7 @@ Positions that elaborate accepted decisions without changing them are specified 
 
 - Object types, parts and fixed collections, elaborated before checking (MK-7.13, MK-8.3a, MK-8.3b, MK-8.8; D-055).
 - Collections whose membership changes, with a declared capacity; `create`, `destroy` and events per member (MK-7.7a, MK-8.2a, MK-15.1b, MK-16.1a; D-057).
+- Relation types with endpoints in collections, relation sets, `connect` and `disconnect` (MK-8.5a, MK-8.6a, MK-16.1b; D-058).
 
 - `Real` is binary64; non-finite results are `invalid`; integer overflow is `invalid` (2.2).
 - Quantities compute in coherent SI units; units affect input and display only (3.3).

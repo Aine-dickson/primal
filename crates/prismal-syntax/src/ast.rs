@@ -58,10 +58,13 @@ pub enum Member {
     Parts(Vec<PartDecl>),
 }
 
-/// An object type: the body of a model, declared in one (D-055).
+/// An object type: the body of a model, declared in one (D-055). A relation type has
+/// endpoint roles, each a member of a collection of the model: `relation Spring(a in balls,
+/// b in balls) { ... }` (D-058).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObjectDecl {
     pub name: Name,
+    pub ends: Vec<(Name, Name)>,
     pub members: Vec<Member>,
     pub notes: Vec<String>,
     pub span: Span,
@@ -211,6 +214,10 @@ pub enum OpStmt {
     Create { part: Name, overrides: Vec<(Name, Expr)>, span: Span },
     /// `destroy b` (D-057).
     Destroy { member: Expr, span: Span },
+    /// `connect springs(x, y) { k = e }` (D-058).
+    Connect { part: Name, ends: Vec<Expr>, overrides: Vec<(Name, Expr)>, span: Span },
+    /// `disconnect s` (D-058).
+    Disconnect { relation: Expr, span: Span },
 }
 
 #[derive(Clone, Debug, PartialEq)]

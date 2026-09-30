@@ -13,6 +13,8 @@ pub struct CBinding {
     pub init: Option<CExpr>,
     pub def: Option<CExpr>,
     pub intervenable: bool,
+    /// A derived binding evaluated only while the condition holds, else the value (D-058).
+    pub when: Option<(CExpr, Value)>,
 }
 
 /// How a continuous state's rate is formed (MK-14.7 to MK-14.11).
@@ -164,6 +166,13 @@ impl CModel {
                 vals[i] = v.clone();
                 continue;
             }
+            if let Some((w, none)) = &b.when {
+                let c = Ctx { vals: &vals, der: None, t: t0, t0, args: &[], payloads: &[] };
+                if !w.eval(&c)?.boolean() {
+                    vals[i] = none.clone();
+                    continue;
+                }
+            }
             let e = match b.role {
                 Role::Derived => b.def.as_ref(),
                 // D-051: an input starts at the value the run configuration supplies, else at
@@ -187,7 +196,10 @@ impl CModel {
         for &i in &self.derived_order {
             let v = {
                 let c = Ctx { vals, der: None, t, t0, args: &[], payloads: &[] };
-                self.bindings[i].def.as_ref().expect("checked").eval(&c)?
+                match &self.bindings[i].when {
+                    Some((w, none)) if !w.eval(&c)?.boolean() => none.clone(),
+                    _ => self.bindings[i].def.as_ref().expect("checked").eval(&c)?,
+                }
             };
             vals[i] = v;
         }

@@ -442,7 +442,26 @@ impl<'a> Parser<'a> {
             let notes = self.notes_before(start.line);
             let name = self.name("an object name")?;
             let members = self.block(|p| p.member())?;
-            return Ok(vec![Member::Object(ObjectDecl { name, members, notes, span: self.since(start) })]);
+            return Ok(vec![Member::Object(ObjectDecl { name, ends: vec![], members, notes, span: self.since(start) })]);
+        }
+        // `relation Spring(a in balls, b in balls) { ... }` (D-058); `relation` is a word only here.
+        if self.is_word("relation") && matches!(self.peek_at(1), Tok::Ident(_)) && self.is_punct_at(2, "(") {
+            self.bump();
+            let notes = self.notes_before(start.line);
+            let name = self.name("a relation name")?;
+            self.expect_punct("(")?;
+            let mut ends = vec![];
+            loop {
+                let n = self.name("an endpoint name")?;
+                self.expect_word("in")?;
+                ends.push((n, self.name("a collection")?));
+                if !self.eat_punct(",") {
+                    break;
+                }
+            }
+            self.expect_punct(")")?;
+            let members = if self.is_punct("{") { self.block(|p| p.member())? } else { vec![] };
+            return Ok(vec![Member::Object(ObjectDecl { name, ends, members, notes, span: self.since(start) })]);
         }
         Err(self.unexpected("a declaration (`param`, `state`, `flow`, `event`, ...)"))
     }
@@ -739,12 +758,34 @@ impl<'a> Parser<'a> {
             let member = self.postfix_expr()?;
             return Ok(OpStmt::Destroy { member, span: self.since(start) });
         }
-        for w in ["connect", "disconnect"] {
-            if self.is_word(w) {
-                return Err(Diag::new("SX-E06", format!("`{w}` needs relations, which v0 does not have"), self.span()));
+        // `connect springs(x, y)`, `connect springs(x, y) { k = e }` (D-058).
+        if self.eat_word("connect") {
+            let part = self.name("a set of relations")?;
+            self.expect_punct("(")?;
+            let mut ends = vec![];
+            loop {
+                ends.push(self.expr()?);
+                if !self.eat_punct(",") {
+                    break;
+                }
             }
+            self.expect_punct(")")?;
+            let overrides = if self.is_punct("{") {
+                self.block(|p| {
+                    let n = p.name("a binding of the relation")?;
+                    p.expect_punct("=")?;
+                    Ok(vec![(n, p.expr()?)])
+                })?
+            } else {
+                vec![]
+            };
+            return Ok(OpStmt::Connect { part, ends, overrides, span: self.since(start) });
         }
-        Err(self.unexpected("an operation (`set`, `contribute`, `emit`, `create`, `destroy`)"))
+        if self.eat_word("disconnect") {
+            let relation = self.postfix_expr()?;
+            return Ok(OpStmt::Disconnect { relation, span: self.since(start) });
+        }
+        Err(self.unexpected("an operation (`set`, `contribute`, `emit`, `create`, `destroy`, `connect`, `disconnect`)"))
     }
 
     // ------------------------------------------------------------ types and units

@@ -189,6 +189,20 @@ Acceptance: `prismal-present/tests/objects.rs` (a row of bouncing balls and a Mo
 
 Found on the way: a ball bouncing on a floor that is not at zero fell through after about fifty bounces, because the sign reference after a bounce was the rounding-level sign of the guard; fixed by RC-7.2a (D-056).
 
+### Relations
+
+Relation types (D-058) are object types with endpoint roles, each a member of a part of the model; a part of a relation type is a relation set, a collection in every other respect (D-057). An endpoint is a private discrete binding holding the member's number in its collection.
+
+| Part | Content |
+|---|---|
+| Syntax | `relation R(a in c, b in d) { ... }`; `rs: R[n, max m] { a = c[index] ... }`; `connect rs(x, y) { k = e }`, `disconnect s`; `s.a`, `s.a.pos`, `a.pos` inside the relation type; `s.a == o` |
+| Elaboration | endpoint bindings `R.a@rs[k]`; a binding of the member at an endpoint becomes `pick(index, [binding of member 1, ...])`; comparisons of members become comparisons of numbers when a member is chosen during the run, constants otherwise; `connect` is a create whose values include the endpoints; `destroy` adds, for each relation of the container ending at the member, a conditional disconnection; derived bindings carry `when` (their member alive); crossing guards of events of members not alive are replaced by zero |
+| Kernel | the `pick` expression (only the item picked is evaluated); derived bindings with `when`, not evaluated otherwise and holding a value that is not a number; the `make` operation, which may set a new member's parameters; an event whose handler destroys the member its condition requires is not self-retriggering (D-038) |
+
+Acceptance: `prismal-present/tests/relations.rs` (two balls on a spring oscillating as `1 + cos 2t` to 1e-6; cut, connect, a ball destroyed and its spring with it, frames drawing the springs alive; a thread snapping at exactly 0.5 s; printing; diagnostics); guide chapter 9, Relations between members.
+
+Found on the way: `create` could not give a parameter of the new member a starting value (MK-E08); guards of events of members not alive were evaluated on values that do not exist; a mistake in a member expression was reported twice.
+
 ### Members that come and go
 
 Collections whose membership changes (D-057) declare a capacity, the most members a run makes (`drops: Drop[max 40]`, `Drop[2, max 4]`), and are elaborated to that many members, the `k`-th member made being `drops[k]` for the whole run. Nothing below elaboration knows about membership, except three small forms.
@@ -283,7 +297,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Item | Where specified |
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
-| Relations (`connect`, `disconnect`), creation and destruction as interventions, unbounded populations (D-057 option 1), drags on members of collections; payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
+| Undirected relations as a declared property, relations between relations or across containers, creation and destruction as interventions, unbounded populations (D-057 option 1), drags on members of collections; payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
 | Drags on members of a group; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
@@ -317,4 +331,5 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 narration sound (D-053): cues named after their beats; recordings, synthesized speech and music in video export; a Voice menu in the web player.
 - 2026-09-30 round geometry (D-054): `circle`, `ellipse`, `arc` as exact elliptical arcs in frames, drawn by both renderers; the guide's wheel is a circle; guide lesson Unwrapping a circle.
 - 2026-09-30 objects and fixed collections (D-055), elaborated before checking; guide chapter 9; sign references after a transition (RC-7.2a, D-056).
+- 2026-09-30 relations (D-058): relation types, relation sets, `connect`, `disconnect`, endpoints; derived values of members not alive not evaluated.
 - 2026-09-30 collections whose membership changes (D-057): capacity, `create`, `destroy`, events per member, member targets; aggregates folded as balanced trees.

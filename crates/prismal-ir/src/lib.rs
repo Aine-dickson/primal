@@ -152,6 +152,10 @@ pub struct Binding {
     pub display: Display,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+    /// A derived binding of a member or relation that may not be alive is evaluated only
+    /// while this holds; otherwise it has no value (D-058). Made by elaboration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<Expr>,
 }
 
 impl Binding {
@@ -294,6 +298,25 @@ pub enum Op {
     /// reference to the member's liveness binding (D-057); destroying a member twice in one
     /// transition is not a conflict (MK-16.5).
     Destroy { member: Expr },
+    /// `connect springs(x, y) { k = e }`: a new relation instance of the relation set `part`,
+    /// with endpoints `ends` (members, in the order of the relation type's roles) and
+    /// starting values (MK-8.6, D-058).
+    Connect {
+        part: Id,
+        ends: Vec<Expr>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        overrides: Vec<present::Override>,
+    },
+    /// `disconnect s`: the relation instance leaves its set (D-058).
+    Disconnect { relation: Expr },
+    /// A member being made: its liveness binding `alive` becomes true and its stored
+    /// bindings, parameters included, take their starting values (MK-16.1a). Made by
+    /// elaboration of `create` and `connect` (D-057, D-058).
+    Make {
+        alive: Id,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        values: Vec<present::Override>,
+    },
     /// The operations `then`, performed only when `if` holds on the state before the
     /// transition. Made by elaboration (D-057); conflicts count only operations performed.
     If {
@@ -427,8 +450,21 @@ pub struct Model {
     /// Contained objects and collections (MK-7.11, MK-8.1, D-055).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<Part>,
+    /// The endpoint roles of a relation type (MK-8.5, D-058); empty for a model or an object
+    /// type. A part whose type has ends is a relation set.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ends: Vec<End>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+}
+
+/// An endpoint role of a relation type (MK-8.5, D-058): its identity (`Model.Spring.a`), its
+/// name, and the part of the containing model its endpoint is a member of.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct End {
+    pub id: Id,
+    pub name: String,
+    pub over: Id,
 }
 
 /// A declared enumeration (MK-2.2, D-049): a nominal type whose values are its cases. Its

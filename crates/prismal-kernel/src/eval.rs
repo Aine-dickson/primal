@@ -188,6 +188,8 @@ pub enum CExpr {
     /// The smallest or largest value among the terms whose condition holds; no value when
     /// none holds (D-057).
     Extreme(Func, Vec<(CExpr, CExpr)>),
+    /// The item whose number, from 1, the first expression gives; only it is evaluated (D-058).
+    Pick(Box<CExpr>, Vec<CExpr>),
 }
 
 /// The environment of an evaluation.
@@ -325,6 +327,13 @@ impl CExpr {
                 Ok(v) => Ok(v),
                 Err(_) => d.eval(c),
             },
+            CExpr::Pick(k, items) => {
+                let k = k.eval(c)?.num();
+                match items.get((k as usize).wrapping_sub(1)) {
+                    Some(x) if k.fract() == 0.0 => x.eval(c),
+                    _ => Err(Status::invalid(format!("no member number {k}"))),
+                }
+            }
             CExpr::Extreme(f, terms) => {
                 let mut best: Option<f64> = None;
                 for (w, v) in terms {

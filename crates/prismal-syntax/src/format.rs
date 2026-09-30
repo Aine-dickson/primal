@@ -161,7 +161,12 @@ impl<'a> Printer<'a> {
         let body = p.model();
         let mut lines: Vec<String> = body.lines().map(|l| if l.is_empty() { String::new() } else { format!("{INDENT}{l}") }).collect();
         if let Some(i) = lines.iter().position(|l| l.trim_start().starts_with("model ")) {
-            lines[i] = format!("{INDENT}object {} {{", o.name);
+            lines[i] = if o.ends.is_empty() {
+                format!("{INDENT}object {} {{", o.name)
+            } else {
+                let ends: Vec<String> = o.ends.iter().map(|e| format!("{} in {}", e.name, self.part_name(&e.over))).collect();
+                format!("{INDENT}relation {}({}) {{", o.name, ends.join(", "))
+            };
         }
         lines.join("\n")
     }
@@ -206,8 +211,20 @@ impl<'a> Printer<'a> {
             Expr::Var { var } => var.clone(),
             Expr::Part { part } => self.part_name(part),
             Expr::Item { item, index } => format!("{}[{}]", self.part_name(item), self.expr_p(index, params)),
+            Expr::End { end, of } => {
+                let name = self.end_name(end);
+                match of {
+                    Some(o) => format!("{}.{name}", self.member(o, params)),
+                    None => name,
+                }
+            }
             other => self.expr_p(other, params),
         }
+    }
+
+    /// The name of an endpoint of a relation type (D-058).
+    fn end_name(&self, id: &str) -> String {
+        self.root.objects.iter().flat_map(|o| &o.ends).find(|e| e.id == id).map(|e| e.name.clone()).unwrap_or_else(|| id.rsplit('.').next().unwrap_or(id).to_string())
     }
 
     fn binding_name(&self, id: &str) -> String {
@@ -386,7 +403,9 @@ impl<'a> Printer<'a> {
                 format!("match {} {{ {} }}", p(r#match), arms.iter().map(|a| format!("{} => {}", a.case, p(&a.value))).collect::<Vec<_>>().join(", "))
             }
             Expr::Field { field, of } => format!("{}.{}", self.member(of, params), self.field_name(field)),
-            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } => self.member(e, params),
+            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } => self.member(e, params),
+            // Made by elaboration only (D-058).
+            Expr::Pick { pick, from } => format!("pick({}, {})", p(pick), from.iter().map(|x| p(x)).collect::<Vec<_>>().join(", ")),
             Expr::Aggregate { aggregate, var, over, body, filter } => {
                 let coll = self.part_name(over);
                 let filter = filter.as_ref().map(|f| format!(" if {}", p(f))).unwrap_or_default();
@@ -657,6 +676,17 @@ impl<'a> Printer<'a> {
                 }
             }
             Op::Destroy { member } => format!("destroy {}", self.member(member, &[])),
+            Op::Connect { part, ends, overrides } => {
+                let ends: Vec<String> = ends.iter().map(|e| self.member(e, &[])).collect();
+                let ovs: Vec<String> = overrides.iter().map(|o| format!("{} = {}", self.field_name(&o.binding), self.expr(&o.value))).collect();
+                match ovs.len() {
+                    0 => format!("connect {}({})", self.part_name(part), ends.join(", ")),
+                    _ => format!("connect {}({}) {{ {} }}", self.part_name(part), ends.join(", "), ovs.join("; ")),
+                }
+            }
+            Op::Disconnect { relation } => format!("disconnect {}", self.member(relation, &[])),
+            // Made by elaboration only (D-057).
+            Op::Make { alive, values } => format!("make {alive} {{ {} }}", values.iter().map(|v| format!("{} = {}", v.binding, self.expr(&v.value))).collect::<Vec<_>>().join("; ")),
             // Made by elaboration only; printed for reading, not for parsing (D-057).
             Op::If { r#if, then } => format!("if {} {{ {} }}", self.expr(r#if), then.iter().map(|o| self.op(o)).collect::<Vec<_>>().join("; ")),
         }

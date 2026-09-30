@@ -31,6 +31,7 @@ Candidate A amended as accepted in D-028: A's keyword-led statements, with group
 | `flow { for b in c { der(b.x) = e ... } }` | flows written by the container for each member (MK-8.8) |
 | `parts { c: T[max m]  d: T[n, max m] { ... } }` | a collection whose membership changes (MK-8.2a, D-057): none or `n` members at the start, at most `m` made in a run |
 | `for b in c { event E on ... { ops } }` | an event of the model repeated for each member (MK-15.1b) |
+| `relation R(a in c, b in d) { ... }` | relation type (MK-8.5a, D-058); its endpoints are members of `c` and `d`; a part of type `R` is a relation set |
 
 Every block keyword also has a one-line form for a single declaration (`param g: Acceleration = 9.81 m/s^2`, `flow der(x) = v`). Both parse to the same IR; the formatter prints blocks.
 
@@ -40,7 +41,7 @@ Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit de
 
 Expressions add `match e { a => x, b => y }` (one arm per case, arms separated by commas or lines) to the shared sublanguage, and members (D-055): `a.x`, `c[k].x` with a constant `k`, `b.x` for a loop variable; aggregates `sum(e for b in c [if cond])`, likewise `min`, `max`, `any`, `all`, and `count(c)` or `count(b for b in c if cond)`. In views and representation blocks, `for b in c { reps }` repeats each representation per member. `parts` and `index` are contextual words.
 
-Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E [(p: T)]`, `on start`, `on input(i)`, `on request [(p: T)]`; `(p: T)` names the payload the occurrence receives (D-050). `emit E(v)` supplies a payload. `input { x: T [= default] }` declares an input with an optional default (D-051). Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`. `create c { x = e ... }` makes a member of `c` with starting values; `destroy b` ends the member `b`; `set b.x = e` writes a member's binding from its container (D-057). `max` in `[n, max m]` is a contextual word.
+Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E [(p: T)]`, `on start`, `on input(i)`, `on request [(p: T)]`; `(p: T)` names the payload the occurrence receives (D-050). `emit E(v)` supplies a payload. `input { x: T [= default] }` declares an input with an optional default (D-051). Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`. `create c { x = e ... }` makes a member of `c` with starting values; `destroy b` ends the member `b`; `set b.x = e` writes a member's binding from its container (D-057). `max` in `[n, max m]` is a contextual word. `connect rs(x, y) { k = e }` makes a relation, `disconnect s` ends one; `s.a` is the member at an endpoint (D-058); `relation` is a contextual word.
 
 ### 1.2 Presentation
 
@@ -532,4 +533,5 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-30 `reveal`, `hide ... for`, `camera` (D-042); `hide`, `reveal` and `zoom` added to the contextual keywords.
 - 2026-09-30 `group` with its members in a block (D-043).
 - 2026-09-30 `object` declarations, `parts`, member expressions, aggregates, `for` in flows and representation blocks (D-055).
+- 2026-09-30 `relation` declarations, `connect`, `disconnect`, endpoints `s.a` (D-058).
 - 2026-09-30 capacities `[max m]` and `[n, max m]`, `create`, `destroy`, member targets `set b.x`, `for` blocks of events (D-057).

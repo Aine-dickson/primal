@@ -291,11 +291,155 @@ run early of Fountain with Spray {
 
 The capacity is part of the model: it says how long the fountain can run. 40 drops, one every half second, last until 19.5 s; a run past 20 s stops there with the diagnostic that `drops.capacity` is exceeded. Choose a capacity that covers the longest run the presentation shows.
 
+## Relations between members
+
+A spring joins two balls; a thread ties one bead to another. The spring is not a ball, and it is not a line drawn between them: it is a **relation**, with its own values (a stiffness, a rest length) and two **endpoints**, each a member of a collection (MK-8.5, D-058).
+
+```text
+space Plane = euclidean(2)
+
+model Pair in Plane {
+  object Ball {
+    param { m: Mass = 1 kg }
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow { der(pos) = vel }
+  }
+  relation Spring(a in balls, b in balls) {
+    param {
+      k:    Quantity<M/T^2> = 2 N/m
+      rest: Length          = 1 m
+    }
+    derived {
+      stretch: Length        = |b.pos - a.pos| - rest
+      pull:    Vector<Force> = k * stretch * (b.pos - a.pos) / |b.pos - a.pos|
+    }
+  }
+  parts {
+    balls: Ball[2, max 3] { pos = origin + ((2 * index - 3) * 1 m, 0 m) }
+    springs: Spring[1, max 4] {
+      a = balls[1]
+      b = balls[2]
+    }
+  }
+  flow {
+    for o in balls {
+      der(o.vel) = (sum(s.pull for s in springs if s.a == o) - sum(s.pull for s in springs if s.b == o)) / o.m
+    }
+  }
+  event cut on request { disconnect springs[1] }
+  event join on request { connect springs(balls[1], balls[2]) { k = 4 N/m } }
+  derived {
+    links: Real   = count(springs)
+    gap:   Length = balls[2].pos.x - balls[1].pos.x
+  }
+}
+```
+
+- `relation Spring(a in balls, b in balls) { ... }` declares a relation type: its endpoints `a` and `b` are members of `balls`, and its body has the bindings of each spring. Inside it, `a.pos` is the position of the ball at `a`.
+- `springs: Spring[1, max 4]` holds the springs, like a collection: one at the start, at most four made in a run. The overrides of the starting spring name its endpoints, `a = balls[1]`.
+- The balls move by the springs' pulls. A ball cannot see the springs; the model writes each ball's acceleration as a sum over the springs that end at it: `s.a == o` holds when the spring's endpoint `a` is the ball `o`. A spring pulls its `a` end towards `b`, and its `b` end the other way.
+- `connect springs(balls[1], balls[2]) { k = 4 N/m }` makes a spring between two members, with a starting value; `disconnect springs[1]` removes one. Destroying a ball disconnects every spring that ends at it.
+
+| Form | Does |
+|---|---|
+| `relation R(a in c, b in d) { ... }` | a relation type; its endpoints are members of `c` and `d` |
+| `rs: R[n, max m] { a = c[1] ... }` | a set of relations, like a collection; starting relations name their endpoints |
+| `s.a`, `s.a.pos` | the member at an endpoint, and one of its bindings |
+| `s.a == o` | whether the endpoint is the member `o` |
+| `connect rs(x, y) { k = e }` | makes a relation between the members `x` and `y` |
+| `disconnect s` | removes a relation |
+
+The endpoints of a relation are chosen while the model runs, so `s.a.pos` is the position of whichever ball the spring holds at that moment.
+
+```text
+presentation Springs for Pair {
+  view scene: spatial(Plane, scale: 1 m -> 50 px, y: up) {
+    for o in balls { marker(o.pos) as ball }
+    for s in springs { segment(s.a.pos, s.b.pos) as spring }
+  }
+  observe {
+    gap   = gap live
+    links = links live
+  }
+}
+```
+
+The balls start 2 m apart on a spring of rest length 1 m. Each ball has mass `m`, so the gap `d` obeys `d'' = -2 k (d - 1 m) / m`: it oscillates as `1 m + cos(ω t) × 1 m` with `ω = sqrt(2 k / m) = 2 rad/s`, and after 1 s it is `1 + cos 2 = 0.583853 m`.
+
+```cases
+run oscillates of Pair with Springs {
+  until t0 + 1 s
+  expect {
+    gap   == 0.583853 m within 1e-6 m
+    links == 1 within 1e-12
+  }
+}
+```
+
+An event can be repeated for each relation, like an event for each member. A thread snaps when stretched by 1 m:
+
+```text
+space Plane = euclidean(2)
+
+model Threads in Plane {
+  object Bead {
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow { der(pos) = vel }
+  }
+  relation Thread(a in beads, b in beads) {
+    derived { stretch: Length = |b.pos - a.pos| - 1 m }
+  }
+  parts {
+    beads: Bead[2, max 2] {
+      pos = origin + ((index - 1.5) * 1 m, 0 m)
+      vel = ((2 * index - 3) * 1 m/s, 0 m/s)
+    }
+    threads: Thread[1, max 1] {
+      a = beads[1]
+      b = beads[2]
+    }
+  }
+  for s in threads {
+    event snap on rising(s.stretch - 1 m) { disconnect s }
+  }
+  derived { held: Real = count(threads) }
+}
+```
+
+```text
+presentation Watch for Threads {
+  observe {
+    early = held at t0 + 0.4 s
+    late  = held at t0 + 0.6 s
+  }
+}
+```
+
+The beads start 1 m apart and separate at 2 m/s, so the thread is stretched by 1 m after 0.5 s:
+
+```cases
+run snaps of Threads with Watch {
+  until t0 + 1 s
+  expect {
+    early == 1 within 1e-12
+    late  == 0 within 1e-12
+  }
+}
+```
+
+A relation that is not made yet, or already disconnected, has no values: `springs[3].stretch` before a third spring is connected is not a number. The count, sums and representations leave it out, as they leave out members that are not alive.
+
 ## Names in results
 
 Each member's bindings and events have names built from the member: `row[2].pos`, `moon.bounce`. They appear in diagnostics, event logs and text alternatives. A mistake in the object type is reported once for each member, and located at the line in the object type.
 
-Relations between objects (a spring between two chosen balls, a link that can be made and broken) come later.
+A relation's bindings are named like a member's: `springs[2].stretch`.
 
 ## Mistakes
 
@@ -364,6 +508,24 @@ model M in Plane {
 ```
 
 `destroy` removes a member of a collection; `speed` is a binding.
+
+```error
+// error: MK-E26
+space Plane = euclidean(2)
+model M in Plane {
+  object Ball {
+    state { pos: Point = origin }
+  }
+  relation Link(a in balls, b in balls) {}
+  parts {
+    balls: Ball[2]
+    links: Link[max 3]
+  }
+  event tie on every 1 s { create links }
+}
+```
+
+`links` holds relations: they are made with `connect links(balls[1], balls[2])`, which names the endpoints.
 
 ## Exercises
 

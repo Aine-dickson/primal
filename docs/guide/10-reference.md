@@ -118,6 +118,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `else`, `if`, `then` | conditional values; `if` also filters an aggregate and enables an event | 1, 5, 9 |
 | `emit` | an operation that makes another event happen | 5 |
 | `enum`, `match` | enumerations and a choice by case | 5 |
+| `connect`, `disconnect` | operations that make a relation between members and remove one | 9 |
 | `create`, `destroy` | operations that make a member of a collection and remove one | 9 |
 | `equation` | a named relation, shown and optionally checked | 6 |
 | `event` | something that happens at an instant, with operations | 5 |
@@ -154,6 +155,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `private` | a binding hidden from outside | 2 |
 | `process` | a named group of flows and events | 4 |
 | `propose` | the binding change an inverse proposes | 7 |
+| `relation` | a relation type, whose endpoints are members of collections | 9 |
 | `request` | an event requested from outside (a button, a lesson) | 5 |
 | `run` | a test case; in timelines, `run rate r` | 1, 8 |
 | `set` | an operation that replaces a value | 5 |
@@ -167,7 +169,6 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `zeno`, `settle` | what happens when an event repeats without end | 5 |
 | `zoom` | the zoom of a `camera` action | 8 |
 | `contribute` | an operation adding to discrete state; not implemented (MK-E11) | reserved for later |
-| `connect`, `disconnect` | operations on relations | reserved for later |
 | `enter` | reserved | reserved for later |
 | `animate`, `bind`, `release` | timeline actions, parsed and reported as not yet implemented | reserved for later |
 

@@ -150,6 +150,7 @@ impl ModelBuilder {
                 equations: vec![],
                 objects: vec![],
                 parts: vec![],
+                ends: vec![],
                 constraints: vec![],
                 enums: vec![],
                 functions: vec![],
@@ -188,6 +189,7 @@ impl ModelBuilder {
             private: false,
             display: Display::default(),
             notes: vec![],
+            when: None,
         });
         id
     }

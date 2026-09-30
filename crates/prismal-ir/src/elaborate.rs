@@ -50,12 +50,30 @@ fn join(a: &str, b: &str) -> String {
 }
 
 /// A member: its path, its object type and, in a collection whose membership changes, the
-/// reference to its liveness binding.
+/// reference to its liveness binding; the container it is declared in (type and path), the
+/// key of its collection and its number there (D-058).
 #[derive(Clone)]
 struct Inst<'a> {
     path: String,
     ty: &'a Model,
     live: Option<Expr>,
+    outer_ty: &'a Model,
+    outer_path: String,
+    coll: String,
+    pos: u32,
+}
+
+/// A member selected by an expression: one known when elaborating, or one of a collection's
+/// members chosen during the run by its number, as the member at a relation's endpoint.
+#[derive(Clone)]
+enum Sel<'a> {
+    One(Inst<'a>),
+    Chosen { members: Vec<Inst<'a>>, index: Expr, coll: String },
+}
+
+/// The key of a collection: the container's path and the part.
+fn coll_key(path: &str, part: &str) -> String {
+    format!("{path}#{part}")
 }
 
 /// The liveness binding of the member at `path` of the part `part` (D-057).
@@ -94,11 +112,17 @@ struct Scope<'a> {
     live: Option<Expr>,
     /// In an event repeated per member: its payload's identity as written and the member's.
     payload: Option<(Id, Id)>,
+    /// The member whose body this is, for the endpoints of a relation type (D-058).
+    me: Option<Inst<'a>>,
 }
 
 impl<'a> Scope<'a> {
     fn root(m: &'a Model) -> Scope<'a> {
-        Scope { ty: m, path: String::new(), vars: vec![], index: None, live: None, payload: None }
+        Scope { ty: m, path: String::new(), vars: vec![], index: None, live: None, payload: None, me: None }
+    }
+    /// The scope of the container a member is declared in.
+    fn outer(inst: &Inst<'a>) -> Scope<'a> {
+        Scope { ty: inst.outer_ty, path: inst.outer_path.clone(), vars: vec![], index: None, live: None, payload: None, me: None }
     }
     fn with_var(&self, var: &str, inst: Inst<'a>) -> Scope<'a> {
         let mut s = self.clone();
@@ -140,19 +164,79 @@ impl<'a> Cx<'a> {
             return None;
         };
         let ty = self.object(&p.object)?;
+        let coll = coll_key(&s.path, &p.id);
+        let inst = |path: String, live: Option<Expr>, pos: u32| Inst { path, ty, live, outer_ty: s.ty, outer_path: s.path.clone(), coll: coll.clone(), pos };
         Some(match (p.count, p.capacity) {
             (_, Some(n)) => (
                 (1..=n)
                     .map(|k| {
                         let path = join(&s.path, &format!("{}[{k}]", p.name));
-                        Inst { live: Some(Expr::Ref { r#ref: alive(&p.id, &path) }), path, ty }
+                        inst(path.clone(), Some(Expr::Ref { r#ref: alive(&p.id, &path) }), k)
                     })
                     .collect(),
                 true,
             ),
-            (None, None) => (vec![Inst { path: join(&s.path, &p.name), ty, live: None }], false),
-            (Some(n), None) => ((1..=n).map(|k| Inst { path: join(&s.path, &format!("{}[{k}]", p.name)), ty, live: None }).collect(), true),
+            (None, None) => (vec![inst(join(&s.path, &p.name), None, 1)], false),
+            (Some(n), None) => ((1..=n).map(|k| inst(join(&s.path, &format!("{}[{k}]", p.name)), None, k)).collect(), true),
         })
+    }
+
+    /// The member at the endpoint `end` of the relation instance `rel` (D-058): its number
+    /// is the instance's endpoint binding.
+    fn end(&mut self, rel: &Inst<'a>, end: &str) -> Option<Sel<'a>> {
+        let Some(e) = rel.ty.ends.iter().find(|x| x.id == end) else {
+            self.err("MK-E26", format!("`{}` is not a relation with an endpoint `{}`", rel.ty.name, end.rsplit('.').next().unwrap_or(end)));
+            return None;
+        };
+        let outer = Scope::outer(rel);
+        let (members, many) = self.members(&outer, &e.over)?;
+        if !many {
+            return members.into_iter().next().map(Sel::One);
+        }
+        Some(Sel::Chosen { members, index: Expr::Ref { r#ref: flat(end, &rel.path) }, coll: coll_key(&outer.path, &e.over) })
+    }
+
+    /// The member an expression selects, known now or chosen during the run.
+    fn select(&mut self, s: &Scope<'a>, e: &Expr) -> Option<Sel<'a>> {
+        match e {
+            Expr::End { end, of } => {
+                let rel = match of {
+                    Some(x) => self.member(s, x)?,
+                    None => match &s.me {
+                        Some(m) => m.clone(),
+                        None => {
+                            self.err("MK-E26", "an endpoint is read in its relation type, or of a relation instance (`s.a`)".into());
+                            return None;
+                        }
+                    },
+                };
+                self.end(&rel, end)
+            }
+            _ => self.member(s, e).map(Sel::One),
+        }
+    }
+
+    /// The collection and the number of a selected member.
+    fn key(sel: &Sel<'a>) -> (String, Expr) {
+        match sel {
+            Sel::One(i) => (i.coll.clone(), num(i.pos as f64)),
+            Sel::Chosen { index, coll, .. } => (coll.clone(), index.clone()),
+        }
+    }
+
+    /// A binding of a selected member: a reference, or a pick among the members.
+    fn field_of(&mut self, sel: &Sel<'a>, field: &str) -> Expr {
+        let ty = match sel {
+            Sel::One(i) => i.ty,
+            Sel::Chosen { members, .. } => members[0].ty,
+        };
+        if ty.binding(field).is_none() && !ty.ends.iter().any(|e| e.id == field) {
+            self.err("MK-E26", format!("an object `{}` has no binding `{}`", ty.name, field.rsplit('.').next().unwrap_or(field)));
+        }
+        match sel {
+            Sel::One(i) => Expr::Ref { r#ref: flat(field, &i.path) },
+            Sel::Chosen { members, index, .. } => Expr::Pick { pick: Box::new(index.clone()), from: members.iter().map(|m| Expr::Ref { r#ref: flat(field, &m.path) }).collect() },
+        }
     }
 
     /// The member an expression selects: a loop variable, a contained object, or a member of
@@ -193,6 +277,10 @@ impl<'a> Cx<'a> {
                 }
                 ms.into_iter().nth(k as usize - 1)
             }
+            Expr::End { .. } => {
+                self.err("MK-E26", "an endpoint is chosen during the run: here a member known when the program is read is needed".into());
+                None
+            }
             _ => None,
         }
     }
@@ -216,7 +304,7 @@ impl<'a> Cx<'a> {
     }
 
     fn is_member(e: &Expr) -> bool {
-        matches!(e, Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. })
+        matches!(e, Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. })
     }
 
     /// An expression with members and aggregates replaced, and identities declared in the
@@ -235,22 +323,27 @@ impl<'a> Cx<'a> {
                 Some(k) => Expr::Num { num: k as f64, unit: None },
                 None => e.clone(),
             },
-            Expr::Field { field, of } => {
-                let Some(inst) = self.member(s, of) else { return Expr::Num { num: 0.0, unit: None } };
-                if inst.ty.binding(field).is_none() {
-                    self.err("MK-E26", format!("an object `{}` has no binding `{}`", inst.ty.name, field.rsplit('.').next().unwrap_or(field)));
-                }
-                Expr::Ref { r#ref: flat(field, &inst.path) }
-            }
-            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } => {
+            Expr::Field { field, of } => match self.select(s, of) {
+                Some(sel) => self.field_of(&sel, field),
+                None => num(0.0),
+            },
+            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } => {
                 self.err("MK-E26", "a member is not a value: read one of its bindings, `b.pos`".into());
-                Expr::Num { num: 0.0, unit: None }
+                num(0.0)
             }
-            // Members compare by identity, which elaboration knows: `o != b` is a constant.
+            Expr::Pick { pick, from } => Expr::Pick { pick: b(self, pick), from: from.iter().map(|x| self.expr(s, x)).collect() },
+            // Members compare by identity. Members known now compare to a constant (`o != b`);
+            // a member at an endpoint compares by its number in its collection (D-058).
             Expr::Bin { bin: bin @ (BinOp::Eq | BinOp::Ne), l, r } if Self::is_member(l) && Self::is_member(r) => {
-                let (a, c) = (self.member(s, l), self.member(s, r));
-                let same = matches!((&a, &c), (Some(x), Some(y)) if x.path == y.path);
-                Expr::Bool { bool: same == (*bin == BinOp::Eq) }
+                let (Some(a), Some(c)) = (self.select(s, l), self.select(s, r)) else { return Expr::Bool { bool: false } };
+                if let (Sel::One(x), Sel::One(y)) = (&a, &c) {
+                    return Expr::Bool { bool: (x.path == y.path) == (*bin == BinOp::Eq) };
+                }
+                let ((ka, ia), (kc, ic)) = (Self::key(&a), Self::key(&c));
+                if ka != kc {
+                    return Expr::Bool { bool: *bin == BinOp::Ne };
+                }
+                Expr::bin(*bin, ia, ic)
             }
             Expr::Aggregate { aggregate, var, over, body, filter } => self.aggregate(s, *aggregate, var, over, body.as_deref(), filter.as_deref()),
             Expr::Neg { neg } => Expr::Neg { neg: b(self, neg) },
@@ -372,8 +465,8 @@ impl<'a> Cx<'a> {
         Target { binding, component: t.component, member: None }
     }
 
-    /// The operations of a handler. The creates of one collection in one handler take the
-    /// next free members in order, and the count of members made is set once (D-057).
+    /// The operations of a handler. The creates and connects of one collection in one handler
+    /// take the next free members in order, and the count of members made is set once (D-057).
     fn ops(&mut self, s: &Scope<'a>, ops: &[Op]) -> Vec<Op> {
         let mut out = vec![];
         let mut made: Vec<(Id, u32)> = vec![];
@@ -383,61 +476,53 @@ impl<'a> Cx<'a> {
                 Op::Contribute { target, value } => out.push(Op::Contribute { target: self.target(s, target), value: self.expr(s, value) }),
                 Op::Emit { event, payload } => out.push(Op::Emit { event: s.local(event), payload: payload.as_ref().map(|p| self.expr(s, p)) }),
                 Op::If { r#if, then } => out.push(Op::If { r#if: self.expr(s, r#if), then: self.ops(s, then) }),
-                Op::Destroy { member } => {
-                    let inst = match member {
-                        Expr::Ref { .. } => {
-                            out.push(o.clone());
-                            continue;
-                        }
-                        m => self.member(s, m),
+                Op::Destroy { member: Expr::Ref { .. } } | Op::Make { .. } => out.push(o.clone()),
+                Op::Destroy { member } | Op::Disconnect { relation: member } => {
+                    let what = if matches!(o, Op::Destroy { .. }) { "destroyed" } else { "disconnected" };
+                    let Some(sel) = self.select(s, member) else { continue };
+                    let relation = match &sel {
+                        Sel::One(i) => !i.ty.ends.is_empty(),
+                        Sel::Chosen { members, .. } => !members[0].ty.ends.is_empty(),
                     };
-                    match inst.and_then(|i| i.live) {
-                        Some(live) => out.push(Op::Destroy { member: live }),
-                        None => self.err("MK-E26", "only a member of a collection declared with `max` can be destroyed (`row: Ball[max 20]`)".into()),
+                    if relation != matches!(o, Op::Disconnect { .. }) {
+                        self.err("MK-E26", if relation { "a relation is ended with `disconnect`".into() } else { "an object is ended with `destroy`".into() });
+                        continue;
                     }
+                    self.destroy(&sel, what, &mut out);
                 }
                 Op::Create { part, overrides } => {
-                    let Some(p) = s.ty.part(part) else {
+                    let Some(ty) = s.ty.part(part).and_then(|p| self.root.objects.iter().find(|o| o.id == p.object)) else {
                         self.err("MK-E26", format!("unknown part `{part}`"));
                         continue;
                     };
-                    let Some(cap) = p.capacity else {
-                        self.err("MK-E26", format!("`{}` has a fixed membership: declare it with `max` to create members (`{}: {}[max 20]`)", p.name, p.name, part_name_of(self.root, &p.object)));
+                    if !ty.ends.is_empty() {
+                        self.err("MK-E26", format!("`{}` holds relations: they are made with `connect`", part_name(s.ty, part)));
+                        continue;
+                    }
+                    let values = self.starting(s, ty, overrides, "create");
+                    self.make(s, part, values, &mut made, &mut out);
+                }
+                Op::Connect { part, ends, overrides } => {
+                    let Some(ty) = s.ty.part(part).and_then(|p| self.root.objects.iter().find(|o| o.id == p.object)) else {
+                        self.err("MK-E26", format!("unknown part `{part}`"));
                         continue;
                     };
-                    let Some(ty) = self.object(&p.object) else { continue };
-                    let start = p.count.unwrap_or(0);
-                    let j = match made.iter_mut().find(|(id, _)| id == part) {
-                        Some((_, n)) => {
-                            *n += 1;
-                            *n - 1
-                        }
-                        None => {
-                            made.push((part.clone(), 1));
-                            0
-                        }
-                    };
-                    let counter = created(part, &s.path);
+                    if ty.ends.is_empty() {
+                        self.err("MK-E26", format!("`{}` holds objects: they are made with `create`", part_name(s.ty, part)));
+                        continue;
+                    }
+                    if ends.len() != ty.ends.len() {
+                        self.err("MK-E26", format!("`{}` has {} endpoints, `connect` gives {}", ty.name, ty.ends.len(), ends.len()));
+                        continue;
+                    }
                     let mut values = vec![];
-                    for ov in overrides {
-                        match ty.binding(&ov.binding) {
-                            None => self.err("MK-E26", format!("an object `{}` has no binding `{}`", ty.name, ov.binding.rsplit('.').next().unwrap_or(&ov.binding))),
-                            Some(b) if matches!(b.role, Role::Derived | Role::Input | Role::Constant) => {
-                                self.err("MK-E26", format!("`create` gives starting values to stored bindings; `{}` is not one", b.name))
-                            }
-                            Some(_) => values.push((ov.binding.clone(), self.expr(s, &ov.value))),
+                    for (e, x) in ty.ends.iter().zip(ends) {
+                        if let Some(v) = self.end_value(s, e, x) {
+                            values.push((e.id.clone(), v));
                         }
                     }
-                    // The member made is the next one: `created` members exist before it.
-                    for k in (start + j + 1)..=cap {
-                        let path = join(&s.path, &format!("{}[{k}]", p.name));
-                        let mut then = vec![Op::Set { target: Target::of(alive(part, &path)), value: Expr::Bool { bool: true } }];
-                        for (b, v) in &values {
-                            then.push(Op::Set { target: Target::of(flat(b, &path)), value: v.clone() });
-                        }
-                        let cond = Expr::bin(BinOp::Eq, Expr::Ref { r#ref: counter.clone() }, num((k - 1 - j) as f64));
-                        out.push(Op::If { r#if: cond, then });
-                    }
+                    values.extend(self.starting(s, ty, overrides, "connect"));
+                    self.make(s, part, values, &mut made, &mut out);
                 }
             }
         }
@@ -446,6 +531,94 @@ impl<'a> Cx<'a> {
             out.push(Op::Set { target: Target::of(counter.clone()), value: Expr::bin(BinOp::Add, Expr::Ref { r#ref: counter }, num(n as f64)) });
         }
         out
+    }
+
+    /// Starting values given by `create` or `connect`: stored bindings of the type only.
+    fn starting(&mut self, s: &Scope<'a>, ty: &'a Model, overrides: &[crate::present::Override], op: &str) -> Vec<(Id, Expr)> {
+        let mut values = vec![];
+        for ov in overrides {
+            match ty.binding(&ov.binding) {
+                None => self.err("MK-E26", format!("an object `{}` has no binding `{}`", ty.name, ov.binding.rsplit('.').next().unwrap_or(&ov.binding))),
+                Some(b) if matches!(b.role, Role::Derived | Role::Input | Role::Constant) => self.err("MK-E26", format!("`{op}` gives starting values to stored bindings; `{}` is not one", b.name)),
+                Some(_) => values.push((ov.binding.clone(), self.expr(s, &ov.value))),
+            }
+        }
+        values
+    }
+
+    /// The number, in the endpoint's collection, of the member `x` given for the endpoint `e`.
+    fn end_value(&mut self, s: &Scope<'a>, e: &crate::End, x: &Expr) -> Option<Expr> {
+        let sel = self.select(s, x)?;
+        let (k, idx) = Self::key(&sel);
+        if k != coll_key(&s.path, &e.over) {
+            self.err("MK-E26", format!("the endpoint `{}` is a member of `{}`", e.name, part_name(s.ty, &e.over)));
+            return None;
+        }
+        Some(idx)
+    }
+
+    /// Makes the next member of the collection `part`, with the values given (D-057, D-058).
+    fn make(&mut self, s: &Scope<'a>, part: &Id, values: Vec<(Id, Expr)>, made: &mut Vec<(Id, u32)>, out: &mut Vec<Op>) {
+        let p = s.ty.part(part).expect("known part");
+        let Some(cap) = p.capacity else {
+            self.err("MK-E26", format!("`{}` has a fixed membership: declare it with `max` to make members (`{}: {}[max 20]`)", p.name, p.name, part_name_of(self.root, &p.object)));
+            return;
+        };
+        let start = p.count.unwrap_or(0);
+        let j = match made.iter_mut().find(|(id, _)| id == part) {
+            Some((_, n)) => {
+                *n += 1;
+                *n - 1
+            }
+            None => {
+                made.push((part.clone(), 1));
+                0
+            }
+        };
+        let counter = created(part, &s.path);
+        // The member made is the next one: `created` members exist before it.
+        for k in (start + j + 1)..=cap {
+            let path = join(&s.path, &format!("{}[{k}]", p.name));
+            let then = vec![Op::Make { alive: alive(part, &path), values: values.iter().map(|(b, v)| crate::present::Override { binding: flat(b, &path), value: v.clone() }).collect() }];
+            let cond = Expr::bin(BinOp::Eq, Expr::Ref { r#ref: counter.clone() }, num((k - 1 - j) as f64));
+            out.push(Op::If { r#if: cond, then });
+        }
+    }
+
+    /// Ends the selected member and disconnects the relations it is an endpoint of, in the
+    /// same transition (MK-8.6, D-058).
+    fn destroy(&mut self, sel: &Sel<'a>, what: &str, out: &mut Vec<Op>) {
+        let (members, index) = match sel {
+            Sel::One(i) => (vec![i.clone()], None),
+            Sel::Chosen { members, index, .. } => (members.clone(), Some(index.clone())),
+        };
+        if members.iter().any(|m| m.live.is_none()) {
+            self.err("MK-E26", format!("only a member of a collection declared with `max` can be {what} (`row: Ball[max 20]`)"));
+            return;
+        }
+        for m in &members {
+            let op = Op::Destroy { member: m.live.clone().unwrap() };
+            match &index {
+                None => out.push(op),
+                Some(ix) => out.push(Op::If { r#if: Expr::bin(BinOp::Eq, ix.clone(), num(m.pos as f64)), then: vec![op] }),
+            }
+        }
+        let (coll, idx) = Self::key(sel);
+        let outer = Scope::outer(&members[0]);
+        for p in &outer.ty.parts {
+            let Some(rty) = self.root.objects.iter().find(|o| o.id == p.object) else { continue };
+            for e in rty.ends.iter().filter(|e| coll_key(&outer.path, &e.over) == coll) {
+                let Some((rels, _)) = self.members(&outer, &p.id) else { continue };
+                for r in rels {
+                    let Some(live) = r.live.clone() else {
+                        self.err("MK-E26", format!("`{}` holds relations with members that can be {what}: declare it with `max`", p.name));
+                        return;
+                    };
+                    let cond = Expr::bin(BinOp::And, live.clone(), Expr::bin(BinOp::Eq, Expr::Ref { r#ref: flat(&e.id, &r.path) }, idx.clone()));
+                    out.push(Op::If { r#if: cond, then: vec![Op::Destroy { member: live }] });
+                }
+            }
+        }
     }
 
     /// An event in scope `s`, with the identity and name it has there, in effect while `live`.
@@ -462,6 +635,13 @@ impl<'a> Cx<'a> {
             Trigger::Level { cond } => Trigger::Level { cond: self.expr(s, cond) },
             Trigger::Start => Trigger::Start,
             Trigger::Request => Trigger::Request,
+        };
+        // The guard of a member not alive is not evaluated: its values may not exist (D-058).
+        let trigger = match (trigger, &live) {
+            (Trigger::Rising { guard }, Some(l)) => Trigger::Rising { guard: Self::guarded(l, guard) },
+            (Trigger::Falling { guard }, Some(l)) => Trigger::Falling { guard: Self::guarded(l, guard) },
+            (Trigger::Crossing { guard }, Some(l)) => Trigger::Crossing { guard: Self::guarded(l, guard) },
+            (t, _) => t,
         };
         let enable = e.enable.as_ref().map(|c| self.expr(s, c));
         Event {
@@ -482,6 +662,10 @@ impl<'a> Cx<'a> {
             each: None,
             notes: e.notes.clone(),
         }
+    }
+
+    fn guarded(live: &Expr, g: Expr) -> Expr {
+        Expr::If { r#if: Box::new(live.clone()), then: Box::new(g), r#else: Box::new(num(0.0)) }
     }
 
     /// The events of `e` in scope `s`: one, or one per member of its loop (D-057), named
@@ -566,7 +750,29 @@ impl<'a> Cx<'a> {
                     _ => nb.init = Some(v.clone()),
                 }
             }
+            // A member not alive has no derived values (D-058).
+            if nb.role == Role::Derived {
+                nb.when = s.live.clone();
+            }
             out.bindings.push(nb);
+        }
+        // A relation instance's endpoints: the numbers of its members in their collections,
+        // starting at the part's overrides; an instance not made yet points at member 1.
+        for e in &ty.ends {
+            let init = overrides.iter().find(|(id, _)| id == &e.id).map(|(_, v)| v.clone()).unwrap_or_else(|| num(1.0));
+            out.bindings.push(Binding {
+                id: s.local(&e.id),
+                name: join(&s.path, &e.name),
+                role: Role::Discrete,
+                ty: Type::real(),
+                init: Some(init),
+                def: None,
+                intervenable: None,
+                private: true,
+                display: Display::default(),
+                notes: vec![],
+                when: None,
+            });
         }
         for f in &ty.functions {
             self.element = f.id.clone();
@@ -629,14 +835,32 @@ impl<'a> Cx<'a> {
                 // Overrides are read in the container's scope, with `index` the member's number.
                 let mut outer = s.clone();
                 outer.index = p.count.or(p.capacity).map(|_| k as u32 + 1);
-                let ov: Vec<(Id, Expr)> = p.overrides.iter().map(|o| (o.binding.clone(), self.expr(&outer, &o.value))).collect();
+                // An endpoint is given a member, whose number it holds (D-058).
+                let mut ov: Vec<(Id, Expr)> = vec![];
+                for o in &p.overrides {
+                    match inst.ty.ends.iter().find(|e| e.id == o.binding) {
+                        Some(e) => {
+                            if let Some(v) = self.end_value(&outer, e, &o.value) {
+                                ov.push((o.binding.clone(), v));
+                            }
+                        }
+                        None => ov.push((o.binding.clone(), self.expr(&outer, &o.value))),
+                    }
+                }
                 for (id, _) in &ov {
-                    if inst.ty.binding(id).is_none() {
+                    if inst.ty.binding(id).is_none() && !inst.ty.ends.iter().any(|e| &e.id == id) {
                         self.err("MK-E26", format!("an object `{}` has no binding `{}`", inst.ty.name, id.rsplit('.').next().unwrap_or(id)));
                     }
                 }
+                if k == 0 && p.count.unwrap_or(0) > 0 {
+                    for e in &inst.ty.ends {
+                        if !ov.iter().any(|(id, _)| id == &e.id) {
+                            self.err("MK-E26", format!("each starting relation of `{}` names its endpoint `{}`", p.name, e.name));
+                        }
+                    }
+                }
                 let live = both(s.live.clone(), inst.live.clone());
-                let inner = Scope { ty: inst.ty, path: inst.path.clone(), vars: vec![], index: None, live, payload: None };
+                let inner = Scope { ty: inst.ty, path: inst.path.clone(), vars: vec![], index: None, live, payload: None, me: Some(inst.clone()) };
                 self.body(&inner, &ov, out, depth + 1);
             }
         }
@@ -660,6 +884,7 @@ impl<'a> Cx<'a> {
             private: true,
             display: Display::default(),
             notes: vec![],
+            when: None,
         };
         let counter = created(&p.id, &s.path);
         out.bindings.push(hidden(counter.clone(), join(&s.path, &format!("{}.created", p.name)), Type::real(), num(start as f64)));

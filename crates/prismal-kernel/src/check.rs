@@ -82,6 +82,19 @@ impl<'a, 'b> Tc<'a, 'b> {
         None
     }
 
+    /// A value of type `t` that is not a number, for a binding that has no value (D-058).
+    fn placeholder(&self, t: &Type) -> Value {
+        match t {
+            Type::Boolean => Value::Bool(false),
+            Type::Vector { space, .. } => Value::Vec(Arr::from_slice(&vec![f64::NAN; self.space_dim(space).unwrap_or(2)])),
+            Type::Point { space } => Value::Point(Arr::from_slice(&vec![f64::NAN; self.space_dim(space).unwrap_or(2)])),
+            Type::Tuple { items } => Value::Tuple(Rc::new(items.iter().map(|i| self.placeholder(i)).collect())),
+            Type::Enum { .. } => Value::Case(0),
+            Type::Function { .. } => Value::Func(Rc::new(CExpr::Const(Value::Num(f64::NAN)))),
+            _ => Value::Num(f64::NAN),
+        }
+    }
+
     fn space_dim(&self, space: &str) -> Option<usize> {
         self.scope.spaces.iter().find(|s| s.id == space).map(|s| s.dimension as usize)
     }
@@ -153,14 +166,14 @@ impl<'a, 'b> Tc<'a, 'b> {
             Expr::Match { r#match, arms } => self.match_expr(r#match, arms, exp),
             // `min` or `max` over the members alive (D-057): quantities of one type.
             Expr::Extreme { extreme, terms } => {
-                let mut t: Option<Type> = exp.cloned();
+                let mut t: Option<Type> = None;
                 let mut out = vec![];
                 for g in terms {
                     let w = self.expect(&g.when, &Type::Boolean)?;
                     let v = match &t {
                         Some(want) => self.expect(&g.value, want)?,
                         None => {
-                            let (v, vt) = self.expr(&g.value, None)?;
+                            let (v, vt) = self.expr(&g.value, exp)?;
                             t = Some(vt);
                             v
                         }
@@ -173,8 +186,29 @@ impl<'a, 'b> Tc<'a, 'b> {
                     None => self.err("MK-E26", "`min` or `max` over no member has no value".into()),
                 }
             }
+            // A binding of the member chosen by number (D-058): the items have one type.
+            Expr::Pick { pick, from } => {
+                let k = self.expect(pick, &Type::real())?;
+                let mut t: Option<Type> = None;
+                let mut items = vec![];
+                for x in from {
+                    let c = match &t {
+                        Some(want) => self.expect(x, want)?,
+                        None => {
+                            let (c, xt) = self.expr(x, exp)?;
+                            t = Some(xt);
+                            c
+                        }
+                    };
+                    items.push(c);
+                }
+                match t {
+                    Some(t) => Some((CExpr::Pick(Box::new(k), items), t)),
+                    None => self.err("MK-E26", "a choice among no member".into()),
+                }
+            }
             // Members and aggregates are replaced by elaboration before checking (D-055).
-            Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } => {
+            Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } | Expr::End { .. } => {
                 self.err("MK-E00", "a member or an aggregate in a model that was not elaborated (D-055)".into())
             }
             Expr::Payload { payload } => match &self.payload {
@@ -710,6 +744,9 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
                 }
             }
         }
+        // D-058: a derived binding of a member or relation not alive is not evaluated; it
+        // holds a value that is not a number.
+        let when = b.when.as_ref().and_then(|w| tc.expect(w, &Type::Boolean)).map(|c| (c, tc.placeholder(&b.ty)));
         cbindings.push(CBinding {
             id: b.id.clone(),
             name: b.name.clone(),
@@ -718,6 +755,7 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
             init,
             def,
             intervenable: b.is_intervenable(),
+            when,
         });
     }
 
@@ -863,7 +901,7 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
             Trigger::Rising { guard } | Trigger::Falling { guard } | Trigger::Crossing { guard } => guard,
             _ => continue,
         };
-        if e.zeno.is_some() || e.handler.is_empty() {
+        if e.zeno.is_some() || e.handler.is_empty() || disables_itself(e) {
             continue;
         }
         if self_retriggering(model, &index, guard, &e.handler) {
@@ -960,8 +998,8 @@ fn check_ops(tc: &mut Tc, model: &Model, index: &HashMap<Id, usize>, ops: &[Op],
             Op::Set { target, .. } | Op::Contribute { target, .. } if target.member.is_some() => {
                 tc.err("MK-E00", format!("a member's binding `{}` in a model that was not elaborated (D-057)", target.binding));
             }
-            Op::Create { .. } | Op::Destroy { member: Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } } => {
-                tc.err("MK-E00", "`create` or `destroy` in a model that was not elaborated (D-057)".into());
+            Op::Create { .. } | Op::Connect { .. } | Op::Disconnect { .. } | Op::Destroy { member: Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. } } => {
+                tc.err("MK-E00", "`create`, `destroy`, `connect` or `disconnect` in a model that was not elaborated (D-057, D-058)".into());
             }
             // After elaboration a destroy names the member's liveness binding (D-057).
             Op::Destroy { member } => match member {
@@ -972,6 +1010,31 @@ fn check_ops(tc: &mut Tc, model: &Model, index: &HashMap<Id, usize>, ops: &[Op],
                     tc.err("MK-E00", "`destroy` names a member of a collection".into());
                 }
             },
+            // A member being made takes its starting values, parameters included (D-057).
+            Op::Make { alive, values } => {
+                match index.get(alive) {
+                    Some(&i) if model.bindings[i].role == Role::Discrete && model.bindings[i].ty == Type::Boolean => {
+                        out.push(COp::Set { binding: i, component: None, value: CExpr::Const(Value::Bool(true)) })
+                    }
+                    _ => {
+                        tc.err("MK-E00", format!("`{alive}` is not the liveness of a member"));
+                    }
+                }
+                for v in values {
+                    let Some(&bi) = index.get(&v.binding) else {
+                        tc.err("MK-E00", format!("unknown target `{}`", v.binding));
+                        continue;
+                    };
+                    let b = &model.bindings[bi];
+                    if !b.role.is_stored() || b.role == Role::Constant || b.role == Role::Input {
+                        tc.err("MK-E06", format!("a starting value for `{}`, a {:?} binding", b.name, b.role));
+                        continue;
+                    }
+                    if let Some(c) = tc.expect(&v.value, &b.ty) {
+                        out.push(COp::Set { binding: bi, component: None, value: c });
+                    }
+                }
+            }
             // Conditional operations are checked on their own: which of them are performed is
             // known only in the transition, where conflicts are decided (D-057).
             Op::If { r#if, then } => {
@@ -1135,6 +1198,27 @@ fn closure_derived(model: &Model, index: &HashMap<Id, usize>, refs: &[Id]) -> BT
     seen
 }
 
+/// An event whose handler unconditionally destroys the member its enabling condition requires
+/// alive (`destroy d` in `for d in drops`, D-057, D-058) never happens again.
+fn disables_itself(e: &prismal_ir::Event) -> bool {
+    fn conjuncts<'e>(x: &'e Expr, out: &mut Vec<&'e Expr>) {
+        match x {
+            Expr::Bin { bin: BinOp::And, l, r } => {
+                conjuncts(l, out);
+                conjuncts(r, out);
+            }
+            other => out.push(other),
+        }
+    }
+    let Some(en) = &e.enable else { return false };
+    let mut cs = vec![];
+    conjuncts(en, &mut cs);
+    e.handler.iter().any(|op| match op {
+        Op::Destroy { member } => cs.contains(&member),
+        _ => false,
+    })
+}
+
 /// D-038: an event is self-retriggering if its handler writes a binding that its guard
 /// depends on, through derived bindings and through the flows of continuous state, where
 /// the flows are specialized on the discrete values the handler sets to constants.
@@ -1149,6 +1233,10 @@ fn self_retriggering(model: &Model, index: &HashMap<Id, usize>, guard: &Expr, ha
                 Op::Set { target, value } => out.push((target.binding.clone(), value.clone())),
                 Op::Destroy { member: Expr::Ref { r#ref } } => out.push((r#ref.clone(), Expr::Bool { bool: false })),
                 Op::If { then, .. } => sets(then, out),
+                Op::Make { alive, values } => {
+                    out.push((alive.clone(), Expr::Bool { bool: true }));
+                    out.extend(values.iter().map(|v| (v.binding.clone(), v.value.clone())));
+                }
                 _ => {}
             }
         }
@@ -1256,7 +1344,7 @@ fn order_derived(model: &Model, index: &HashMap<Id, usize>, diags: &mut Vec<Diag
         if b.role == Role::Derived {
             nodes.push(i);
             if let Some(d) = &b.def {
-                deps[i] = d.refs().iter().filter_map(|r| index.get(r).copied()).filter(|&j| model.bindings[j].role == Role::Derived).collect();
+                deps[i] = d.refs().into_iter().chain(b.when.iter().flat_map(|w| w.refs())).filter_map(|r| index.get(&r).copied()).filter(|&j| model.bindings[j].role == Role::Derived).collect();
             }
         }
     }
@@ -1278,7 +1366,7 @@ fn order_init(model: &Model, index: &HashMap<Id, usize>, diags: &mut Vec<Diagnos
         let e = if b.role == Role::Derived { b.def.as_ref() } else { b.init.as_ref() };
         nodes.push(i);
         if let Some(e) = e {
-            deps[i] = e.refs().iter().filter_map(|r| index.get(r).copied()).collect();
+            deps[i] = e.refs().into_iter().chain(b.when.iter().flat_map(|w| w.refs())).filter_map(|r| index.get(&r).copied()).collect();
         }
     }
     match topo(n, &deps, &nodes) {
