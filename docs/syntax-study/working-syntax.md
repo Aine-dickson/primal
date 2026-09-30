@@ -43,6 +43,7 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 | `view name: spatial(Space, scale: 1 m -> 40 px, y: up) { reps }`, `view name: plot(x: I, y: I) { reps }` | views containing their representations |
 | `panel name { reps }` | region without a coordinate system (controls, formulas) |
 | `rep(...) [as name] { on drag [part] as p { propose x = e } }` | representation with its declared inverse |
+| `group(at: P, rotate: θ, scale: k) [as name] { reps }` | representations placed, turned and scaled together; members are written in the group's frame (D-043) |
 | `trace(pos every 0.02 s)`, `series_plot(y every 0.01 s)` | a sampled source: `expr every Δ`, only as a representation's argument (PK-6.3a) |
 | `plot(x: [0 s, 6 s], y: [0 m, 1.1 m])` | plot axes with dimensions; a plot marker is at a pair in those dimensions, `marker(at: (0, y))` (PK-7.3a) |
 | `permit learner { ... }` | permissions |
@@ -519,3 +520,4 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-30 sampled sources (`expr every Δ`) and plot axes with dimensions, from the web player.
 - 2026-09-30 canonical printing implemented (`prismal-syntax/src/format.rs`); a one-sided interval lowers as the comparison `where` writes (`x >= lo`), so both spellings give one IR.
 - 2026-09-30 `reveal`, `hide ... for`, `camera` (D-042); `hide`, `reveal` and `zoom` added to the contextual keywords.
+- 2026-09-30 `group` with its members in a block (D-043).

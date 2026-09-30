@@ -25,8 +25,9 @@ fn presentation_diagnostics() {
     assert_eq!(codes(&edit(&q, "slider(a, range: [-5, 5], step: 0.1)", "slider(f)")), vec!["PK-E03"]);
     // A marker outside a spatial or plot view.
     assert_eq!(codes(&edit(&q, "slider(a, range: [-5, 5], step: 0.1)", "marker(at: (1, 2))")), vec!["PK-E05"]);
-    // A representation kind the prototype does not implement.
-    assert_eq!(codes(&edit(&q, "function_graph(f)", "group(f)")), vec!["PK-E06"]);
+    // A group outside a spatial view (PK-6.3b); a drag on a member of a group is PK-E06
+    // (tests/labs.rs).
+    assert_eq!(codes(&edit(&q, "function_graph(f)", "group(f)")), vec!["PK-E05"]);
     // A table without a sampled source.
     assert_eq!(codes(&edit(&q, "function_graph(f)", "table(f)")), vec!["PK-E05"]);
 

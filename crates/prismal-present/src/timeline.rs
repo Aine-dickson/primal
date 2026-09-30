@@ -17,6 +17,7 @@ use prismal_ir::present::{Action as TAction, LearnerInput, Presentation, RevealS
 use prismal_ir::{Id, Op};
 use prismal_kernel::{CModel, Value};
 use prismal_runtime::{run, Action, Config, Run, Scheduled};
+use crate::frame::{each_rep_mut, retain_reps, Shape};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,6 +97,17 @@ pub struct CameraCue {
     pub duration: f64,
     pub center: Option<prismal_kernel::CExpr>,
     pub zoom: Option<f64>,
+}
+
+/// The state of a representation `k` of the way through a reveal (D-042): a path is drawn
+/// up to `k`, anything else fades in; a group's members are handled one by one.
+fn reveal(r: &mut crate::frame::RepFrame, style: RevealStyle, k: f64) {
+    let path = matches!(r.shape, Shape::Polyline { .. } | Shape::Polygon { .. } | Shape::Segment { .. } | Shape::Arrow { .. });
+    if style == RevealStyle::Draw && path {
+        r.drawn = Some(k);
+    } else if !matches!(r.shape, Shape::Group { .. }) || style == RevealStyle::Fade {
+        r.opacity = Some(k);
+    }
 }
 
 /// Smooth start and end of an animation (PK-8.4): `3k² - 2k³`.
@@ -566,13 +578,14 @@ impl Playback<'_> {
         let extra: Vec<(Option<Id>, CRep)> = self.shown.iter().filter(|s| s.from <= p && p < s.until).map(|s| (s.view.clone(), s.rep.clone())).collect();
         let (mut views, mut overlay) = self.projector.frame(self.cm, &v.run, &vals, t, &extra);
         // Hidden representations: gone after their fade, fading during it.
+        // Members of groups are found by the same rules (D-043).
         let gone: Vec<&Id> = self.hidden.iter().filter(|h| h.1 + h.2 <= p).map(|h| &h.0).collect();
+        let keep = |r: &crate::frame::RepFrame| !gone.contains(&&r.id);
         for v in views.iter_mut() {
-            v.reps.retain(|r| !gone.contains(&&r.id));
+            retain_reps(&mut v.reps, &keep);
         }
-        overlay.retain(|r| !gone.contains(&&r.id));
-        let all = views.iter_mut().flat_map(|v| v.reps.iter_mut()).chain(overlay.iter_mut());
-        for r in all {
+        retain_reps(&mut overlay, &keep);
+        let mut animate = |r: &mut crate::frame::RepFrame| {
             if let Some(h) = self.hidden.iter().find(|h| h.0 == r.id && h.1 <= p && p < h.1 + h.2) {
                 r.opacity = Some(1.0 - ease((p - h.1) / h.2));
             }
@@ -580,16 +593,19 @@ impl Playback<'_> {
                 if let Some((style, d)) = s.reveal {
                     let k = if d > 0.0 { ease((p - s.from) / d) } else { 1.0 };
                     if k < 1.0 {
-                        let path = matches!(r.shape, crate::frame::Shape::Polyline { .. } | crate::frame::Shape::Polygon { .. } | crate::frame::Shape::Segment { .. } | crate::frame::Shape::Arrow { .. });
-                        if style == RevealStyle::Draw && path {
-                            r.drawn = Some(k);
-                        } else {
-                            r.opacity = Some(k);
+                        match (&mut r.shape, style) {
+                            // A group drawn: its paths are drawn, its markers fade in.
+                            (Shape::Group { members }, RevealStyle::Draw) => each_rep_mut(members, &mut |m| reveal(m, style, k)),
+                            _ => reveal(r, style, k),
                         }
                     }
                 }
             }
+        };
+        for v in views.iter_mut() {
+            each_rep_mut(&mut v.reps, &mut animate);
         }
+        each_rep_mut(&mut overlay, &mut animate);
         // Cameras (D-042): each move starts from where the previous one left the camera.
         for vf in views.iter_mut() {
             let ctx = self.projector.ctx(Some(&vf.id));
@@ -620,9 +636,15 @@ impl Playback<'_> {
             }
         }
         for h in self.highlights.iter().filter(|h| h.from <= p && p < h.until) {
-            for r in views.iter_mut().flat_map(|v| v.reps.iter_mut()).chain(overlay.iter_mut()).filter(|r| r.id == h.target) {
-                r.highlighted = true;
+            let mut mark = |r: &mut crate::frame::RepFrame| {
+                if r.id == h.target {
+                    r.highlighted = true;
+                }
+            };
+            for v in views.iter_mut() {
+                each_rep_mut(&mut v.reps, &mut mark);
             }
+            each_rep_mut(&mut overlay, &mut mark);
         }
         Frame {
             time: p,

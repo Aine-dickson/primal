@@ -119,7 +119,10 @@ impl PresCx<'_, '_> {
                 .collect();
             Inverse { gesture: i.gesture.text.clone(), part: i.part.as_ref().map(|p| p.text.clone()), proposals }
         });
-        Rep { id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse }
+        // Members are numbered within their group, which is their container (D-043).
+        let mut inner = HashMap::new();
+        let members = r.members.iter().map(|m| self.rep(m, &id, &mut inner)).collect();
+        Rep { id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members }
     }
 
     fn view(&mut self, v: &ast::ViewDecl) -> Option<View> {

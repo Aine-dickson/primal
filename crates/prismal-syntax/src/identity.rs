@@ -149,8 +149,23 @@ fn pair_reps(mt: &mut Matcher, new_container: &str, new: &[Rep], prev_container:
         let s = suffix(new_container, &r.id);
         if let Some(p) = prev.iter().find(|p| suffix(prev_container, &p.id) == s) {
             mt.map.insert(r.id.clone(), p.id.clone());
+            // A group's members are matched within the group (D-043).
+            pair_reps(mt, &r.id, &r.members, &p.id, &p.members);
         }
     }
+}
+
+/// A representation by identity, among `reps` and the members of groups (D-043).
+fn find_rep<'a>(reps: &'a mut [Rep], id: &str) -> Option<&'a mut Rep> {
+    for r in reps {
+        if r.id == id {
+            return Some(r);
+        }
+        if let Some(m) = find_rep(&mut r.members, id) {
+            return Some(m);
+        }
+    }
+    None
 }
 
 fn beat_reps(actions: &[Action]) -> Vec<Rep> {
@@ -358,7 +373,7 @@ pub fn rename(doc: &Document, id: &str, new_name: &str) -> Result<Document, Stri
             return Ok(d);
         }
         for v in &mut p.views {
-            if let Some(r) = v.representations.iter_mut().find(|r| r.id == id) {
+            if let Some(r) = find_rep(&mut v.representations, id) {
                 r.name = Some(new_name.into());
                 return Ok(d);
             }

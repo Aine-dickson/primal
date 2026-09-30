@@ -44,6 +44,7 @@ presentation Name for Model {
 | `slider(p, range: [a, b] [, step: s])` | a control for a parameter | any |
 | `number_input(p [, range: [a, b]])` | a typed value for a parameter | any |
 | `toggle(p)` | a switch for a Boolean parameter | any |
+| `group(at: P, rotate: θ, scale: k) { ... }` | its members, placed, turned and scaled together (see Groups) | spatial |
 
 `as name` after a representation names it (`marker(pos) as ball`), for timelines and for readers.
 
@@ -133,6 +134,72 @@ run on_the_moon of Cannon with CannonLab {
 run flatter of Cannon with CannonLab {
   param { angle = 30 deg }
   expect { R == 35.3119430697019 m within 1e-9 m }
+}
+```
+
+## Groups
+
+A **group** draws several representations with one shared placement: its members are written in the group's own frame, then moved to `at`, turned by `rotate` and scaled by `scale`. A rigid body is drawn this way: its shape once, in its own coordinates, and its position and angle from the model.
+
+```text
+space Plane = euclidean(2)
+
+model Wheel in Plane {
+  param {
+    r: Length   = 0.5 m
+    v: Velocity = 1 m/s
+  }
+  state {
+    x: Length = 0 m
+    φ: Angle  = 0
+  }
+  discrete {
+    rolling: Boolean = true
+  }
+  derived {
+    // The point on the rim that starts on the right, in the plane.
+    rim: Point = origin + (x + r * cos(φ), r + r * sin(φ))
+  }
+  flow {
+    der(x) = if rolling then v else 0
+    der(φ) = if rolling then -v / r else 0      // rolling without slipping, clockwise
+  }
+  event road_end on rising(x - 4 m) {
+    set rolling = false
+  }
+}
+```
+
+```text
+presentation WheelView for Wheel {
+  view road: spatial(Plane, scale: 1 m -> 100 px, y: up) {
+    axes
+    group(at: origin + (x, r), rotate: φ) as wheel {
+      polygon(origin + (r, 0 m), origin + (0 m, r), origin + (-r, 0 m), origin + (0 m, -r))
+      segment(origin, origin + (r, 0 m))
+      marker(origin + (r, 0 m)) as valve
+    }
+    trace(rim every 0.02 s)
+  }
+  observe {
+    lowest = rim.y at t0 + 0.785398163397448 s
+  }
+}
+```
+
+- The wheel is drawn around its own centre, `origin`, as a square with one spoke (v0 has no circle representation); the group places that centre at `(x, r)` and turns it by `φ`. The marker `valve` is therefore always at the model's `rim`, and the trace of `rim` draws a cycloid behind it.
+- `at` is a point (the group's `origin` goes there; default the view's origin), `rotate` an angle (default 0), `scale` a number (default 1). Points of members are moved, turned and scaled; vectors of arrows are turned and scaled.
+- A group holds markers, arrows, segments, polylines, polygons and other groups; a group inside a group is placed in its parent's frame. Groups belong in spatial views.
+- A group and each named member can be the target of `highlight`, `hide` and `reveal` in a timeline. The text alternative of a group lists those of its members.
+- A trace is sampled over time, so it is drawn outside the group, from a model point (`rim`).
+- The wheel stops at the end of a 4 m road (`road_end`), so the whole path fits the view.
+
+After a quarter turn, at `t = π r / (2 v)`, the rim point touches the road:
+
+```cases
+run quarter_turn of Wheel with WheelView {
+  until t0 + 2 s
+  expect { lowest == 0 m within 1e-9 m }
 }
 ```
 

@@ -192,7 +192,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
 | Declared functions (`fn`), contained objects (`object`), enumeration types and cases: no IR form or no spelling yet | MK-10.3, MK section 7, 04-ir section 3 |
-| Representation `group`; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3 |
+| Drags on members of a group; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
@@ -215,3 +215,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 formatter and identities across edits (D-036); one-sided intervals lower as `where` does.
 - 2026-09-30 `button`, `equation`, `table`, `polyline`, `polygon`; `hide`; a series observation compared with a list (`drops == []`).
 - 2026-09-30 animations as named effects (D-042): `reveal`, `hide ... for`, `camera`.
+- 2026-09-30 `group` (D-043), with members placed in model space; frame tests of the animations; the web player's animations checked in headless Edge.

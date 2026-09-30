@@ -62,6 +62,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-040 | Reserved words and contextual keywords | Accepted |
 | D-041 | `on(E)` follows an occurrence of `E` as well as an emission | Accepted |
 | D-042 | Animations in v0: named effects (`reveal`, `hide ... for`, `camera`) | Accepted |
+| D-043 | `group`: members placed by a shared rigid transform with scale, applied in model space | Accepted |
 
 ---
 
@@ -775,5 +776,22 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 2. `animate`, `bind` and `release` remain unspecified until a program needs them; they can be added as option 1 later without changing the named effects, which become shorthands.
 - **Reason:** delivers the effects lessons need now, keeps frames deterministic and the syntax readable, and leaves the general mechanism open.
 - **Consequences:** PK-9.2c; working syntax section 1.2; the IR actions `reveal`, `hide` with a duration and `camera` (04-ir section 7); frame descriptions carry `opacity`, `drawn` and a view `camera`; the web player renders them.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-043: A group places its members by a shared transform in model space
+
+- **Status:** Accepted
+- **Original position:** PK-6.3 lists `group`, "a set of representations with a shared transform", without saying what the transform is, what a group may hold, or how a group is written. The prototype did not implement it.
+- **Raised by:** the next steps after D-042 (`docs/PROJECT-STATE.md`); rigid bodies (a wheel, a pendulum drawn as a body, a car) need a shape drawn once in its own coordinates and placed by the model.
+- **Builds on:** D-021 (angles are numbers), D-022 (points and vectors of a space), PK-6.1 (representations are not pixels), PK-11.1 (a group's text alternative summarizes its members), D-042 (timeline effects).
+- **Question:** What is a group's transform, where is it applied, and what may a group hold?
+- **Options considered:**
+  1. **A transform in view coordinates**, as SVG's `transform` on `<g>`: members are projected as usual, then moved on screen. Simple for renderers, but the members' text alternatives and any value a renderer or assistive technology reads would be in the group's local coordinates, not in the space the view shows.
+  2. **A rigid transform with scale, applied in model space:** `group(at: P, rotate: θ, scale: k) { members }`. A member's points `p` become `P + k R(θ) (p - origin)` and its vectors `v` become `k R(θ) v` before projection, so a member is an ordinary representation of points of the view's space. Nested groups compose. Text alternatives and frame values are in the view's space.
+  3. **A general affine or projective transform** (shear, reflection, a matrix). More than any first-slice program needs, and a matrix is harder to read than a placement, an angle and a scale.
+- **Accepted position:** option 2. `at` is a point of the view's space (default: the group's `origin` stays where it is), `rotate` an angle (default 0, counterclockwise in the model), `scale` a positive number (default 1). A group belongs in a spatial view and holds markers, arrows, segments, polylines, polygons and groups; a sampled representation (`trace`) is drawn from a model point outside the group, since it samples over time while the transform is taken at the instant shown. Members may be named and targeted by timeline actions; `reveal draw` of a group draws its paths and fades in its markers. A drag on a member (an inverse through the transform) is specified by composing the member's inverse with the inverse transform, but not implemented by the prototype (PK-E06).
+- **Reason:** keeps members in the space the view shows, so text alternatives, frame values and tests agree with the model; reads as the placement of a body; covers rigid bodies with no new representation kinds.
+- **Consequences:** PK-6.3b; working syntax section 1.2; the IR `members` of a representation (04-ir section 7.1); the frame shape `group` with placed members; the web player draws groups; guide chapter 7 (Groups).
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.

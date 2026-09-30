@@ -38,9 +38,17 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// Every representation in the frame, views first.
+    /// Every representation in the frame, views first, a group before its members.
     pub fn reps(&self) -> impl Iterator<Item = &RepFrame> {
-        self.views.iter().flat_map(|v| v.reps.iter()).chain(self.overlay.iter())
+        fn walk<'a>(r: &'a RepFrame, out: &mut Vec<&'a RepFrame>) {
+            out.push(r);
+            if let Shape::Group { members } = &r.shape {
+                members.iter().for_each(|m| walk(m, out));
+            }
+        }
+        let mut out = vec![];
+        self.views.iter().flat_map(|v| v.reps.iter()).chain(self.overlay.iter()).for_each(|r| walk(r, &mut out));
+        out.into_iter()
     }
     pub fn rep(&self, id_or_name: &str) -> Option<&RepFrame> {
         self.reps().find(|r| r.id == id_or_name || r.name.as_deref() == Some(id_or_name) || r.id.ends_with(&format!(".{id_or_name}")))
@@ -114,6 +122,28 @@ pub enum Shape {
     Button { event: Id, label: String },
     /// Rows of values: the sample instant, then one column per component.
     Table { columns: Vec<String>, rows: Vec<Vec<String>> },
+    /// A group's members, already placed by its transform (D-043).
+    Group { members: Vec<RepFrame> },
+}
+
+/// Applies `f` to every representation in `reps`, a group before its members.
+pub fn each_rep_mut(reps: &mut [RepFrame], f: &mut impl FnMut(&mut RepFrame)) {
+    for r in reps {
+        f(r);
+        if let Shape::Group { members } = &mut r.shape {
+            each_rep_mut(members, f);
+        }
+    }
+}
+
+/// Removes the representations for which `keep` is false, members of groups included.
+pub fn retain_reps(reps: &mut Vec<RepFrame>, keep: &impl Fn(&RepFrame) -> bool) {
+    reps.retain(|r| keep(r));
+    for r in reps {
+        if let Shape::Group { members } = &mut r.shape {
+            retain_reps(members, keep);
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -232,6 +262,43 @@ pub enum CKind {
     Table { value: CExpr, tys: Vec<Type>, every: f64, columns: Vec<String> },
     Axes,
     Grid,
+    /// Members drawn with a shared transform: placed at `at`, turned by `rotate`, scaled by
+    /// `scale` (D-043).
+    Group { at: Option<CExpr>, rotate: Option<CExpr>, scale: Option<CExpr>, members: Vec<CRep> },
+}
+
+/// A group's transform in model coordinates (D-043): `p -> at + k R(angle) p` for points,
+/// `v -> k R(angle) v` for vectors.
+#[derive(Clone, Copy, Debug)]
+pub struct Tf {
+    at: [f64; 2],
+    angle: f64,
+    k: f64,
+}
+
+impl Tf {
+    pub const ID: Tf = Tf { at: [0.0, 0.0], angle: 0.0, k: 1.0 };
+
+    fn turn(&self, a: &[f64]) -> [f64; 2] {
+        let (x, y) = (a.first().copied().unwrap_or(0.0), a.get(1).copied().unwrap_or(0.0));
+        let (s, c) = self.angle.sin_cos();
+        [self.k * (c * x - s * y), self.k * (s * x + c * y)]
+    }
+
+    /// A value in the group's frame as a value in the view's space.
+    fn apply(&self, v: Value) -> Value {
+        if self.at == [0.0, 0.0] && self.angle == 0.0 && self.k == 1.0 {
+            return v;
+        }
+        match v {
+            Value::Point(a) => {
+                let r = self.turn(a.as_slice());
+                Value::Point(prismal_kernel::Arr::from_slice(&[self.at[0] + r[0], self.at[1] + r[1]]))
+            }
+            Value::Vec(a) => Value::Vec(prismal_kernel::Arr::from_slice(&self.turn(a.as_slice()))),
+            other => other,
+        }
+    }
 }
 
 /// Replaces the gesture parameter `{"param": 0}` by `v`.
@@ -487,6 +554,54 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
             };
             CKind::Table { value: c, tys, every: dt, columns }
         }
+        "group" => {
+            let ViewCtx::Spatial { space, .. } = ctx else { return Err(d("PK-E05", "a group belongs in a spatial view (PK-6.3b)".into())) };
+            if !rep.sources.is_empty() || rep.props.iter().any(|p| !["at", "rotate", "scale"].contains(&p.name.as_str())) {
+                return Err(d("PK-E05", "a group takes `at`, `rotate` and `scale`; its members are written in its block (PK-6.3b)".into()));
+            }
+            let at = match prop_expr(rep, "at") {
+                Some(e) => Some(ce(e, Some(&Type::Point { space: space.clone() }))?.0),
+                None => None,
+            };
+            let real = |name: &str| -> Result<Option<CExpr>, Vec<PDiag>> {
+                let Some(e) = prop_expr(rep, name) else { return Ok(None) };
+                match ce(e, None)? {
+                    (c, Type::Quantity { dim }) if dim.is_none() => Ok(Some(c)),
+                    _ => Err(d("PK-E04", format!("a group's `{name}` is a number{} (PK-6.3b)", if name == "rotate" { " or an angle" } else { "" }))),
+                }
+            };
+            let (rotate, scale) = (real("rotate")?, real("scale")?);
+            if prop_expr(rep, "scale").is_some_and(|e| number(cm, e).is_ok_and(|k| k <= 0.0)) {
+                return Err(d("PK-E02", "a group's scale is positive (PK-6.3b)".into()));
+            }
+            if rep.members.is_empty() {
+                return Err(needs("members"));
+            }
+            let mut members = vec![];
+            let mut diags = vec![];
+            for m in &rep.members {
+                if !["marker", "arrow", "segment", "polyline", "polygon", "group"].contains(&m.kind.as_str()) {
+                    diags.push(PDiag {
+                        code: "PK-E05",
+                        message: format!("a group holds markers, arrows, segments, polylines, polygons and groups, not `{}` (PK-6.3b)", m.kind),
+                        element: m.id.clone(),
+                    });
+                    continue;
+                }
+                if m.inverse.is_some() {
+                    diags.push(PDiag { code: "PK-E06", message: "a drag on a member of a group is not implemented by the prototype".into(), element: m.id.clone() });
+                    continue;
+                }
+                match compile_rep(cm, ctx, m) {
+                    Ok(c) => members.push(c),
+                    Err(e) => diags.extend(e),
+                }
+            }
+            if !diags.is_empty() {
+                return Err(diags);
+            }
+            CKind::Group { at, rotate, scale, members }
+        }
         "axes" => CKind::Axes,
         "grid" => CKind::Grid,
         other => return Err(d("PK-E06", format!("the representation kind `{other}` is not implemented by the prototype"))),
@@ -520,7 +635,12 @@ fn coords(v: &Value) -> Vec<f64> {
 
 /// Projects a compiled representation on a state of a run (PK-5.1, PK-5.2).
 pub fn project(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t: f64) -> RepFrame {
-    let eval = |c: &CExpr| run.eval_state(c, vals, t);
+    project_in(cm, ctx, r, run, vals, t, Tf::ID)
+}
+
+/// Projects a representation whose values are in the frame of a group (D-043).
+fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t: f64, tf: Tf) -> RepFrame {
+    let eval = |c: &CExpr| run.eval_state(c, vals, t).map(|v| tf.apply(v));
     let status = |s: prismal_kernel::Status| (Shape::Status { status: s.cause.clone() }, format!("{}: not available ({})", r.rep.name.clone().unwrap_or(r.rep.kind.clone()), s.cause));
     let (shape, text) = match &r.kind {
         CKind::Marker { pos, label } => match eval(pos) {
@@ -675,6 +795,29 @@ pub fn project(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], 
             cols.extend(columns.iter().cloned());
             let text = format!("table of {} with {} rows, every {} s", columns.join(", "), rows.len(), fmt_num(*every));
             (Shape::Table { columns: cols, rows }, text)
+        }
+        CKind::Group { at, rotate, scale, members } => {
+            let num = |c: &Option<CExpr>, default: f64| match c.as_ref().map(eval) {
+                Some(Ok(Value::Num(x))) => Ok(x),
+                Some(Ok(_)) | None => Ok(default),
+                Some(Err(s)) => Err(s),
+            };
+            // `at` is evaluated in the enclosing frame, so nested groups compose.
+            let at = match at.as_ref().map(eval) {
+                Some(Ok(v)) => Ok(coords(&v)),
+                Some(Err(s)) => Err(s),
+                None => Ok(tf.at.to_vec()),
+            };
+            match (at, num(rotate, 0.0), num(scale, 1.0)) {
+                (Ok(a), Ok(angle), Ok(k)) => {
+                    let inner = Tf { at: [a[0], a[1]], angle: tf.angle + angle, k: tf.k * k };
+                    let ms: Vec<RepFrame> = members.iter().map(|m| project_in(cm, ctx, m, run, vals, t, inner)).collect();
+                    let name = r.rep.name.clone().unwrap_or("group".into());
+                    let text = format!("{name}: {}", ms.iter().map(|m| m.text.as_str()).collect::<Vec<_>>().join("; "));
+                    (Shape::Group { members: ms }, text)
+                }
+                (Err(s), _, _) | (_, Err(s), _) | (_, _, Err(s)) => status(s),
+            }
         }
         CKind::Axes => (Shape::Axes, "axes".into()),
         CKind::Grid => (Shape::Grid, "grid".into()),

@@ -1133,8 +1133,16 @@ impl<'a> Parser<'a> {
         let kind = if self.is_word("equation") { self.any_name("a representation")? } else { self.name("a representation")? };
         let args = if self.is_punct("(") { self.args()? } else { vec![] };
         let alias = if self.eat_word("as") { Some(self.name("a representation name")?) } else { None };
-        let interactions = if self.is_punct("{") { self.block(|p| Self::one(p.interaction()))? } else { vec![] };
-        Ok(Rep { kind, args, alias, interactions, span: self.since(start) })
+        // A group's block holds its members (D-043); any other kind's, its interactions.
+        let (mut interactions, mut members) = (vec![], vec![]);
+        if self.is_punct("{") {
+            if kind.text == "group" {
+                members = self.block(|p| Self::one(p.rep()))?;
+            } else {
+                interactions = self.block(|p| Self::one(p.interaction()))?;
+            }
+        }
+        Ok(Rep { kind, args, alias, interactions, members, span: self.since(start) })
     }
 
     fn interaction(&mut self) -> P<Interaction> {

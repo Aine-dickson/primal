@@ -3,7 +3,7 @@
 **Read this first.** This file is the entry point for anyone resuming work on Prismal, in a new session or years later. It records where the project stands, what is decided, and what comes next. Update it at the end of every working session.
 
 - **Last updated:** 2026-09-30
-- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Syntax study done (`docs/syntax-study/`); D-028 accepted with amendment; working syntax written (`docs/syntax-study/working-syntax.md`); specification and reference programs converted to it; syntax study findings resolved (D-029 to D-034). Keyword pass (D-035), IR identities and comments (D-036), IR format (`docs/spec/04-ir.md`, D-037). Rust kernel prototype running the reference programs (`crates/`, `docs/prototype.md`); D-038 raised by it. Text parser for the working syntax (`crates/prismal-syntax`): reads all eight reference programs from their documents and lowers them to the IR; D-039 and D-040 raised by it. Presentation prototype (`crates/prismal-present`) with the presentation and run IR (04-ir section 7): every expectation of RP-01 to RP-08 is checked. Web player (D-018): the presentation kernel compiled to WebAssembly (`crates/prismal-web`) with a browser renderer (`web/`); RP-06 to RP-08 run interactively in a browser. Dynamic interactive sessions with a display clock, `trace` and `series_plot`; lab presentations for RP-01, RP-03, RP-04 and RP-05 play in the player.
+- **Phase:** Core semantics spec v0. All three parts drafted (`docs/spec/01`, `02`, `03`); D-020 to D-027 accepted. First-slice reference programs written (`docs/spec/reference-programs/`). Syntax study done (`docs/syntax-study/`); D-028 accepted with amendment; working syntax written (`docs/syntax-study/working-syntax.md`); specification and reference programs converted to it; syntax study findings resolved (D-029 to D-034). Keyword pass (D-035), IR identities and comments (D-036), IR format (`docs/spec/04-ir.md`, D-037). Rust kernel prototype running the reference programs (`crates/`, `docs/prototype.md`); D-038 raised by it. Text parser for the working syntax (`crates/prismal-syntax`): reads all eight reference programs from their documents and lowers them to the IR; D-039 and D-040 raised by it. Presentation prototype (`crates/prismal-present`) with the presentation and run IR (04-ir section 7): every expectation of RP-01 to RP-08 is checked. Web player (D-018): the presentation kernel compiled to WebAssembly (`crates/prismal-web`) with a browser renderer (`web/`); RP-06 to RP-08 run interactively in a browser. Dynamic interactive sessions with a display clock, `trace` and `series_plot`; lab presentations for RP-01, RP-03, RP-04 and RP-05 play in the player. Animations (D-042) and groups (D-043) implemented and checked in a browser.
 
 ## What Prismal is
 
@@ -85,6 +85,7 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-042:** animations in v0 are named effects: `reveal fade|draw`, `hide ... for`, `camera`.
 - **D-041:** `on(E)` is due at the microstep after `E` occurs or is emitted.
 - **D-040:** only the words of the model language, expressions and top-level items are reserved; presentation, timeline and run words are contextual keywords (`process drag`, `view scene` are valid).
+- **D-043:** `group(at: P, rotate: θ, scale: k) { members }` places its members by a shared rigid transform with scale, applied in model space, so text alternatives stay in the view's space.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
@@ -93,13 +94,13 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 
 ## Next steps
 
-**Next session starts here:** (handover written 2026-09-30 at the end of a long session.)
+**Next session starts here:** (handover written 2026-09-30.)
 
-1. Unfinished from the last milestone (D-042 animations, committed with passing tests): no kernel test yet checks the frame values of animations (`opacity` during `reveal fade` and `hide ... for`, `drawn` during `reveal draw`, a view's `camera` following `pos`); add them to `crates/prismal-present/tests/labs.rs` using guide chapter 8's `DropMovie`. The web renderer's animation code (`web/player.js`: `cameraBox`, `drawn`, `opacity`) has not been checked in a browser; run the player on `#g8-freefall`, presentation `DropMovie` (headless Edge with puppeteer-core worked; see `web/README.md` to build).
-2. Then: `group` (PK-6.3), the general `animate` if a program needs it (D-042 option 1), and the Mava Studio groundwork (D-019): an editor protocol over the IR (edit operations with `rename`, `reconcile`, `format`).
+1. Mava Studio groundwork (D-019): an editor protocol over the IR. Edit operations (insert, remove, change an element, `rename`), each answered with the reconciled IR (`reconcile`, D-036), diagnostics located by identity, and the canonical text (`format`). Start with a short design note and a register entry; the prototype can live in `prismal-syntax` or a new crate, tested natively like `prismal-web`.
+2. The general `animate` (D-042 option 1) only when a program needs it; drags on members of a group (D-043, PK-E06 in the prototype) when a program needs one.
 3. The owner reviews by learning the language from `docs/guide/` and writing programs (see Working process). Keep the guide in step with every language change; `prismal-web/tests/guide.rs` enforces that its programs compile and pass.
 
-How to verify the state quickly: `cargo test` at the root (77 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`.
+How to verify the state quickly: `cargo test` at the root (79 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`.
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances confirmed by the prototype and fixed.
@@ -112,8 +113,9 @@ How to verify the state quickly: `cargo test` at the root (77 tests pass as of t
 9. Language guide: done (`docs/guide/`, 18 programs, 67 expectations checked).
 10. Formatter and identities (D-036): done.
 11. Representations `button`, `equation`, `table`, `polyline`, `polygon` and the action `hide`: done.
-12. Animations as named effects (D-042): `reveal`, `hide ... for`, `camera`; frame tests and browser check pending (Next steps).
-13. Next: see Next steps.
+12. Animations as named effects (D-042): `reveal`, `hide ... for`, `camera`; frame values tested, renderer checked in a browser.
+13. Groups (D-043): done, with a guide section (chapter 7, a rolling wheel).
+14. Next: see Next steps.
 
 ## Session log
 
@@ -134,6 +136,7 @@ How to verify the state quickly: `cargo test` at the root (77 tests pass as of t
 | 2026-09-30 | Formatter `prismal-syntax/src/format.rs` (canonical printing, working syntax 1.4) and identities across edits `identity.rs` (D-036: `reconcile`, `rename`, `diff`); every reference and guide program round-trips; `fmt` example; Format button in the player. One-sided intervals lower as `where` does, so both spellings give one IR. |
 | 2026-09-30 | Representations `button` (requests an `on request` event), `equation` (typeset model equation, live values), `table` (sampled rows), `polyline`, `polygon`; timeline action `hide`; IR `element` argument; a series observation compared with a list. RP-05's lab shows its checked equation; guide chapter 8 gains a drop lab with a button and a table. |
 | 2026-09-30 | Animations (D-042): `reveal fade|draw`, `hide name for d`, `camera view to P zoom z` in syntax, IR, formatter, identity matching, lesson player (opacity, draw fraction, camera with easing) and web renderer; guide chapter 8 `DropMovie` with timed cases. Handover written in Next steps. |
+| 2026-09-30 | Frame tests for the animations (`DropMovie`: fade and draw fractions, camera blend, zoom and following, hide); the web renderer checked against them in headless Edge. `group` (D-043): syntax, IR `members`, formatter, identity matching, placement in model space with nested groups, timeline actions on members, text alternatives, diagnostics, web rendering; the view extent now covers polygons and groups. Guide chapter 7 gains Groups (a rolling wheel with a cycloid trace). |
 
 ## Working process
 

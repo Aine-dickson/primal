@@ -459,6 +459,13 @@ function drawRep(v, g, r, u, colorIndex) {
       svg('polygon', { class: 'shape', points: pts, 'stroke-width': 2 * u }, grp);
       break;
     }
+    case 'group': {
+      // Members are placed by the kernel; the group carries opacity and highlight (D-043).
+      if (r.highlighted) grp.classList.add('highlighted');
+      let arrows = 0;
+      for (const mem of r.members) drawRep(v, grp, mem, u, mem.shape === 'arrow' ? colorIndex + arrows++ : 0);
+      break;
+    }
     default:
       grp.remove();
       return;
@@ -710,7 +717,7 @@ function renderFrame(frame) {
       const top = svg('g', {}, v.svg);
       let arrows = 0;
       for (const r of vf.reps) {
-        if (['point', 'arrow', 'segment', 'polyline', 'polygon'].includes(r.shape)) {
+        if (['point', 'arrow', 'segment', 'polyline', 'polygon', 'group'].includes(r.shape)) {
           // Draggable representations are drawn last and outside the plot's clip.
           drawRep(v, r.drag ? top : reps, r, u, r.shape === 'arrow' ? arrows++ : 0);
         } else if (!['axes', 'grid'].includes(r.shape)) {
@@ -758,10 +765,14 @@ function cssId(id) {
 
 function growToFit(v, reps) {
   const pts = [];
-  for (const r of reps) {
-    if (r.shape === 'point') pts.push(r.at);
-    else if (r.shape === 'arrow' || r.shape === 'segment') pts.push(r.from, r.to);
-  }
+  const collect = (rs) => {
+    for (const r of rs) {
+      if (r.shape === 'point') pts.push(r.at);
+      else if (r.shape === 'arrow' || r.shape === 'segment') pts.push(r.from, r.to);
+      else if (r.shape === 'group') collect(r.members);
+    }
+  };
+  collect(reps);
   let [x, y, w, h] = v.vb;
   const pad = 30;
   for (const [px, py] of pts) {

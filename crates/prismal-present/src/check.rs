@@ -90,7 +90,10 @@ pub fn check_presentation(cm: &CModel, p: &Presentation) -> Vec<PDiag> {
         }
     }
     let Some(projector) = projector else { return out };
-    let mut rep_ids: Vec<String> = projector.views.iter().flat_map(|v| v.2.iter().map(|r| r.rep.id.clone())).collect();
+    let mut rep_ids: Vec<String> = vec![];
+    for r in projector.views.iter().flat_map(|v| &v.2) {
+        with_members(&r.rep, &mut rep_ids);
+    }
     if let Some(tl) = &p.timeline {
         for b in tl.scenes.iter().flat_map(|s| &s.beats) {
             check_actions(cm, &projector, &b.actions, &b.id, &mut rep_ids, &mut out, &time, &duration);
@@ -118,7 +121,7 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     if let Err(d) = compile_rep(cm, &ctx, r) {
                         out.extend(d);
                     }
-                    reps.push(r.id.clone());
+                    with_members(&r, reps);
                 }
             }
             Action::Camera { view, center, zoom, duration: d } => {
@@ -153,7 +156,7 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     if let Err(d) = compile_rep(cm, &ctx, r) {
                         out.extend(d);
                     }
-                    reps.push(r.id.clone());
+                    with_members(&r, reps);
                 }
             }
             Action::Highlight { target } | Action::Hide { target, .. } => {
@@ -200,11 +203,19 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     if let Err(d) = compile_rep(cm, &ViewCtx::Panel, r) {
                         out.extend(d);
                     }
-                    reps.push(r.id.clone());
+                    with_members(&r, reps);
                 }
                 check_actions(cm, pr, fallback, beat, reps, out, time, duration);
             }
             Action::Sequence { actions } => check_actions(cm, pr, actions, beat, reps, out, time, duration),
         }
+    }
+}
+
+/// A representation's identity and those of a group's members (D-043).
+fn with_members(r: &prismal_ir::present::Rep, out: &mut Vec<String>) {
+    out.push(r.id.clone());
+    for m in &r.members {
+        with_members(m, out);
     }
 }

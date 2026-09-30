@@ -565,6 +565,18 @@ fn enrich(r: &mut Json, cm: &CModel, compiled: &[&CRep]) {
 
 /// The extent `[xmin, ymin, xmax, ymax]` of shapes in view coordinates, including the origin.
 fn extent<'a>(shapes: impl Iterator<Item = &'a Shape>) -> [f64; 4] {
+    fn walk(s: &Shape, add: &mut impl FnMut(&[f64; 2])) {
+        match s {
+            Shape::Point { at } => add(at),
+            Shape::Arrow { from, to } | Shape::Segment { from, to } => {
+                add(from);
+                add(to);
+            }
+            Shape::Polyline { points } | Shape::Polygon { points } => points.iter().for_each(add),
+            Shape::Group { members } => members.iter().for_each(|m| walk(&m.shape, add)),
+            _ => {}
+        }
+    }
     let mut e = [0.0f64, 0.0, 0.0, 0.0];
     let mut add = |p: &[f64; 2]| {
         if p[0].is_finite() && p[1].is_finite() {
@@ -575,15 +587,7 @@ fn extent<'a>(shapes: impl Iterator<Item = &'a Shape>) -> [f64; 4] {
         }
     };
     for s in shapes {
-        match s {
-            Shape::Point { at } => add(at),
-            Shape::Arrow { from, to } | Shape::Segment { from, to } => {
-                add(from);
-                add(to);
-            }
-            Shape::Polyline { points } => points.iter().for_each(&mut add),
-            _ => {}
-        }
+        walk(s, &mut add);
     }
     e
 }

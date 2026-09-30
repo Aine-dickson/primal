@@ -63,7 +63,7 @@ Operators: `+ - * / ^`, `== != < <= > >=`, `and or not`. Units: `m cm mm km s ms
 | `observe { n = e schedule }` | observations | 1, 6 |
 | `timeline { scene s { beat b { actions } } }` | a lesson | 8 |
 
-**Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)` (chapter 7). `as name` names one; `{ on drag [head] as p { propose x = e } }` declares its inverse.
+**Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)`, `group(at: P, rotate: θ, scale: k) { members }` (chapter 7). `as name` names one; `{ on drag [head] as p { propose x = e } }` declares its inverse.
 
 **Observation schedules:** `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over [a, b]`. **Sources:** any expression, `event_log [of E] [where zeno_applied]`, `diagnostics [of element]`, `intervention_log`.
 

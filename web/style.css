@@ -164,6 +164,7 @@ svg .segment { stroke: var(--rep); }
 svg .shape { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: var(--accent); }
 svg .handle { fill: var(--surface); stroke: var(--accent); }
 svg .ring { fill: none; stroke: var(--hl); }
+svg g.highlighted { filter: drop-shadow(0 0 3px var(--hl)); }
 svg .invalid line, svg .invalid .marker, svg .invalid .handle { stroke: var(--bad); stroke-dasharray: 4 3; }
 svg .invalid .marker { fill: none; }
 svg .rep-label { fill: var(--muted); font-family: var(--sans); }

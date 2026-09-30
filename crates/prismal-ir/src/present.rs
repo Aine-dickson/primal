@@ -123,6 +123,9 @@ pub struct Rep {
     pub props: Vec<Prop>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inverse: Option<Inverse>,
+    /// The members of a `group`, drawn with its transform (PK-6.3b, D-043).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<Rep>,
 }
 
 impl Rep {

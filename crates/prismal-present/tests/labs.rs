@@ -295,3 +295,95 @@ fn animation_frames() {
         assert_eq!(again.frame(p, 0.1), pb.frame(p, 0.1));
     }
 }
+
+const RIGID: &str = "
+presentation RigidLab for Pendulum {
+  view scene: spatial(Plane, scale: 1 m -> 100 px, y: up) {
+    marker(bob) as bob
+    group(at: pivot, rotate: θ) as body {
+      segment(origin, origin + (0 m, -L))
+      marker(origin + (0 m, -L)) as tip
+      arrow((0.5 m, 0 m), from: origin + (0 m, -L)) as tangent
+      group(at: origin + (0 m, -L), scale: 2) as badge {
+        polygon(origin, origin + (0.1 m, 0 m), origin + (0 m, 0.1 m))
+      }
+    }
+  }
+  timeline {
+    scene s {
+      beat a { run rate 1; wait 1 s }
+      beat b { highlight tip; hide tangent for 1 s }
+      beat c { reveal draw for 2 s in scene { group(rotate: 90 deg) { marker(origin + (1 m, 0 m)) as far; segment(origin, origin + (1 m, 0 m)) } } }
+    }
+  }
+}
+";
+
+/// `group` (PK-6.3b, D-043): members drawn with a shared transform, nested groups,
+/// text alternatives, timeline actions on members, formatting and diagnostics.
+#[test]
+fn groups() {
+    let src = format!("{}\n{RIGID}", rp("RP-04"));
+    let prog = program(&src);
+    let mut i = lab(&prog, "RigidLab");
+    let f = i.frame();
+    // The body hangs from the pivot turned by θ: its tip is the bob.
+    let (tip, bob) = (point(&f, "tip"), point(&f, "bob"));
+    close(tip[0], bob[0], 1e-9, "tip x");
+    close(tip[1], bob[1], 1e-9, "tip y");
+    let th = 10f64.to_radians();
+    close(tip[0], 100.0 * th.sin(), 1e-9, "tip at L sin θ");
+    // Vectors turn with the group: the tangent is perpendicular to the rod.
+    let Shape::Arrow { from, to } = f.rep("tangent").unwrap().shape else { panic!() };
+    assert_eq!(from, tip);
+    close(to[0] - from[0], 50.0 * th.cos(), 1e-9, "tangent x");
+    close(to[1] - from[1], -50.0 * th.sin(), 1e-9, "tangent y (view y down)");
+    // A nested group composes: placed at the tip, turned by θ, scaled by 2.
+    let Shape::Polygon { points } = &f.rep("badge").map(|g| match &g.shape {
+        Shape::Group { members } => members[0].shape.clone(),
+        s => panic!("{s:?}"),
+    }).unwrap() else { panic!() };
+    close(points[0][0], tip[0], 1e-9, "badge at the tip");
+    close(points[1][0] - tip[0], 20.0 * th.cos(), 1e-9, "scaled and turned");
+    // Text alternatives: a summary of the members, in the view's space.
+    let text = &f.rep("body").unwrap().text;
+    assert!(text.starts_with("body: segment; tip at x = 0.1736"), "{text}");
+    // Moving on: the body follows θ.
+    i.seek(0.7);
+    let f = i.frame();
+    close(point(&f, "tip")[0], point(&f, "bob")[0], 1e-9, "follows");
+
+    // Timeline actions reach members by name.
+    let pb = prismal_present::timeline::play(&prog, "RigidLab", Config::until(10.0), prismal_present::timeline::Medium::Interactive, vec![]).unwrap();
+    let f = pb.frame(1.2, 0.1);
+    assert!(f.rep("tip").unwrap().highlighted);
+    assert!(f.rep("tangent").unwrap().opacity.unwrap() < 1.0);
+    assert!(pb.frame(2.5, 0.1).rep("tangent").is_none(), "hidden after its fade");
+    assert!(pb.frame(2.5, 0.1).rep("tip").is_some());
+    // A group revealed by drawing: its paths are drawn, its markers fade in.
+    let f = pb.frame(3.0, 0.1);
+    let far = f.rep("far").unwrap();
+    close(far.opacity.unwrap(), 0.5, 1e-12, "marker fades");
+    let p = point(&f, "far");
+    assert!(p[0].abs() < 1e-9 && (p[1] + 100.0).abs() < 1e-9, "turned 90 deg: {p:?}");
+    let seg = f.reps().find(|r| r.kind == "segment" && r.drawn.is_some()).unwrap();
+    close(seg.drawn.unwrap(), 0.5, 1e-12, "segment drawn");
+
+    // The formatter prints groups and the identities of members survive a round trip.
+    let doc = prismal_syntax::compile(&src).unwrap().doc;
+    let printed = prismal_syntax::format::format(&doc);
+    assert!(printed.contains("group(at: pivot, rotate: θ) as body {"), "{printed}");
+    assert_eq!(prismal_syntax::compile(&printed).unwrap().doc, doc);
+
+    // Diagnostics.
+    let codes = |edit: &str, with: &str| -> Vec<&'static str> {
+        let bad = src.replace(edit, with);
+        let doc = prismal_syntax::compile(&bad).unwrap_or_else(|d| panic!("{d:?}")).doc;
+        Program::new(doc).err().map(|ds| ds.iter().map(|d| d.code).collect()).unwrap_or_default()
+    };
+    assert_eq!(codes("rotate: θ)", "rotate: L)"), vec!["PK-E04"], "rotate is an angle");
+    assert_eq!(codes("scale: 2)", "scale: 0)"), vec!["PK-E02"], "scale is positive");
+    assert_eq!(codes("as tip", "as tip { on drag as p { propose θ0 = 0 } }"), vec!["PK-E06"]);
+    assert_eq!(codes("segment(origin, origin + (0 m, -L))", "trace(bob every 0.1 s)"), vec!["PK-E05"], "no sampled members");
+    assert_eq!(codes("view scene: spatial(Plane, scale: 1 m -> 100 px, y: up) {", "view scene: plot(x: [-1, 1], y: [-1, 1]) {"), vec!["PK-E05", "PK-E05"]);
+}

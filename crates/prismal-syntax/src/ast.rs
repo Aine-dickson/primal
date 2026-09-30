@@ -345,6 +345,8 @@ pub struct Rep {
     pub args: Vec<Arg>,
     pub alias: Option<Name>,
     pub interactions: Vec<Interaction>,
+    /// The members of a `group` (D-043).
+    pub members: Vec<Rep>,
     pub span: Span,
 }
 

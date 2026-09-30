@@ -596,6 +596,9 @@ impl<'a> Printer<'a> {
                 let _ = write!(s, "{ind}}}\n{}}}", INDENT.repeat(depth));
             }
         }
+        if !r.members.is_empty() {
+            let _ = write!(s, " {}", self.reps_block(&r.members, depth));
+        }
         s
     }
 
@@ -612,9 +615,7 @@ impl<'a> Printer<'a> {
     fn presentation(&mut self, p: &Presentation) -> String {
         for v in &p.views {
             for r in &v.representations {
-                if let Some(n) = &r.name {
-                    self.rep_names.insert(r.id.clone(), n.clone());
-                }
+                self.rep_name(r);
             }
         }
         for a in p.timeline.iter().flat_map(|t| t.scenes.iter().flat_map(|s| s.beats.iter().flat_map(|b| b.actions.iter()))) {
@@ -675,13 +676,21 @@ impl<'a> Printer<'a> {
         out
     }
 
+    /// Records the names of a representation and of a group's members (D-043).
+    fn rep_name(&mut self, r: &Rep) {
+        if let Some(n) = &r.name {
+            self.rep_names.insert(r.id.clone(), n.clone());
+        }
+        for m in &r.members {
+            self.rep_name(m);
+        }
+    }
+
     fn collect_rep_names(&mut self, a: &Action) {
         match a {
             Action::Show { reps, .. } | Action::Reveal { reps, .. } => {
                 for r in reps {
-                    if let Some(n) = &r.name {
-                        self.rep_names.insert(r.id.clone(), n.clone());
-                    }
+                    self.rep_name(r);
                 }
             }
             Action::Explore { controls, fallback, .. } => {
