@@ -432,7 +432,10 @@ pub struct Interaction {
     pub gesture: Name,
     pub part: Option<Name>,
     pub bind: Name,
-    pub proposals: Vec<(Name, Expr)>,
+    /// `propose x = e`, or a member's binding `propose b.pos = e` (D-059).
+    pub proposals: Vec<(Path, Expr)>,
+    /// `on click request E(v)`: the event a click requests and its payload (D-059).
+    pub request: Option<(Name, Option<Expr>)>,
     pub span: Span,
 }
 

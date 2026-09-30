@@ -161,6 +161,22 @@ impl Interactive {
         self.commit(Action::Request(event.clone()))
     }
 
+    /// Clicks or activates a representation that requests an event (D-059): the request is
+    /// made at the instant shown, with the payload the representation gives, typically its
+    /// member.
+    pub fn click(&mut self, rep: &str) -> Result<(), Report> {
+        let Some((_, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("nothing named `{rep}`")) };
+        let Some(c) = r.rep.click.clone() else { return self.report(Why::Refused, format!("`{rep}` does nothing when clicked")) };
+        let run = &self.session.current;
+        if !r.shown(run, &run.state_at(self.t), self.t) {
+            return self.report(Why::Refused, format!("`{rep}` is not shown now: its member is not alive"));
+        }
+        self.commit(match c.payload {
+            Some(v) => Action::RequestWith(c.event, v),
+            None => Action::Request(c.event),
+        })
+    }
+
     /// Requests an event declared `on request` at the instant shown, with its payload when it
     /// declares one (D-027, D-050). `event` is the event's identity or name.
     pub fn request(&mut self, event: &str, payload: Option<Expr>) -> Result<(), Report> {
@@ -250,6 +266,11 @@ impl Interactive {
         if inv.part.as_deref() != part {
             return self.report(Why::Refused, format!("`{rep}` is dragged by {}", inv.part.as_deref().map(|p| format!("its {p}")).unwrap_or("its body".into())));
         }
+        // A representation of a member not alive is not drawn, and cannot be dragged (D-059).
+        let run = &self.session.current;
+        if !r.shown(run, &run.state_at(self.t), self.t) {
+            return self.report(Why::Refused, format!("`{rep}` is not shown now: its member is not alive"));
+        }
         self.drag = Some(Drag { rep: r.rep.id.clone(), ctx, crep: r, previews: vec![], last_valid: None });
         Ok(())
     }
@@ -263,7 +284,15 @@ impl Interactive {
         let ops = inv.proposals.iter().map(|pr| Op::Set { target: Target::of(pr.target.clone()), value: subst(&pr.value, &gesture) }).collect();
         let action = Action::Intervene(ops);
         let t = self.t;
-        let result = self.session.propose(t, action.clone());
+        let mut result = self.session.propose(t, action.clone());
+        // A proposal that ends the member dragged is not valid (D-059).
+        if let Ok(run) = &result {
+            let crep = &self.drag.as_ref().unwrap().crep;
+            if !crep.shown(run, &run.state_at(t), t) {
+                let message = format!("`{}` would stop being alive", crep.rep.name.as_deref().unwrap_or(&crep.rep.id));
+                result = Err(prismal_runtime::RunDiag { category: prismal_runtime::Category::Intervention, message, element: None, t, n: 0 });
+            }
+        }
         let drag = self.drag.as_mut().unwrap();
         match result {
             Ok(run) => {

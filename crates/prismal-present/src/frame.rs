@@ -104,6 +104,10 @@ pub struct RepFrame {
     /// `body` or the part's name (`head`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drag: Option<String>,
+    /// For a representation that requests an event when clicked or activated: the event's
+    /// name (D-059).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub click: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -745,6 +749,22 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
             ce(&subst(&p.value, &ctx.pointer([0.0, 0.0])), Some(&cm.bindings[i].ty))?;
         }
     }
+    // A click requests an event declared `on request`, with the payload it declares (D-027,
+    // D-050, D-059).
+    if let Some(c) = &rep.click {
+        let ev = cm.ir.events.iter().find(|e| e.id == c.event).ok_or_else(|| d("PK-E01", format!("unknown event `{}`", c.event)))?;
+        if !matches!(ev.trigger, prismal_ir::Trigger::Request) {
+            return Err(d("PK-E03", format!("`{}` is not declared `on request`, so no click can request it (D-027)", ev.name)));
+        }
+        match (&ev.payload, &c.payload) {
+            (None, None) => {}
+            (Some(p), Some(v)) => {
+                ce(v, Some(&p.ty))?;
+            }
+            (Some(p), None) => return Err(d("PK-E02", format!("`request {}` supplies its payload `{}`", ev.name, p.name))),
+            (None, Some(_)) => return Err(d("PK-E02", format!("`{}` declares no payload", ev.name))),
+        }
+    }
     let when = match &rep.when {
         Some(w) => Some(compile_expr(cm, w, Some(&Type::Boolean)).map_err(|ds| d("PK-E02", ds.iter().map(|x| format!("{}: {}", x.code, x.message)).collect::<Vec<_>>().join("; ")))?.0),
         None => None,
@@ -779,7 +799,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                 Some(Ok(v)) => coords(&v),
                 Some(Err(s)) => {
                     let (sh, tx) = status(s);
-                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None };
+                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None };
                 }
                 None => vec![0.0, 0.0],
             };
@@ -896,7 +916,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                     Ok(v) => pts.push(ctx.to_view(&coords(&v))),
                     Err(s) => {
                         let (sh, tx) = status(s);
-                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None };
+                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None };
                     }
                 }
             }
@@ -1008,7 +1028,13 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
         _ => None,
     };
     let drag = r.rep.inverse.as_ref().map(|inv| inv.part.clone().unwrap_or_else(|| "body".into()));
-    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag }
+    // A clickable representation says what activating it does (PK-11.1, D-059).
+    let click = r.rep.click.as_ref().map(|c| cm.ir.events.iter().find(|e| e.id == c.event).map(|e| e.name.clone()).unwrap_or_else(|| c.event.clone()));
+    let text = match &click {
+        Some(e) => format!("{text}, activate: {e}"),
+        None => text,
+    };
+    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag, click }
 }
 
 /// Sample instants `t0, t0 + dt, ...` up to `t`, and `t` itself (PK-6.3, PK-7.5: a trace

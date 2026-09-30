@@ -103,7 +103,7 @@ fn drag_an_arrow_head() {
 
     let down = h.pointer("down", "scene", x + 3.0, y - 2.0, json!({}));
     assert_eq!((down["handled"].clone(), down["action"].clone(), down["ok"].clone()), (json!(true), json!("drag"), json!(true)));
-    assert_eq!(down["target"], json!({ "rep": "VectorPlot.view.scene.arrow.1", "part": "head" }));
+    assert_eq!(down["target"], json!({ "rep": "VectorPlot.view.scene.arrow.1", "part": "head", "drag": true, "click": false }));
     // One metre to the right is 40 view pixels.
     let moved = h.pointer("move", "scene", x + 40.0, y, json!({}));
     assert_eq!(moved["ok"], true);
@@ -264,4 +264,80 @@ fn zoom_and_pan_in_a_lesson() {
     let step = h.key("ArrowRight", json!({ "time": inside }));
     assert_eq!((step["action"].clone(), step["ok"].clone()), (json!("step"), json!(true)), "{step}");
     assert_eq!(step["lesson"]["inputs"].as_array().unwrap().len(), 1);
+}
+
+/// The guide's orbits lab (D-059): a press and release on a planet clicks it, which requests
+/// `remove` for that planet; moving past the tolerance drags it instead; Enter on a focused
+/// planet clicks it; the button adds one.
+#[test]
+fn clicks_and_drags_on_members() {
+    let (mut h, _) = Host::open("g9-orbits", "Sky");
+    let size = [640.0, 480.0];
+    let at = |h: &mut Host, name: &str| {
+        let f = h.frame(0.0);
+        let p = pt(&rep(&f, name)["at"]);
+        px(&f["views"][0], p, size)
+    };
+    let drawn = |h: &mut Host, name: &str| {
+        let f = h.frame(0.0);
+        f["views"].as_array().unwrap().iter().flat_map(|v| v["reps"].as_array().unwrap().iter()).any(|r| r["id"].as_str().unwrap().ends_with(name))
+    };
+    let dims = json!({ "width": size[0], "height": size[1] });
+    let f = h.frame(0.0);
+    assert_eq!(rep(&f, "planet[2]")["drag"], "body");
+    assert_eq!(rep(&f, "planet[2]")["click"], "remove");
+    assert!(rep(&f, "planet[2]")["text"].as_str().unwrap().ends_with(", activate: remove"));
+
+    // Hovering tells the host a planet can be dragged and clicked.
+    let [x, y] = at(&mut h, "planet[2]");
+    let hover = h.pointer("move", "sky", x, y, dims.clone());
+    assert_eq!((hover["hover"]["drag"].clone(), hover["hover"]["click"].clone()), (json!(true), json!(true)));
+
+    // A press and a release 2 px away: a click.
+    assert_eq!(h.pointer("down", "sky", x, y, dims.clone())["action"], "drag");
+    assert_eq!(h.pointer("move", "sky", x + 2.0, y, dims.clone())["ok"], true);
+    let up = h.pointer("up", "sky", x + 2.0, y, dims.clone());
+    assert_eq!((up["action"].clone(), up["ok"].clone()), (json!("click"), json!(true)), "{up}");
+    assert!(!drawn(&mut h, "planet[2]"), "planet 2 removed");
+    assert_eq!(h.op(json!({ "op": "undo" }))["interventions"], 0, "the click was one request");
+    assert!(drawn(&mut h, "planet[2]"));
+
+    // A press moved 30 px: a drag of planet 2, which stays. The framing may grow after it,
+    // so the move is checked in view coordinates: 30 px at the scale the view was drawn.
+    let f = h.frame(0.0);
+    let b: Vec<f64> = f["views"][0]["box"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    let scale = (size[0] / b[2]).min(size[1] / b[3]);
+    let before = pt(&rep(&f, "planet[2]")["at"]);
+    let [x, y] = at(&mut h, "planet[2]");
+    h.pointer("down", "sky", x, y, dims.clone());
+    assert_eq!(h.pointer("move", "sky", x + 30.0, y, dims.clone())["ok"], true);
+    let up = h.pointer("up", "sky", x + 30.0, y, dims.clone());
+    assert_eq!((up["action"].clone(), up["committed"].clone()), (json!("drag"), json!(true)), "{up}");
+    assert!(drawn(&mut h, "planet[2]"));
+    let after = pt(&rep(&h.frame(0.0), "planet[2]")["at"]);
+    assert!((after[0] - before[0] - 30.0 / scale).abs() < 1e-6, "moved by the drag: {before:?} to {after:?}");
+
+    // The dragged planet took focus; Shift+Tab goes back to planet 1, and Enter clicks it.
+    assert!(h.frame(0.0)["focus"].as_str().unwrap().ends_with("planet[2]"));
+    let t = h.key("Tab", json!({ "shift": true }));
+    assert!(t["focus"].as_str().unwrap().ends_with("planet[1]"), "{t}");
+    let k = h.key("Enter", json!({}));
+    assert_eq!((k["action"].clone(), k["ok"].clone()), (json!("click"), json!(true)), "{k}");
+    assert!(!drawn(&mut h, "planet[1]"));
+
+    // The button adds a planet: `planets[3]`.
+    let mut focus = h.key("Tab", json!({}));
+    while !focus["focus"].as_str().unwrap_or("").contains("button") {
+        focus = h.key("Tab", json!({}));
+        assert_eq!(focus["handled"], true, "a button in the focus order");
+    }
+    assert_eq!(h.key("Enter", json!({}))["action"], "press");
+    assert!(drawn(&mut h, "planet[3]"));
+
+    // The protocol names members directly.
+    let r = h.op(json!({ "op": "click", "rep": "planet[3]" }));
+    assert_eq!(r["ok"], true, "{r}");
+    let r = h.op(json!({ "op": "request", "event": "remove", "payload": "planets[3]" }));
+    assert_eq!(r["ok"], false, "already removed: {r}");
+    assert!(r["message"].as_str().unwrap().contains("`planets[3]` is not alive"), "{r}");
 }

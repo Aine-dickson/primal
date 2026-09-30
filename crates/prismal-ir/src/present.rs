@@ -129,6 +129,10 @@ pub struct Rep {
     /// The members of a `group`, drawn with its transform (PK-6.3b, D-043).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<Rep>,
+    /// `on click request E(v)`: clicking or activating the representation requests an event
+    /// (D-059).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub click: Option<Click>,
     /// Drawn only while this holds: a representation of a member of a collection whose
     /// membership changes is shown while the member is alive (D-057). Made by elaboration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -170,10 +174,23 @@ pub struct Inverse {
     pub proposals: Vec<Proposal>,
 }
 
+/// The event a click on a representation requests, with its payload: in a representation
+/// repeated per member, typically that member (`on click request remove(b)`, D-059).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Click {
+    pub event: Id,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<Expr>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Proposal {
     pub target: Id,
     pub value: Expr,
+    /// The member whose binding `target` is, in a representation repeated per member:
+    /// `propose b.pos = p` (`{"var": "b"}`, D-059). Elaboration resolves it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<Expr>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

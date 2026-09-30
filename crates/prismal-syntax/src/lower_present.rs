@@ -121,15 +121,28 @@ impl PresCx<'_, '_> {
                 Some(n) => props.push(Prop { name: n.text.clone(), value }),
             }
         }
-        if r.interactions.len() > 1 {
-            self.err("SX-E06", "one declared inverse per representation in v0", r.interactions[1].span);
+        let (clicks, drags): (Vec<&ast::Interaction>, Vec<&ast::Interaction>) = r.interactions.iter().partition(|i| i.request.is_some());
+        if drags.len() > 1 {
+            self.err("SX-E06", "one declared inverse per representation in v0", drags[1].span);
         }
-        let inverse = r.interactions.first().map(|i| {
+        if clicks.len() > 1 {
+            self.err("SX-E06", "one click per representation", clicks[1].span);
+        }
+        // `on click request E(v)` (D-059): the payload is read in the representation's scope.
+        let click = clicks.first().and_then(|i| i.request.as_ref()).map(|(e, p)| Click { event: self.cx.event_id(e), payload: p.as_ref().map(|v| self.expr(v)) });
+        let inverse = drags.first().map(|i| {
             let locals = vec![i.bind.text.clone()];
             let proposals = i
                 .proposals
                 .iter()
-                .map(|(t, v)| Proposal { target: self.cx.binding(t), value: self.cx.expr(v, &locals) })
+                .map(|(t, v)| {
+                    // A proposal sets a whole binding, of the model or of a member (D-059).
+                    let target = self.cx.target(t);
+                    if target.component.is_some() {
+                        self.err("SX-E06", "a proposal sets a whole binding: `propose pos = p`", t.name.span);
+                    }
+                    Proposal { target: target.binding, value: self.cx.expr(v, &locals), member: target.member }
+                })
                 .collect();
             Inverse { gesture: i.gesture.text.clone(), part: i.part.as_ref().map(|p| p.text.clone()), proposals }
         });
@@ -139,7 +152,7 @@ impl PresCx<'_, '_> {
         if each.is_some() {
             self.cx.vars.pop();
         }
-        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members, when: None }
+        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members, click, when: None }
     }
 
     fn view(&mut self, v: &ast::ViewDecl) -> Option<View> {

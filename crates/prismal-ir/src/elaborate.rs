@@ -1109,10 +1109,35 @@ impl<'a> PCx<'a, '_> {
             inverse: r.inverse.as_ref().map(|inv| Inverse {
                 gesture: inv.gesture.clone(),
                 part: inv.part.clone(),
-                proposals: inv.proposals.iter().map(|p| crate::present::Proposal { target: p.target.clone(), value: self.e(s, &p.value) }).collect(),
+                proposals: inv.proposals.iter().map(|p| crate::present::Proposal { target: self.proposed(s, p), value: self.e(s, &p.value), member: None }).collect(),
             }),
             members: self.reps(s, &r.members),
+            click: r.click.as_ref().map(|c| {
+                let declared = self.cx.root.events.iter().find(|e| e.id == c.event).and_then(|e| e.payload.clone());
+                crate::present::Click { event: c.event.clone(), payload: c.payload.as_ref().map(|p| self.cx.payload_value(s, declared.as_ref(), p)) }
+            }),
             when: both(s.live.clone(), r.when.as_ref().map(|w| self.e(s, w))),
+        }
+    }
+
+    /// The binding a drag proposes: of the model, or of the member a representation repeated
+    /// per member draws (D-059). A member chosen during the run, as the one at a relation's
+    /// endpoint, is not dragged through the relation: the member's own representation is.
+    fn proposed(&mut self, s: &Scope<'a>, p: &crate::present::Proposal) -> Id {
+        let Some(m) = &p.member else { return s.local(&p.target) };
+        let field = p.target.rsplit('.').next().unwrap_or(&p.target);
+        match self.cx.select(s, m) {
+            Some(Sel::One(inst)) => {
+                if inst.ty.binding(&p.target).is_none() {
+                    self.cx.err("MK-E26", format!("an object `{}` has no binding `{field}`", inst.ty.name));
+                }
+                flat(&p.target, &inst.path)
+            }
+            Some(Sel::Chosen { .. }) => {
+                self.cx.err("MK-E26", format!("a drag proposes a binding of the member it draws; a member at an endpoint is dragged by its own representation (`for b in ... {{ marker(b.{field}) {{ on drag as p {{ propose b.{field} = p }} }} }}`)"));
+                p.target.clone()
+            }
+            None => p.target.clone(),
         }
     }
 

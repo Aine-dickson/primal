@@ -957,7 +957,7 @@ impl<'a> ModelCx<'a> {
     /// A target of an operation: a binding of the scope, or a binding of a member it
     /// contains (`set b.vel = ...`, D-057). `b.vel` is a member's binding when `b` names a
     /// member and is not a binding.
-    fn target(&mut self, p: &ast::Path) -> Target {
+    pub(crate) fn target(&mut self, p: &ast::Path) -> Target {
         let names_member = |cx: &Self, n: &str| !cx.bindings.contains_key(n) && (cx.vars.iter().any(|(v, _)| v == n) || cx.parts.contains_key(n));
         let (member, name, component) = match (&p.member, &p.component) {
             // `s.b.vel`: the member at the endpoint `b` of `s` (D-059).

@@ -218,6 +218,18 @@ A request, and an event following another, may carry a member of a collection (D
 
 Acceptance: `prismal-present/tests/member_payloads.rs` (removal, refusals of members not alive or not existing, a member and an impulse, a condition reading the member, `emit` passing a member on, `set` through a relation's endpoint, replay, a lesson's timeline requesting both, printing, diagnostics); `prismal-host/tests/protocol.rs`, `requests_name_members`.
 
+### Drags and clicks on members
+
+| Part | Content |
+|---|---|
+| Syntax | `for b in c { marker(b.pos) as ball { on drag as p { propose b.pos = p }; on click request remove(b) } }`; `click` is a contextual word |
+| IR | a proposal's `member`; a representation's `click` (`event`, `payload`) |
+| Elaboration | a proposal's member resolved to the member drawn (`Ball.pos@balls[2]`), refused for a member at an endpoint; a click's member payload becomes its number |
+| Presentation | a click's event must be `on request` with the payload it declares; frames carry `click` and the text alternative ends `activate: E`; a drag or a click on a representation not drawn is refused, and a proposal after which the member dragged is not alive is invalid |
+| Host | targeting covers clickable representations (`hover` says `drag` and `click`); a press and release within the pointer's reach clicks, further movement drags; clickable representations take focus and Enter or space clicks them; the protocol's `click`; the web player's pointer cursor and keyboard activation |
+
+Acceptance: `prismal-present/tests/member_input.rs` (a keyboard drag of member 2 of 3, refusals for members not alive, clicks with the member as payload, frames, printing, diagnostics); `prismal-web/tests/input.rs`, `clicks_and_drags_on_members` (a click, a drag, Enter on a focused planet, the button, through raw input); `web/check-input.mjs` (a click and a keyboard activation in a browser); guide chapter 9, Labs with members.
+
 ### Members that come and go
 
 Collections whose membership changes (D-057) declare a capacity, the most members a run makes (`drops: Drop[max 40]`, `Drop[2, max 4]`), and are elaborated to that many members, the `k`-th member made being `drops[k]` for the whole run. Nothing below elaboration knows about membership, except three small forms.
@@ -312,7 +324,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Item | Where specified |
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
-| Undirected relations as a declared property, relations between relations or across containers, creation and destruction as interventions (set aside by D-059), unbounded populations (D-057 option 1), drags on members of collections; payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
+| Undirected relations as a declared property, relations between relations or across containers, creation and destruction as interventions (set aside by D-059), unbounded populations (D-057 option 1); clicks on an empty point of a view (a position as payload); payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
 | Drags on members of a group; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
@@ -349,3 +361,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 relations (D-058): relation types, relation sets, `connect`, `disconnect`, endpoints; derived values of members not alive not evaluated.
 - 2026-09-30 collections whose membership changes (D-057): capacity, `create`, `destroy`, events per member, member targets; aggregates folded as balanced trees.
 - 2026-10-01 members as payloads and several payloads per event (D-059); requests refused with a reason; the protocol's `request`.
+- 2026-10-01 drags and clicks on members (D-059); guide chapter 9, Labs with members.

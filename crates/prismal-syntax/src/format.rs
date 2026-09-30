@@ -829,12 +829,22 @@ impl<'a> Printer<'a> {
         if let Some(n) = &r.name {
             let _ = write!(s, " as {n}");
         }
+        // `on click request E(v)` beside a drag (D-059).
+        let click = r.click.as_ref().map(|c| match &c.payload {
+            Some(p) => format!("on click request {}({})", self.event_name(&c.event), self.payload_args(p)),
+            None => format!("on click request {}", self.event_name(&c.event)),
+        });
+        if let (Some(c), None) = (&click, &r.inverse) {
+            let _ = write!(s, " {{ {c} }}");
+        }
         if let Some(inv) = &r.inverse {
             let part = inv.part.as_ref().map(|p| format!(" {p}")).unwrap_or_default();
             let bind = if inv.part.as_deref() == Some("head") { "h" } else { "p" };
             let props: Vec<String> =
-                inv.proposals.iter().map(|pr| format!("propose {} = {}", self.binding_name(&pr.target), self.expr_p(&pr.value, &[bind.to_string()]))).collect();
-            if props.len() == 1 {
+                inv.proposals.iter().map(|pr| format!("propose {} = {}", self.target(&Target { binding: pr.target.clone(), component: None, member: pr.member.clone() }), self.expr_p(&pr.value, &[bind.to_string()]))).collect();
+            if let Some(c) = &click {
+                let _ = write!(s, " {{ on {}{part} as {bind} {{ {} }}; {c} }}", inv.gesture, props.join("; "));
+            } else if props.len() == 1 {
                 let _ = write!(s, " {{ on {}{part} as {bind} {{ {} }} }}", inv.gesture, props[0]);
             } else {
                 let ind = INDENT.repeat(depth + 1);

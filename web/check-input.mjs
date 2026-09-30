@@ -1,7 +1,8 @@
 // Drives the web player in a headless browser through the DevTools protocol with real mouse,
 // wheel and key events, which the player forwards to the engine as raw input (D-047,
 // HI-4.5): hover, drags in a spatial view and in a plot, focus after a drag, a keyboard step,
-// wheel zoom, pan and reset.
+// clicks on members of a collection and their keyboard activation (D-059), wheel zoom, pan
+// and reset.
 //
 // Needs Node 22 or later, the player built (`./web/build.sh`) and Microsoft Edge or Chrome
 // (path in the BROWSER environment variable, or the default Edge path on Windows).
@@ -103,6 +104,25 @@ await mouse('mouseReleased', px, py - 10);
 await sleep(200);
 const handle = await title('QuadraticPlot.view.plot.handle');
 check('a drag in a plot moves the handle up', !/y = 1$/.test(handle), handle);
+
+// The guide's orbits lab (D-059): a click on a planet removes it; Enter on a focused planet
+// clicks it.
+await open('g9-orbits/Sky');
+const planet = (k) => `Sky.view.sky.planet[${k}]`;
+const shown = (k) => ev(`!!document.querySelector('[data-rep="${planet(k)}"]')`);
+check('planets are drawn', (await shown(1)) && (await shown(2)));
+const [cx, cy] = await center(`[data-rep="${planet(2)}"] circle.marker`);
+await mouse('mouseMoved', cx, cy, { buttons: 0 });
+check('hover over a planet shows a grab cursor', (await ev(`document.querySelector('#views svg').style.cursor`)) === 'grab');
+await mouse('mousePressed', cx, cy);
+await mouse('mouseReleased', cx + 1, cy);
+await sleep(200);
+check('a click on planet 2 removes it', !(await shown(2)) && (await shown(1)));
+check('the text alternative says what activating does', (await title(planet(1))).endsWith('activate: remove'), await title(planet(1)));
+await ev(`document.querySelector('[tabindex][data-rep="${planet(1)}"]').focus()`);
+await key('Enter', 13);
+await sleep(200);
+check('Enter on a focused planet removes it', !(await shown(1)));
 
 // RP-08 permits zoom and pan.
 await open('rp08/ProjectileLesson@1');

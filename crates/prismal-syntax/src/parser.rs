@@ -22,7 +22,7 @@ pub const RESERVED: &[&str] = &[
 /// Contextual keywords: words of presentations, timelines and runs, recognized only where
 /// such a word is expected (D-040). Elsewhere they are ordinary names (`process drag`).
 pub const CONTEXTUAL: &[&str] = &[
-    "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "propose", "permit",
+    "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "click", "propose", "permit",
     "timeline", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
     "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "reveal", "zoom", "animate", "camera", "bind", "release", "config",
     "expect", "exactly", "rel", "of", "with", "learner", "continue",
@@ -1410,17 +1410,25 @@ impl<'a> Parser<'a> {
     fn interaction(&mut self) -> P<Interaction> {
         let start = self.span();
         self.expect_word("on")?;
-        let gesture = self.any_name("a gesture (`drag`)")?;
+        let gesture = self.any_name("a gesture (`drag`, `click`)")?;
+        // `on click request E(v)` (D-059).
+        if gesture.text == "click" {
+            self.expect_word("request")?;
+            let event = self.name("an event name")?;
+            let payload = self.payload_args()?;
+            let bind = gesture.clone();
+            return Ok(Interaction { gesture, part: None, bind, proposals: vec![], request: Some((event, payload)), span: self.since(start) });
+        }
         let part = if !self.is_word("as") { Some(self.name("a part")?) } else { None };
         self.expect_word("as")?;
         let bind = self.name("a name for the gesture value")?;
         let proposals = self.block(|p| {
             p.expect_word("propose")?;
-            let n = p.name("a binding name")?;
+            let n = p.path()?;
             p.expect_punct("=")?;
             Ok(vec![(n, p.expr()?)])
         })?;
-        Ok(Interaction { gesture, part, bind, proposals, span: self.since(start) })
+        Ok(Interaction { gesture, part, bind, proposals, request: None, span: self.since(start) })
     }
 
     fn scene(&mut self) -> P<SceneDecl> {

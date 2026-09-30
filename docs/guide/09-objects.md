@@ -435,6 +435,123 @@ run snaps of Threads with Watch {
 
 A relation that is not made yet, or already disconnected, has no values: `springs[3].stretch` before a third spring is connected is not a number. The count, sums and representations leave it out, as they leave out members that are not alive.
 
+## Labs with members
+
+A lab with many objects lets the learner act on one of them: drag this planet, remove that one. The learner's action has to say **which** member it is about. An event can receive a member as its payload (D-059):
+
+```text
+space Plane = euclidean(2)
+
+model Orbits in Plane {
+  object Planet {
+    state {
+      pos: Point            = origin + (1 m, 0 m) intervenable
+      vel: Vector<Velocity> = (0 m/s, 1 m/s)
+    }
+    flow { der(pos) = vel }
+  }
+  param { mu: Quantity<L^3/T^2> = 1 m^3/s^2 }
+  parts {
+    planets: Planet[2, max 6] {
+      pos = origin + (index * 1 m, 0 m)
+      vel = (0 m/s, sqrt(mu / (index * 1 m)))
+    }
+  }
+  flow {
+    for p in planets {
+      der(p.vel) = -mu * (p.pos - origin) / |p.pos - origin|^3
+    }
+  }
+  event remove on request(p in planets) { destroy p }
+  event add on request {
+    create planets {
+      pos = origin + (0 m, -2 m)
+      vel = (sqrt(mu / (2 m)), 0 m/s)
+    }
+  }
+  derived { n: Real = count(planets) }
+}
+```
+
+- The planets circle a sun at the origin; `mu` is the sun's gravitational parameter. Each starts on a circular orbit: at distance `r`, the speed `sqrt(mu / r)`.
+- `on request(p in planets)` declares a payload that is a member of `planets`. Whoever requests `remove` says which planet; the handler reads it as `p`, like a loop variable: `destroy p`, `p.pos`, `set p.vel = ...`.
+- The event happens only for a planet that is alive. A request for a planet already removed, or not made yet, is refused with the reason (`planets[2]` is not alive).
+- `add` takes no payload: it makes the next planet, on a circular orbit of radius 2 m.
+- `pos` is `intervenable`, so the learner may move a planet (D-023).
+
+An event may take a member and a value together: `event kick on request(p in planets, j: Vector<Momentum>) { set p.vel = p.vel + j / 1 kg }` is requested as `kick(planets[1], (0 kg*m/s, 1 kg*m/s))`. `emit E(p)` passes a member on to the events that follow `E`, which receive it as `on E(q in planets)`.
+
+In a lab, the learner acts on the planet under the pointer:
+
+```text
+presentation Sky for Orbits {
+  view sky: spatial(Plane, scale: 1 m -> 80 px, y: up) {
+    marker(origin) as sun
+    for p in planets { trace(p.pos every 0.05 s) }
+    for p in planets {
+      marker(p.pos) as planet {
+        on drag as q { propose p.pos = q }
+        on click request remove(p)
+      }
+    }
+  }
+  panel controls { button(add, label: "Add a planet") }
+}
+```
+
+- `on drag as q { propose p.pos = q }` in a representation repeated per member moves that member: dragging `planet[2]` proposes a new position for `planets[2]`. The binding must be intervenable in the object type.
+- `on click request remove(p)` requests `remove` with the planet clicked. A click is a press and release that does not move; moving further makes it a drag. A click only requests an event: what happens is written in the model.
+- With the keyboard, Tab gives focus to each planet in turn; arrow keys move it and Enter or space activates its click. The text alternative says so: `planet[2] ..., activate: remove`.
+- The button adds a planet. A host that has no pointer requests the same events with the member named: `remove` with payload `"planets[2]"`.
+
+| Form | Does |
+|---|---|
+| `on request(b in c)` | an event requested for one member of `c`, read as `b` in its condition and handler |
+| `on request(b in c, x: T)` | several payloads: a member and a value |
+| `request E(c[k])`, `request E(c[k], v)` | a timeline's request for a member |
+| `emit E(b)` | passes a member to the events that follow `E` |
+| `on drag as q { propose b.x = q }` | in `for b in c { ... }`: dragging moves that member |
+| `on click request E(b)` | in `for b in c { ... }`: clicking requests `E` for that member |
+
+A lesson requests for members as a learner would. The case checks the effect of each request:
+
+```text
+presentation Tour for Orbits {
+  view sky: spatial(Plane, scale: 1 m -> 80 px, y: up) {
+    marker(origin) as sun
+    for p in planets { marker(p.pos) as planet }
+  }
+  observe {
+    before = n at t0 + 0.5 s
+    after  = n at t0 + 1.5 s
+    later  = n at t0 + 2.5 s
+    x1     = planets[1].pos.x at t0 + 2.5 s
+    x3     = planets[3].pos.x at t0 + 2.5 s
+  }
+  timeline {
+    scene sky {
+      beat watch { run rate 1; wait 1 s }
+      beat fewer { request remove(planets[2]); wait 1 s }
+      beat more  { request add; wait 1 s }
+    }
+  }
+}
+```
+
+Planet 1 goes round once in `2π` s, so at 2.5 s it is at `cos 2.5 = -0.801144 m`. Planet 2 is removed at 1 s. The planet added at 2 s is `planets[3]`, since a number is never given twice; on its orbit of radius 2 m it turns at `sqrt(mu / r^3) = 0.353553` rad/s, so after 0.5 s its x is `2 sin(0.176777) = 0.351715 m`.
+
+```cases
+run tour of Orbits with Tour {
+  expect {
+    before == 2 within 1e-12
+    after  == 1 within 1e-12
+    later  == 2 within 1e-12
+    x1     == -0.801144 m within 1e-5 m
+    x3     == 0.351715 m within 1e-5 m
+  }
+}
+```
+
 ## Names in results
 
 Each member's bindings and events have names built from the member: `row[2].pos`, `moon.bounce`. They appear in diagnostics, event logs and text alternatives. A mistake in the object type is reported once for each member, and located at the line in the object type.
@@ -527,12 +644,28 @@ model M in Plane {
 
 `links` holds relations: they are made with `connect links(balls[1], balls[2])`, which names the endpoints.
 
+```error
+// error: MK-E26
+space Plane = euclidean(2)
+model M in Plane {
+  object Ball {
+    state { pos: Point = origin }
+  }
+  parts { balls: Ball[3, max 3] }
+  event remove on request(b in balls) { destroy b }
+  event clear on every 1 s { emit remove(2) }
+}
+```
+
+The payload of `remove` is a member: give one, `emit remove(balls[2])`, not its number.
+
 ## Exercises
 
 1. Add a fourth ball to `row`. Which expectations change?
 2. Give each ball in `row` a different radius with an override (`r = index * 0.05 m`), and show the radius as a `circle(b.pos, b.r)` in the view.
 3. Chain three masses with springs: each mass is pulled towards its neighbours. Write the force on member `b` as a sum over the others with a filter that keeps only neighbours. (Hint: give each member its number as a parameter, `n = index`, and compare numbers.)
 4. Make the fountain throw two drops at each spray, one to each side (`vel = (1 m/s, speed)` and `vel = (-1 m/s, speed)`). How many drops are in the air at 1.2 s?
+5. Give `Orbits` an event `kick` that takes a planet and an impulse (`on request(p in planets, j: Vector<Momentum>)`). A representation has one click, so draw at each planet a second marker, a little above it, whose click requests `kick` for that planet with a fixed impulse.
 
 <details>
 <summary>A solution to exercise 2</summary>

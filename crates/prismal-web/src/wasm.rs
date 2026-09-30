@@ -51,6 +51,19 @@ impl WebPlayer {
     pub fn press(&mut self, rep: &str) -> String {
         s(self.0.press(rep))
     }
+    /// Clicks a representation that requests an event (D-059).
+    pub fn click(&mut self, rep: &str) -> String {
+        s(self.0.click(rep))
+    }
+    /// Requests an event with a payload given as JSON (HI-4.3b): `"balls[2]"`, `2`, `[0, 1]`.
+    pub fn request(&mut self, event: &str, payload: Option<String>) -> String {
+        let payload = match payload.as_deref().map(serde_json::from_str::<serde_json::Value>) {
+            Some(Ok(v)) => Some(v),
+            Some(Err(e)) => return s(serde_json::json!({ "ok": false, "why": "refused", "message": format!("the payload is not JSON: {e}") })),
+            None => None,
+        };
+        s(self.0.request(event, payload.as_ref()))
+    }
     pub fn pointer_down(&mut self, rep: &str, part: Option<String>) -> String {
         s(self.0.pointer_down(rep, part.as_deref()))
     }

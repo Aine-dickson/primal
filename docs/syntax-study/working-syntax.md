@@ -51,7 +51,8 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 | `observe { name = expr schedule ... }` | observations; schedules `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over I` |
 | `view name: spatial(Space, scale: 1 m -> 40 px, y: up) { reps }`, `view name: plot(x: I, y: I) { reps }` | views containing their representations |
 | `panel name { reps }` | region without a coordinate system (controls, formulas) |
-| `rep(...) [as name] { on drag [part] as p { propose x = e } }` | representation with its declared inverse |
+| `rep(...) [as name] { on drag [part] as p { propose x = e } }` | representation with its declared inverse; in `for b in c { ... }`, `propose b.x = e` moves that member (D-059) |
+| `rep(...) [as name] { on click request E(v) }` | representation that requests an event when clicked; `on click request E(b)` for its member (D-059) |
 | `group(at: P, rotate: θ, scale: k) [as name] { reps }` | representations placed, turned and scaled together; members are written in the group's frame (D-043) |
 | `trace(pos every 0.02 s)`, `series_plot(y every 0.01 s)` | a sampled source: `expr every Δ`, only as a representation's argument (PK-6.3a) |
 | `plot(x: [0 s, 6 s], y: [0 m, 1.1 m])` | plot axes with dimensions; a plot marker is at a pair in those dimensions, `marker(at: (0, y))` (PK-7.3a) |
@@ -78,7 +79,7 @@ The formatter prints, from the IR: enumerations, then declarations grouped in bl
 - **Statements** end at a newline or `;`. Several statements on one line are separated by `;`. A line ending in an operator (other than a closing `|`), `,`, an open bracket or one of the operator words continues on the next line; so does every line inside `( )` or `[ ]`.
 - **Reserved words** (D-040), never names: `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request enum match`.
 - **Representation kinds** are read where a representation is expected; there `equation`, reserved elsewhere, is the representation kind of PK-6.3.
-- **Contextual keywords** (D-040), recognized only where such a word is expected and ordinary names elsewhere (`process drag`, `view scene`): `for view panel observe live over microstep show as drag propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue`.
+- **Contextual keywords** (D-040), recognized only where such a word is expected and ordinary names elsewhere (`process drag`, `view scene`): `for view panel observe live over microstep show as drag click propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue`.
 - **Built-in names** (not reserved, but predefined): `t`, `t0`, `elapsed`, `origin`, `der`, `π` and `pi` (D-039), `inf` (only as an interval bound), the SI units and named dimensions of MK section 3. Named dimensions: `Length`, `Mass`, `Time`, `Current`, `Amount`, `Area`, `Volume`, `Velocity`, `Acceleration`, `Frequency`, `Momentum`, `Force`, `Energy`, `Power`, `Pressure`, and `Angle` (dimensionless, D-021); base symbols `L M T I Θ N J` inside `Quantity<...>`.
 
 ---
@@ -527,6 +528,7 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-30 zero vectors written `0` (D-030); `sequence` dropped where D-033 orders run-directing actions; reference programs converted.
 - 2026-09-30 payloads (`on E(p: T)`, `request E(v)`) and inputs (defaults, a run's `input` block) implemented (D-050, D-051).
 - 2026-10-01 member payloads and several payloads (`on request(b in balls, j: T)`, `request E(balls[2], v)`) implemented (D-059).
+- 2026-10-01 drags on members (`propose b.pos = p`) and clicks (`on click request E(b)`) implemented (D-059).
 - 2026-09-30 `enum`, `fn` and `match` implemented (D-048, D-049); `enum` and `match` reserved; `=>` added.
 - 2026-09-30 implemented by the text parser. Lexical rules made precise (units without spaces, names after numbers, statement separators, `in` after a declaration's value, `inf`); reserved words split into reserved words and contextual keywords (D-040); `π` kept by name (D-039); RP-07 observation `state` renamed `values`.
 - 2026-09-30 sampled sources (`expr every Δ`) and plot axes with dimensions, from the web player.

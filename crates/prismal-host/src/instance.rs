@@ -15,7 +15,7 @@ use prismal_ir::present::{Action as TAction, LearnerInput, Observation, Schedule
 use prismal_ir::Op;
 use prismal_kernel::{compile_expr, CModel};
 use prismal_present::data::Data;
-use crate::input::{focus_order, hit, tolerance, Target, ViewKind, ViewState, Viewport, PLOT_MARGIN};
+use crate::input::{dist, focus_order, hit, tolerance, Target, ViewKind, ViewState, Viewport, PLOT_MARGIN};
 use prismal_present::frame::{CKind, CRep, Frame, RepFrame, Shape, ViewCtx};
 use prismal_present::interact::{si_literal, Interactive, Key};
 use prismal_present::text::{fmt_binding, fmt_num, fmt_payload, fmt_value, print, symbol, unit_text};
@@ -66,7 +66,12 @@ pub struct Instance {
 
 #[derive(Clone, Debug)]
 enum Gesture {
-    Drag { view: usize },
+    /// A drag; `click` holds, while the pointer has not moved past the drag tolerance, the
+    /// representation a release would click instead and where the press was (D-059).
+    Drag { view: usize, click: Option<(String, [f64; 2], f64)> },
+    /// A press on a representation that can only be clicked: a release within `tol` pixels
+    /// of `from` clicks it.
+    Click { view: usize, rep: String, from: [f64; 2], tol: f64 },
     /// A pan from pixel `from` of the framing `shown`, drawn at `scale` pixels per view
     /// unit; `before` is the learner's framing to restore on cancel.
     Pan { view: usize, from: [f64; 2], shown: [f64; 4], scale: f64, before: Option<[f64; 4]> },
@@ -97,7 +102,7 @@ fn merge(mut base: Json, extra: Json) -> Json {
 }
 
 fn target_json(t: &Target) -> Json {
-    json!({ "rep": t.rep, "part": t.part })
+    json!({ "rep": t.rep, "part": t.part, "drag": t.drag, "click": t.click })
 }
 
 fn unhandled() -> Json {
@@ -471,6 +476,14 @@ impl Instance {
         Self::outcome(i.request(event, value))
     }
 
+    /// Clicks or activates a representation that requests an event (D-059).
+    pub fn click(&mut self, rep: &str) -> Json {
+        match self.interactive() {
+            Ok(i) => Self::outcome(i.click(rep)),
+            Err(e) => json!({ "ok": false, "message": e }),
+        }
+    }
+
     /// Presses a button: requests its event at the instant shown (D-027).
     pub fn press(&mut self, rep: &str) -> Json {
         match self.interactive() {
@@ -573,10 +586,18 @@ impl Instance {
                     return merge(unhandled(), json!({ "message": "a gesture is already in progress" }));
                 }
                 if session {
-                    if let Some(t) = hit(vf, &map, p, tolerance(e.pointer)) {
+                    let tol = tolerance(e.pointer);
+                    if let Some(t) = hit(vf, &map, p, tol) {
+                        // D-059: a press that does not move past the tolerance is a click.
+                        if !t.drag {
+                            self.gesture = Some(Gesture::Click { view: vi, rep: t.rep.clone(), from: p, tol });
+                            self.focus = Some(t.rep.clone());
+                            return json!({ "handled": true, "action": "click", "ok": true, "target": target_json(&t) });
+                        }
                         let r = self.pointer_down(&t.rep, t.part.as_deref());
                         if r["ok"] == true {
-                            self.gesture = Some(Gesture::Drag { view: vi });
+                            let click = if t.click { Some((t.rep.clone(), p, tol)) } else { None };
+                            self.gesture = Some(Gesture::Drag { view: vi, click });
                             self.focus = Some(t.rep.clone());
                         }
                         return merge(r, json!({ "handled": true, "action": "drag", "target": target_json(&t) }));
@@ -591,9 +612,19 @@ impl Instance {
                 }
             }
             "move" => match self.gesture.clone() {
-                Some(Gesture::Drag { view }) if view == vi => {
+                // Within the tolerance of the press, a clickable representation is not dragged.
+                Some(Gesture::Drag { view, click: Some((_, from, tol)) }) if view == vi && dist(p, from) <= tol => json!({ "handled": true, "action": "drag", "ok": true }),
+                Some(Gesture::Drag { view, .. }) if view == vi => {
+                    self.gesture = Some(Gesture::Drag { view, click: None });
                     let q = map.to_view(p);
                     merge(self.pointer_move(q[0], q[1]), json!({ "handled": true, "action": "drag" }))
+                }
+                Some(Gesture::Click { view, from, tol, .. }) if view == vi => {
+                    if dist(p, from) > tol {
+                        self.gesture = None;
+                        return json!({ "handled": true, "action": "cancel", "message": "moved: not a click" });
+                    }
+                    json!({ "handled": true, "action": "click", "ok": true })
                 }
                 Some(Gesture::Pan { view, from, shown, scale, .. }) if view == vi => {
                     self.views[vi].user = Some([shown[0] - (p[0] - from[0]) / scale, shown[1] - (p[1] - from[1]) / scale, shown[2], shown[3]]);
@@ -606,6 +637,11 @@ impl Instance {
                 }
             },
             "up" => match self.gesture.take() {
+                Some(Gesture::Drag { click: Some((rep, ..)), .. }) => {
+                    self.cancel();
+                    merge(self.click(&rep), json!({ "handled": true, "action": "click", "target": { "rep": rep } }))
+                }
+                Some(Gesture::Click { rep, .. }) => merge(self.click(&rep), json!({ "handled": true, "action": "click", "target": { "rep": rep } })),
                 Some(Gesture::Drag { .. }) => merge(self.pointer_up(), json!({ "handled": true, "action": "drag" })),
                 Some(Gesture::Pan { .. }) => json!({ "handled": true, "action": "pan" }),
                 None => unhandled(),
@@ -619,6 +655,7 @@ impl Instance {
     fn cancel_gesture(&mut self) -> Json {
         match self.gesture.take() {
             Some(Gesture::Drag { .. }) => self.cancel(),
+            Some(Gesture::Click { .. }) => {}
             Some(Gesture::Pan { view, before, .. }) => self.views[view].user = before,
             None => return unhandled(),
         }
@@ -721,6 +758,9 @@ impl Instance {
                 let Some(r) = focused.map(|i| &order[i]) else { return unhandled() };
                 let id = r.id.clone();
                 match &r.shape {
+                    // Enter or space activates a clickable representation (D-026, D-059).
+                    _ if r.click.is_some() && session => merge(self.click(&id), json!({ "handled": true, "action": "click", "target": { "rep": id } })),
+                    _ if r.click.is_some() => json!({ "handled": true, "action": "click", "ok": false, "message": "clicks act in labs; in a lesson the timeline requests events" }),
                     Shape::Button { .. } if session => merge(self.press(&id), json!({ "handled": true, "action": "press", "target": { "rep": id } })),
                     Shape::Button { .. } => json!({ "handled": true, "action": "press", "ok": false, "message": "buttons act in labs; in a lesson the timeline requests events" }),
                     Shape::Control { control, value, .. } if control == "toggle" => {

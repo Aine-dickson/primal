@@ -434,6 +434,7 @@ function drawRep(v, g, r, u, colorIndex) {
   const m = mapFor(v);
   const cls = ['rep'];
   if (r.drag) cls.push('draggable');
+  else if (r.click) cls.push('clickable');
   if (r.valid === false) cls.push('invalid');
   const grp = svg('g', { class: cls.join(' '), 'data-rep': r.id }, g);
   if (r.opacity != null) grp.setAttribute('opacity', r.opacity);
@@ -444,12 +445,12 @@ function drawRep(v, g, r, u, colorIndex) {
     case 'point': {
       const [X, Y] = m.to(r.at);
       if (r.highlighted) svg('circle', { class: 'ring', cx: X, cy: Y, r: 13 * u, 'stroke-width': 3 * u }, grp);
-      const c = svg('circle', { class: 'marker', cx: X, cy: Y, r: (r.drag ? 8 : 6) * u, 'stroke-width': 1.5 * u }, grp);
+      const c = svg('circle', { class: 'marker', cx: X, cy: Y, r: (r.drag || r.click ? 8 : 6) * u, 'stroke-width': 1.5 * u }, grp);
       if (r.label) {
         const t = svg('text', { class: 'rep-label', x: X + 10 * u, y: Y - 10 * u, 'font-size': 12 * u }, grp);
         t.textContent = r.label;
       }
-      if (r.drag) focusable = c;
+      if (r.drag || r.click) focusable = c;
       break;
     }
     case 'arrow': {
@@ -515,10 +516,13 @@ function drawRep(v, g, r, u, colorIndex) {
       e.style.strokeDashoffset = String(1 - r.drawn);
     }
   }
+  // A representation clicked to request an event takes focus by its drawn shape (D-059).
+  if (!focusable && r.click) focusable = grp.querySelector('line, polyline, polygon, path');
   if (focusable) {
+    const how = [r.drag ? 'Arrow keys move it.' : '', r.click ? 'Enter activates it.' : ''].filter(Boolean).join(' ');
     focusable.setAttribute('tabindex', '0');
     focusable.setAttribute('role', 'button');
-    focusable.setAttribute('aria-label', `${r.text}. Arrow keys move it.`);
+    focusable.setAttribute('aria-label', `${r.text}. ${how}`);
     focusable.classList.add('rep');
     focusable.dataset.rep = r.id;
     // The browser moves focus (Tab), for assistive technology; the engine is told, and
@@ -757,8 +761,8 @@ function renderFrame(frame) {
       let arrows = 0;
       for (const r of vf.reps) {
         if (['point', 'arrow', 'segment', 'polyline', 'polygon', 'ellipse', 'group'].includes(r.shape)) {
-          // Draggable representations are drawn last and outside the plot's clip.
-          drawRep(v, r.drag ? top : reps, r, u, r.shape === 'arrow' ? arrows++ : 0);
+          // Draggable and clickable representations are drawn last and outside the plot's clip.
+          drawRep(v, r.drag || r.click ? top : reps, r, u, r.shape === 'arrow' ? arrows++ : 0);
         } else if (!['axes', 'grid'].includes(r.shape)) {
           renderItem(v.panel, r);
         }
@@ -878,8 +882,8 @@ function setupPointer(v) {
     if (g && g.pointerId !== e.pointerId) return;
     const res = forward(v, 'move', e);
     if (!g) {
-      // Hovering: show what can be grabbed.
-      v.svg.style.cursor = res.hover ? 'grab' : '';
+      // Hovering: show what can be grabbed, or clicked (D-059).
+      v.svg.style.cursor = res.hover ? (res.hover.drag ? 'grab' : 'pointer') : '';
       return;
     }
     if (res.action === 'drag') status(res.ok ? '' : `Not valid here: ${res.message || 'rejected'}`, !res.ok);
@@ -890,6 +894,12 @@ function setupPointer(v) {
     if (!g || g.pointerId !== e.pointerId) return;
     st.gesture = null;
     const res = forward(v, 'up', e);
+    if (res.action === 'click') {
+      report(res);
+      afterSessionAction();
+      if (g.resume) togglePlay();
+      return;
+    }
     if (res.action !== 'drag') { refresh(); return; }
     if (!res.ok) report(res);
     else if (!res.committed) status('Nothing committed: no valid position during the drag.', true);
