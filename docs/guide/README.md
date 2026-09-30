@@ -1,6 +1,6 @@
 # Learn Prismal
 
-A guide to writing Prismal programs in the working syntax (D-028), from a first formula to a narrated lesson. Each chapter introduces a few forms, shows a complete program that uses them, and ends with exercises. After the last chapter, `09-reference.md` lists every form on one page.
+A guide to writing Prismal programs in the working syntax (D-028), from a first formula to a narrated lesson. Each chapter introduces a few forms, shows a complete program that uses them, and ends with exercises. After the last chapter, `10-reference.md` lists every form on one page.
 
 - **Status:** living. Written 2026-09-30 against the prototype (`crates/`). The syntax is the working syntax: usable and implemented, not yet frozen.
 - **Checked:** every program in the guide is compiled and every case in it is run by `cargo test` (`crates/prismal-web/tests/guide.rs`). A program that fails, or an example error that is not reported as stated, fails the test suite.
@@ -17,7 +17,8 @@ A guide to writing Prismal programs in the working syntax (D-028), from a first 
 | [6. Checks and tests](06-checks-and-tests.md) | constraints, equations, observations, run cases, expectations |
 | [7. Presentations](07-presentations.md) | views, representations, controls, inverses, what the learner may do |
 | [8. Lessons](08-lessons.md) | timelines, beats, narration, explore beats, requested events, learner scripts |
-| [9. Reference](09-reference.md) | every form, reserved words, diagnostic codes |
+| [9. Systems of objects](09-objects.md) | object types, parts, collections, members, aggregates, forces between members |
+| [10. Reference](10-reference.md) | every form, reserved words, diagnostic codes |
 
 ## Running a program
 

@@ -1,4 +1,4 @@
-# 9. Reference
+# 10. Reference
 
 Every form of the working syntax on one page, with the chapter that introduces it. The normative description is `docs/syntax-study/working-syntax.md`; meanings are in `docs/spec/`.
 
@@ -27,6 +27,9 @@ Every form of the working syntax on one page, with the chapter that introduces i
 | `event E on trigger [if c] [{ ops }] [zeno settle { ops } \| zeno stop]` | an event | 5 |
 | `equation N: a == b [checked within tol]` | a stated relation, shown and optionally checked | 6 |
 | `constraint N: c [within tol] [policy reject \| report \| stop]` | a checked condition (`within` for `==` only) | 6 |
+| `object Name { ... }` | an object type, with the body of a model; declared in a model | 9 |
+| `parts { a: T { x = e }  c: T[n] { x = e } }` | one object, or a collection of `n` members; overrides and input connections, with `index` the member's number | 9 |
+| `flow { for b in c { der(b.x) = e } }` | flows the model writes for each member | 9 |
 
 Each block keyword also has a one-line form: `param g: Acceleration = 9.81 m/s^2`, `flow der(x) = v`.
 
@@ -35,6 +38,8 @@ Each block keyword also has a one-line form: `param g: Acceleration = 9.81 m/s^2
 **Triggers:** `rising(g)`, `falling(g)`, `crossing(g)` (zero crossings of `g`), `at τ`, `every Δ [from τ0]`, `start`, `request`, `E` (after event `E` occurs or is emitted), `input(i)`. `request(p: T)` and `E(p: T)` receive a payload named `p` (chapter 5).
 
 **Inputs:** `input { x: T [= default] }`, values from the environment; a case supplies them with `input { x = v; x = v at τ }` (chapter 5).
+
+**Members** (chapter 9): `a.x`, `c[k].x`; `sum`, `min`, `max`, `any`, `all` of `(e for b in c [if cond])`; `count(c)`, `count(b for b in c if cond)`. In views, `for b in c { reps }` draws one representation per member, named `name[k]`.
 
 **Operations:** `set x = e`, `emit E`, `emit E(v)` (with a payload), `contribute x += e` (contributions to discrete state are not implemented by the prototype, MK-E11).
 
@@ -126,6 +131,8 @@ run Name of Model with Presentation {
 | MK-E22 | target or case defined twice |
 | MK-E23 | declared function calls itself |
 | MK-E24 | event payload with no source |
+| MK-E25 | `index` read outside the overrides of a collection |
+| MK-E26 | a member that does not exist, a part used as a value, or an aggregate that has no value |
 
 **Presentation** (`PK`): E01 broken reference, E02 expression does not check (the kernel's message is quoted), E03 control or action targets something the learner may not change, E04 missing or wrong scale or axis dimension, E05 representation unsuited to its sources or view, E06 representation kind not implemented.
 

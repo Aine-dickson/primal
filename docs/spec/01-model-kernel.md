@@ -272,6 +272,7 @@ Every binding has exactly one role. The role fixes when the value may change and
 - **MK-7.10** A stored binding may be **written** (by operations, flow contributions or resets) only by behaviors declared in its owner or in an object that contains its owner. Sibling and contained objects MUST NOT write it. A contained object communicates upward by public bindings and emitted events (section 15).
 - **MK-7.11** An object type MAY declare **inputs** (role `input`, section 6.2) and **outputs** (public derived bindings). A **connection** binds a contained object's input to an expression in the containing object. Connections are explicit; there is no implicit namespace or state merging (R-53).
 - **MK-7.12** Composition fixes neither execution order nor representation (R-53). Execution order comes from dependency analysis (section 13).
+- **MK-7.13** (D-055) In v0 object types are declared in a model (`object Ball { ... }`), with the body of a model, and are used by that model and by the object types it declares. An override given where an object is declared sets the starting value of one of its stored bindings or connects one of its inputs (MK-7.11); a connected input follows the container's expression. An unconnected input keeps its default (MK-6.7a).
 
 ---
 
@@ -286,6 +287,9 @@ Every binding has exactly one role. The role fixes when the value may change and
 - **MK-8.2** Dynamic membership changes only through `create` and `destroy` operations (section 16), at event instants.
 - **MK-8.3** A collection's iteration order is the order of member identities (declared order, then creation order). Expressions over collections (`count`, `map`, `filter`, `any`, `all`, `sum`, `reduce`) use this order, so results are deterministic (D-015).
 - **MK-8.4** Every member of a collection is an object with its own bindings, flows and events. A flow or event declared on the member type applies to each member.
+- **MK-8.3a** (D-055) In v0 membership is declared and fixed: a part holds one object or `n` members, numbered from 1 in declaration order. `sum`, `min`, `max`, `any`, `all` and `count` take the members in that order, each named in the aggregate's body and optional filter. Over no member, `sum` is zero, `any` false, `all` true and `count` 0; `min` and `max` have no value. A filter of `min` or `max` may only compare members, which is decided without a value.
+- **MK-8.3b** (D-055) A model is elaborated before it is checked: each member becomes the bindings, flows, events, equations and constraints of its type, with the identity of each declaration followed by `@` and the member's path (`row[2]`, `cart.wheels[1]`) and the name `path.name` (MK-7.6). Checks apply to the elaborated model; a diagnostic about an element of a member refers to it and is located at its declaration.
+- **MK-8.8** (D-055) A containing object may write the derivatives of its members' continuous state with flows over a collection (`for b in row { der(b.vel) += e }`, MK-7.10), read in its own scope with the member named. Interactions between members are written this way, with aggregates over the other members.
 
 ### 8.2 Relations
 
@@ -561,6 +565,8 @@ The kernel defines these static errors. They are detected before execution, on t
 | MK-E22 | Target defined twice: two defining flows for one `der(x)`, or two definitions of one binding; a case declared twice | MK-14.7, MK-6.1, MK-2.2a |
 | MK-E23 | Declared function that calls itself, directly or through other functions | MK-10.3a |
 | MK-E24 | Event payload without a source: not requested, and not following an event that carries a payload of the same type | MK-15.1a |
+| MK-E25 | `index` read outside the overrides of a collection | MK-8.3a |
+| MK-E26 | A member that does not exist or is not constant, a part used as a value, an unknown object type, a derived binding given a value in a part, or an aggregate without a value | MK-7.13, MK-8.3a |
 
 Conflicts between different events can only be detected at run time.
 
@@ -720,6 +726,8 @@ Positions that elaborate accepted decisions without changing them are specified 
 | D-039 | Named mathematical constants are kept by name in the IR (Accepted; raised by the text parser) | 10 |
 
 **Elaborations (in this specification only):**
+
+- Object types, parts and fixed collections, elaborated before checking (MK-7.13, MK-8.3a, MK-8.3b, MK-8.8; D-055).
 
 - `Real` is binary64; non-finite results are `invalid`; integer overflow is `invalid` (2.2).
 - Quantities compute in coherent SI units; units affect input and display only (3.3).

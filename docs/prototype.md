@@ -9,7 +9,7 @@ The first implementation of Prismal's core semantics, built kernel-first (D-002)
 
 | Crate | Specification | Content |
 |---|---|---|
-| `crates/prismal-ir` | `04-ir.md` | IR types with JSON serialization (D-037), dimensions and units, a builder API |
+| `crates/prismal-ir` | `04-ir.md` | IR types with JSON serialization (D-037), dimensions and units, a builder API, elaboration of objects and collections (`elaborate.rs`, D-055) |
 | `crates/prismal-kernel` | `01-model-kernel.md` | Type and dimension checking with expected-type propagation (D-030, D-032), static diagnostics MK-E01 to MK-E22, dependency analysis, compilation, evaluation with statuses |
 | `crates/prismal-syntax` | `docs/syntax-study/working-syntax.md`, `04-ir.md` | Lexer, parser to a syntax tree, lowering of spaces, models, presentations and runs to the IR with a source map, located diagnostics |
 | `crates/prismal-present` | `03-presentation-kernel.md`, `04-ir.md` section 7 | Presentation checks, observation, expectations, projection and frame descriptions, formula typesetting for every medium (`math.rs`, D-046), interaction, the explanation timeline |
@@ -174,6 +174,21 @@ Acceptance:
 - `prismal-svg/tests/frames.rs`: every presentation with views of the reference programs and the guide, drawn at its start, a third of the way and its end (at least 60 documents): each is well formed, every representation is present with its text alternative, markers stand at the frame's view coordinates, formulas have one text element per text run of their layouts; panels, controls, buttons, tables, captions and the dark theme; DropMovie as an image sequence at 10 frames per second, with the ball fading in, the ground drawn, the view box halved by `zoom 2` and restored by `zoom 1`. The documents are written to `target/svg-tests` for inspection.
 - `node crates/prismal-svg/compare.mjs` compares frames drawn by this renderer with the same frames drawn by the web player in headless Edge (15 frames of RP-01, RP-03 to RP-08 and the guide's wheel, DropMovie and Unwrap, sessions and lessons, cameras, fades, circles and arcs): the view boxes of spatial views, and for every representation its text alternative and the geometry of its marks (marker and handle centres, line ends, path and polygon points; plots normalized to their frame). All 15 agree; a camera zoom perturbed by 1% is reported. The player opens a program, presentation and instant from its address for this (`#rp08/ProjectileLesson@20`).
 
+## Objects and collections
+
+Object types, contained objects and collections of fixed membership (D-055) are kept as written in the IR and elaborated to a flat model before checking (`prismal_ir::elaborate`, MK-8.3b). `Program::new` elaborates the document; the host keeps the structured document for printing and editing, and locates a member's diagnostics at their declaration (`id@path` to `id`).
+
+| Part | Content |
+|---|---|
+| Syntax | `object Name { ... }` in a model; `parts { a: T { x = e }  c: T[n] { x = index * e } }`; `a.x`, `c[k].x`, `b.x` in loops; `sum`, `min`, `max`, `any`, `all`, `count` over `(e for b in c [if cond])`; `flow { for b in c { der(b.x) = e } }`; `for b in c { reps }` in views and representation blocks |
+| IR | `objects`, `parts` with overrides, `field`, `part`, `item`, `var` and `aggregate` expressions, `builtin: index`, `member` and `each` on flows, `each` on representations (04-ir section 5.6) |
+| Elaboration | members' bindings, functions, processes, flows, events, equations and constraints with identities `declaration@path` and names `path.name`; overrides in the container's scope with `index`; connected inputs become derived; enumerations shared; aggregates expanded (`o != b` decided statically, dynamic filters as conditionals); container loops per member; representations per member (`name[k]`), `highlight` and `hide` of a family per member; observations and expectations |
+| Formatter | object types as indented `object` blocks, `parts`, member expressions, aggregates, loops of flows grouped in `for` blocks, `for` around repeated representations |
+
+Acceptance: `prismal-present/tests/objects.rs` (a row of bouncing balls and a Moon ball with aggregates and cases; identities, names, overrides, connections; three bodies under mutual gravity with momentum conserved to 1e-12; representations per member and a highlighted family; printing round trips; diagnostics MK-E26, SX-E03, SX-E08, MK-E04 at the declaration once per member); guide chapter 9, whose programs and mistakes `prismal-web/tests/guide.rs` checks.
+
+Found on the way: a ball bouncing on a floor that is not at zero fell through after about fifty bounces, because the sign reference after a bounce was the rounding-level sign of the guard; fixed by RC-7.2a (D-056).
+
 ## Media export
 
 `crates/prismal-media` turns a presentation into a video file or raster images (D-052). Frames are the SVG renderer's; the crate rasterizes them with resvg and leaves encoding to ffmpeg, fed raw RGBA frames through a pipe.
@@ -252,14 +267,14 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Item | Where specified |
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
-| Contained objects (`object`), payloads of enumeration cases, function libraries shared between models | MK section 7, MK section 2, R-55 |
+| Dynamic membership (`create`, `destroy`), relations, container events per member, drags on members of collections; payloads of enumeration cases; function libraries shared between models | MK sections 8, 16, MK section 2, R-55 |
 | Drags on members of a group; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
 | Narration audio in videos; a descriptions track from announcements; several views laid out on one page | PK-9.1, PK-11.3, PK-7.4, D-052 |
 | Snapshots and backward seek within a dynamic run (undo recomputes from the start) | RC section 14.1 |
-| `contribute` operations on discrete state; collections and relations | MK sections 8, 16 |
+| `contribute` operations on discrete state | MK section 16 |
 | Failure policy `pause` (interactive) | RC-10.3 |
 | Frames of spaces (D-022), affine temperature units | MK sections 3.4, 4 |
 
@@ -285,3 +300,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 media export (`prismal-media`, D-052): video files through ffmpeg, PNG stills and sequences, captions drawn, as a track and as WebVTT.
 - 2026-09-30 narration sound (D-053): cues named after their beats; recordings, synthesized speech and music in video export; a Voice menu in the web player.
 - 2026-09-30 round geometry (D-054): `circle`, `ellipse`, `arc` as exact elliptical arcs in frames, drawn by both renderers; the guide's wheel is a circle; guide lesson Unwrapping a circle.
+- 2026-09-30 objects and fixed collections (D-055), elaborated before checking; guide chapter 9; sign references after a transition (RC-7.2a, D-056).

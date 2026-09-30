@@ -26,6 +26,9 @@ Candidate A amended as accepted in D-028: A's keyword-led statements, with group
 | `event E on <trigger> [if cond] [{ ops }] [zeno stop \| zeno settle { ops }]` | event (MK-15) |
 | `equation N: lhs == rhs [checked within tol]` | equation (MK-11) |
 | `constraint [N:] cond [within tol] [policy p]` | constraint (MK-12) |
+| `object Name { ... }` | object type (MK-7.13, D-055), declared in a model, with the body of a model |
+| `parts { a: T [{ x = e ... }]  c: T[n] [{ x = e ... }] }` | a contained object, or a collection of `n` members; overrides and input connections, with `index` the member's number (MK-8.3a) |
+| `flow { for b in c { der(b.x) = e ... } }` | flows written by the container for each member (MK-8.8) |
 
 Every block keyword also has a one-line form for a single declaration (`param g: Acceleration = 9.81 m/s^2`, `flow der(x) = v`). Both parse to the same IR; the formatter prints blocks.
 
@@ -33,7 +36,7 @@ Every block keyword also has a one-line form for a single declaration (`param g:
 
 Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit deg`.
 
-Expressions add `match e { a => x, b => y }` (one arm per case, arms separated by commas or lines) to the shared sublanguage.
+Expressions add `match e { a => x, b => y }` (one arm per case, arms separated by commas or lines) to the shared sublanguage, and members (D-055): `a.x`, `c[k].x` with a constant `k`, `b.x` for a loop variable; aggregates `sum(e for b in c [if cond])`, likewise `min`, `max`, `any`, `all`, and `count(c)` or `count(b for b in c if cond)`. In views and representation blocks, `for b in c { reps }` repeats each representation per member. `parts` and `index` are contextual words.
 
 Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E [(p: T)]`, `on start`, `on input(i)`, `on request [(p: T)]`; `(p: T)` names the payload the occurrence receives (D-050). `emit E(v)` supplies a payload. `input { x: T [= default] }` declares an input with an optional default (D-051). Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`.
 
@@ -526,3 +529,4 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-30 canonical printing implemented (`prismal-syntax/src/format.rs`); a one-sided interval lowers as the comparison `where` writes (`x >= lo`), so both spellings give one IR.
 - 2026-09-30 `reveal`, `hide ... for`, `camera` (D-042); `hide`, `reveal` and `zoom` added to the contextual keywords.
 - 2026-09-30 `group` with its members in a block (D-043).
+- 2026-09-30 `object` declarations, `parts`, member expressions, aggregates, `for` in flows and representation blocks (D-055).

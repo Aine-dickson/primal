@@ -328,8 +328,14 @@ impl<'a> Parser<'a> {
         }
         let start = self.span();
         if self.eat_word("flow") {
-            let flows = if self.is_punct("{") { self.block(|p| Self::one(p.flow_stmt()))? } else { vec![self.flow_stmt()?] };
+            let flows = if self.is_punct("{") { self.block(|p| p.flow_item())? } else { vec![self.flow_stmt()?] };
             return Ok(flows.into_iter().map(Member::Flow).collect());
+        }
+        // `parts { name: Type [n] { overrides } ... }` (D-055); `parts` is a word only here.
+        if self.is_word("parts") && self.is_punct_at(1, "{") {
+            self.bump();
+            let parts = self.block(|p| Self::one(p.part_decl()))?;
+            return Ok(vec![Member::Parts(parts)]);
         }
         if self.is_word("event") {
             return Ok(vec![Member::Event(self.event_decl()?)]);
@@ -341,7 +347,7 @@ impl<'a> Parser<'a> {
             let mut events = vec![];
             let items = self.block(|p| {
                 if p.eat_word("flow") {
-                    let f = if p.is_punct("{") { p.block(|p| Self::one(p.flow_stmt()))? } else { vec![p.flow_stmt()?] };
+                    let f = if p.is_punct("{") { p.block(|p| p.flow_item())? } else { vec![p.flow_stmt()?] };
                     Ok(f.into_iter().map(Member::Flow).collect())
                 } else if p.is_word("event") {
                     Ok(vec![Member::Event(p.event_decl()?)])
@@ -416,25 +422,12 @@ impl<'a> Parser<'a> {
             return Ok(vec![Member::Constraint(ConstraintDecl { name, cond, within, policy, span: self.since(start) })]);
         }
         if self.eat_word("object") {
+            let notes = self.notes_before(start.line);
             let name = self.name("an object name")?;
-            self.skip_block()?;
-            return Ok(vec![Member::Object(name)]);
+            let members = self.block(|p| p.member())?;
+            return Ok(vec![Member::Object(ObjectDecl { name, members, notes, span: self.since(start) })]);
         }
         Err(self.unexpected("a declaration (`param`, `state`, `flow`, `event`, ...)"))
-    }
-
-    fn skip_block(&mut self) -> P<()> {
-        self.expect_punct("{")?;
-        let mut depth = 1;
-        while depth > 0 {
-            match self.bump().tok {
-                Tok::Punct("{") => depth += 1,
-                Tok::Punct("}") => depth -= 1,
-                Tok::Eof => return Err(Diag::new("SX-E02", "unclosed `{`", self.span())),
-                _ => {}
-            }
-        }
-        Ok(())
     }
 
     fn typed_params(&mut self) -> P<Vec<(Name, TypeExpr)>> {
@@ -495,11 +488,67 @@ impl<'a> Parser<'a> {
         Ok(Decl { role, name, params, ty, value, range, modifiers, notes, span: self.since(start) })
     }
 
+    /// A flow, or `for b in row { flows }` (D-055).
+    fn flow_item(&mut self) -> P<Vec<FlowStmt>> {
+        if self.eat_word("for") {
+            let var = self.name("a member name")?;
+            self.expect_word("in")?;
+            let over = self.name("a collection")?;
+            let mut flows = self.block(|p| Self::one(p.flow_stmt()))?;
+            for f in &mut flows {
+                f.each = Some((var.clone(), over.clone()));
+            }
+            return Ok(flows);
+        }
+        Ok(vec![self.flow_stmt()?])
+    }
+
+    /// A part: `ball: Ball { pos = ... }` or `row: Ball[3] { pos = ... }` (D-055).
+    fn part_decl(&mut self) -> P<PartDecl> {
+        let start = self.span();
+        let notes = self.notes_before(start.line);
+        let name = self.name("a part name")?;
+        self.expect_punct(":")?;
+        let object = self.name("an object type")?;
+        let count = if self.eat_punct("[") {
+            let n = self.int()?;
+            self.expect_punct("]")?;
+            Some(n as u32)
+        } else {
+            None
+        };
+        let overrides = if self.is_punct("{") {
+            self.block(|p| {
+                let n = p.name("a binding of the object")?;
+                p.expect_punct("=")?;
+                Ok(vec![(n, p.expr()?)])
+            })?
+        } else {
+            vec![]
+        };
+        Ok(PartDecl { name, object, count, overrides, notes, span: self.since(start) })
+    }
+
     fn flow_stmt(&mut self) -> P<FlowStmt> {
         let start = self.span();
         self.expect_word("der")?;
         self.expect_punct("(")?;
-        let target = self.name("a state name")?;
+        // `der(x)`, or a member's binding: `der(b.vel)`, `der(ball.vel)`, `der(row[2].vel)`.
+        let first = self.name("a state name")?;
+        let mut member = None;
+        let mut target = first.clone();
+        if self.is_punct("[") {
+            self.bump();
+            let i = self.expr()?;
+            self.expect_punct("]")?;
+            self.expect_punct(".")?;
+            let base = Expr { kind: ExprKind::Name(first.text.clone()), span: first.span };
+            member = Some(Expr { kind: ExprKind::Index(Box::new(base), Box::new(i)), span: self.since(start) });
+            target = self.name("a state name")?;
+        } else if self.eat_punct(".") {
+            member = Some(Expr { kind: ExprKind::Name(first.text.clone()), span: first.span });
+            target = self.name("a state name")?;
+        }
         self.expect_punct(")")?;
         let contribute = if self.eat_punct("+=") {
             true
@@ -509,7 +558,7 @@ impl<'a> Parser<'a> {
             return Err(self.unexpected("`=` or `+=`"));
         };
         let expr = self.expr()?;
-        Ok(FlowStmt { target, contribute, expr, span: self.since(start) })
+        Ok(FlowStmt { target, member, each: None, contribute, expr, span: self.since(start) })
     }
 
     fn event_decl(&mut self) -> P<EventDecl> {
@@ -957,7 +1006,19 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                let value = self.expr()?;
+                let mut value = self.expr()?;
+                // `sum(e for b in row [if c])`: an aggregate (D-055). `in` here is not the
+                // interval test, so the loop is read word by word.
+                if self.is_word("for") {
+                    let s = value.span;
+                    self.bump();
+                    let var = self.name("a member name")?;
+                    self.expect_word("in")?;
+                    let over = self.name("a collection")?;
+                    let filter = if self.eat_word("if") { Some(Box::new(self.expr()?)) } else { None };
+                    let agg = Name { text: String::new(), span: s };
+                    value = Expr { kind: ExprKind::Aggregate { agg, body: Box::new(value), var, over, filter }, span: self.since(s) };
+                }
                 let every = if self.eat_word("every") { Some(self.expr()?) } else { None };
                 out.push(Arg { name, value, every });
                 if !self.eat_punct(",") {
@@ -1129,13 +1190,13 @@ impl<'a> Parser<'a> {
             self.expect_punct(":")?;
             let kind = self.name("a view kind")?;
             let args = self.args()?;
-            let reps = self.block(|p| Self::one(p.rep()))?;
+            let reps = self.block(|p| p.rep_item())?;
             return Ok(vec![PresItem::View(ViewDecl { name, kind, args, reps, span: self.since(start) })]);
         }
         if self.is_word("panel") {
             let kind = self.any_name("`panel`")?;
             let name = self.name("a panel name")?;
-            let reps = self.block(|p| Self::one(p.rep()))?;
+            let reps = self.block(|p| p.rep_item())?;
             return Ok(vec![PresItem::View(ViewDecl { name, kind, args: vec![], reps, span: self.since(start) })]);
         }
         if self.eat_word("permit") {
@@ -1175,6 +1236,25 @@ impl<'a> Parser<'a> {
         Ok(Observation { name, expr, of, filter, schedule, span: self.since(start) })
     }
 
+    /// A representation, or `for b in row { representations }`, each repeated per member
+    /// (D-055).
+    fn rep_item(&mut self) -> P<Vec<Rep>> {
+        if self.eat_word("for") {
+            let var = self.name("a member name")?;
+            self.expect_word("in")?;
+            let over = self.name("a collection")?;
+            let mut reps = self.block(|p| p.rep_item())?;
+            for r in &mut reps {
+                if r.each.is_some() {
+                    return Err(Diag::new("SX-E06", "a `for` inside a `for` is not in v0", r.span));
+                }
+                r.each = Some((var.clone(), over.clone()));
+            }
+            return Ok(reps);
+        }
+        Ok(vec![self.rep()?])
+    }
+
     fn rep(&mut self) -> P<Rep> {
         let start = self.span();
         // `equation` is reserved in models and is also a representation kind (PK-6.3); in a
@@ -1186,12 +1266,12 @@ impl<'a> Parser<'a> {
         let (mut interactions, mut members) = (vec![], vec![]);
         if self.is_punct("{") {
             if kind.text == "group" {
-                members = self.block(|p| Self::one(p.rep()))?;
+                members = self.block(|p| p.rep_item())?;
             } else {
                 interactions = self.block(|p| Self::one(p.interaction()))?;
             }
         }
-        Ok(Rep { kind, args, alias, interactions, members, span: self.since(start) })
+        Ok(Rep { each: None, kind, args, alias, interactions, members, span: self.since(start) })
     }
 
     fn interaction(&mut self) -> P<Interaction> {
@@ -1227,7 +1307,7 @@ impl<'a> Parser<'a> {
     fn action(&mut self) -> P<Action> {
         if self.eat_word("in") {
             let view = self.name("a view name")?;
-            let reps = self.block(|p| Self::one(p.rep()))?;
+            let reps = self.block(|p| p.rep_item())?;
             return Ok(Action::In { view, reps });
         }
         if self.eat_word("narrate") {
@@ -1268,7 +1348,7 @@ impl<'a> Parser<'a> {
             let style = self.any_name("`fade` or `draw`")?;
             let duration = if self.eat_word("for") { Some(self.expr_no_in()?) } else { None };
             let view = if self.eat_word("in") { Some(self.name("a view name")?) } else { None };
-            let reps = self.block(|p| Self::one(p.rep()))?;
+            let reps = self.block(|p| p.rep_item())?;
             return Ok(Action::Reveal { style, duration, view, reps });
         }
         if self.eat_word("camera") {
@@ -1293,7 +1373,7 @@ impl<'a> Parser<'a> {
                     keep.push(self.name("a binding name")?);
                 }
             }
-            let reps = self.block(|p| Self::one(p.rep()))?;
+            let reps = self.block(|p| p.rep_item())?;
             let fallback = if self.eat_word("fallback") { self.block(|p| Self::one(p.action()))? } else { vec![] };
             return Ok(Action::Explore { limit, keep, reps, fallback });
         }

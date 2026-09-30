@@ -150,7 +150,10 @@ pub fn boxes(e: &Expr, cm: &CModel, params: &[String]) -> MathBox {
             Builtin::T => ident("t"),
             Builtin::T0 => MathBox::Sub { base: Box::new(ident("t")), sub: Box::new(MathBox::Number { text: "0".into() }) },
             Builtin::Elapsed => MathBox::Text { text: "elapsed".into() },
+            Builtin::Index => ident("i"),
         },
+        // Elaboration replaces members and aggregates before anything is typeset (D-055).
+        Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } => MathBox::Text { text: "…".into() },
         Expr::Const { .. } => ident("π"),
         Expr::Origin { .. } => upright("O"),
         Expr::Der { der } => MathBox::Frac {

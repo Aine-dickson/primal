@@ -52,8 +52,31 @@ pub enum Member {
     Event(EventDecl),
     Equation(EquationDecl),
     Constraint(ConstraintDecl),
-    /// `object Name { ... }`: contained object types (MK section 7), not in the v0 IR.
-    Object(Name),
+    /// `object Name { ... }`: an object type (MK section 7, D-055).
+    Object(ObjectDecl),
+    /// `parts { ball: Ball { ... }  row: Ball[3] { ... } }` (D-055).
+    Parts(Vec<PartDecl>),
+}
+
+/// An object type: the body of a model, declared in one (D-055).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ObjectDecl {
+    pub name: Name,
+    pub members: Vec<Member>,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+/// A contained object (`ball: Ball`) or a collection of `count` members (`row: Ball[3]`),
+/// with overrides of its members' bindings (D-055).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartDecl {
+    pub name: Name,
+    pub object: Name,
+    pub count: Option<u32>,
+    pub overrides: Vec<(Name, Expr)>,
+    pub notes: Vec<String>,
+    pub span: Span,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,6 +139,10 @@ pub enum Modifier {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlowStmt {
     pub target: Name,
+    /// The member whose binding `target` is: `b`, `ball`, `row[2]` in `der(b.vel)` (D-055).
+    pub member: Option<Expr>,
+    /// `for b in row { ... }`: the loop variable and the collection.
+    pub each: Option<(Name, Name)>,
     pub contribute: bool,
     pub expr: Expr,
     pub span: Span,
@@ -298,6 +325,8 @@ pub enum ExprKind {
     Map(Box<Expr>, Box<Expr>),
     /// `(pos on landed)` and `(vel on landed microstep 0)` (expectations, PK-3.4).
     On(Box<Expr>, Name, Option<u32>),
+    /// `sum(b.m for b in row if b.on)`: an aggregate over a collection (D-055).
+    Aggregate { agg: Name, body: Box<Expr>, var: Name, over: Name, filter: Option<Box<Expr>> },
     /// `start of b3`, `end of b8` (timeline expectations).
     BeatTime { start: bool, beat: Name },
     /// `match e { case => value, ... }` (MK-10.2, D-049).
@@ -355,6 +384,8 @@ pub struct ViewDecl {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rep {
+    /// `for b in row { ... }`: repeated for each member (D-055).
+    pub each: Option<(Name, Name)>,
     pub kind: Name,
     pub args: Vec<Arg>,
     pub alias: Option<Name>,

@@ -112,6 +112,9 @@ pub struct Scale {
 /// A representation (PK-6.1).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Rep {
+    /// `for b in row { ... }`: one representation per member, named `name[k]` (D-055).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub each: Option<crate::Each>,
     pub id: Id,
     /// Author name for timeline actions and interactions; not the identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]

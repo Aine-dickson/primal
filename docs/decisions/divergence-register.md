@@ -74,6 +74,8 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-052 | Video export: frames from the SVG renderer rasterized in process, encoding by an external encoder through a pipe, one canvas per clip, captions drawn and as a track | Accepted |
 | D-053 | Narration sound belongs to hosts, not programs: cues named after their beats, voiced by recordings named by cue or by synthesized speech; the timeline keeps the timing | Accepted |
 | D-054 | Round geometry: `circle`, `ellipse` and `arc` representations with radii in model units, carried in frames as exact elliptical arcs | Accepted |
+| D-055 | Contained objects and fixed collections in v0: object types in a model, `parts`, member expressions and aggregates, container flows over members, `for` in views; elaborated to a flat model before checking | Accepted |
+| D-056 | After a transition, a crossing guard near zero takes the sign it is heading to as its reference (RC-7.2a) | Accepted |
 
 ---
 
@@ -1001,3 +1003,43 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** PK-6.3c; `CKind::Round` and `Shape::Ellipse` in `prismal-present`; both renderers; guide chapter 7 (the wheel is a circle) and chapter 8 (Unwrapping a circle); `prismal-present/tests/shapes.rs`. Not included: circles as model values (a point constrained to a circle, intersections), which belong to geometry types in the model kernel, not to representations; author styling (colour, dashes, fill) of representations.
 - **History:**
   - 2026-09-30 raised by the owner and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-055: Contained objects and fixed collections in v0
+
+- **Status:** Accepted
+- **Original position:** MK section 7 defines object types, contained objects and their identity; MK section 8 defines collections (declared or dynamic membership), relations, and expressions over collections (`count`, `map`, `filter`, `any`, `all`, `sum`, `reduce`); MK section 16 lists `create`, `destroy`, `connect` and `disconnect`. The first slice exercised none of them (MK-8.7), the working syntax reserves `object` and the structural operations without a syntax for holding objects or iterating over them, and the prototype rejected `object`.
+- **Raised by:** the language completeness step (PROJECT-STATE next steps); the owner chose it as the next work on 2026-09-30.
+- **Builds on:** MK-7.1 to MK-7.12, MK-8.1 to MK-8.4, MK-14.8, D-015, D-036, D-051.
+- **Question:** How are objects and collections written, carried in the IR, and executed, and which part comes first?
+- **Options considered:**
+  1. **Lower objects away in the parser.** The IR would be flat; but the formatter prints programs from the IR (D-036), so a program with objects could not be printed back, and hosts would not see the model's structure.
+  2. **Structure in the IR, executed natively.** The runtime would hold objects with per-object state and evaluate expressions against member indices. Needed for membership that changes during a run, but it changes the kernel's compiled form, the solver's state layout and every consumer of frames at once.
+  3. **Structure in the IR, elaborated to a flat model before checking.** Object types, parts, member expressions and aggregates are kept in the IR; a pure IR-to-IR pass expands each member of fixed membership into bindings, flows, events, equations and constraints with identities derived from the declaration and the member's path, and expands `for` in presentations. The checker, runtime, presentations and renderers are unchanged. This is how Modelica compiles components.
+- **Accepted position:** option 3 for contained objects and collections of fixed membership, under the owner's standing delegation of 2026-09-30. Dynamic membership (`create`, `destroy`) and relations are the next step and will need option 2 or a bounded form of it; they are not decided here.
+  - **Object types** are declared in a model: `object Ball { ... }`, with the body of a model (bindings, flows, events, equations, constraints, functions, enumerations, parts). An object reads its container only through its `input`s, which the container connects (MK-7.11); an unconnected input keeps its default.
+  - **Parts:** `parts { ball: Ball { pos = ... }  row: Ball[3] { pos = origin + (index * 1 m, 2 m) } }`. An override sets a member's starting value (state, discrete, parameter) or connects an input; it is written in the container's scope, where `index` is the member's number, from 1. Members are numbered in declaration order (MK-8.3).
+  - **Expressions:** `ball.pos`; `row[2].pos` with a constant index; aggregates `sum`, `min`, `max`, `any`, `all` written `sum(e for b in row)` with an optional filter `if c`, and `count(row)`. A filter may compare members (`o != b`); `min` and `max` take only such filters. `sum` over no member is `0`, `any` false, `all` true.
+  - **Container behaviour:** `flow { for b in row { der(b.vel) += e } }` writes members' derivatives from the container (MK-7.10), with `e` read in the container's scope; pairwise interactions are written with aggregates inside the loop.
+  - **Presentations:** `for b in row { marker(b.pos) as ball }` in views and timeline blocks draws one representation per member, named `ball[1]`, `ball[2]` ...; expressions in presentations, observations and expectations may use members and aggregates.
+  - **Identity:** an element of a member has the identity of its declaration followed by `@` and the member's path (`M.Ball.pos@row[2]`), and the name `row[2].pos`; paths nest (`cart.wheels[1]`). Identities are deterministic and stable across edits that keep the declaration (MK-7.6, D-036).
+- **Reason:** the structure a reader writes stays in the IR and in printed programs; fixed membership covers systems of several bodies, chains of springs, pendulum arrays and lattices, with every existing checker rule, solver and renderer applying unchanged; and identities remain declaration paths.
+- **Consequences:** MK-7.13, MK-8.3a, MK-8.8 (elaborations); 04-ir objects, parts, member and aggregate expressions, `each` on flows and representations; `prismal_ir::elaborate`; working syntax `parts`, `for`, `index`, aggregates; formatter; guide chapter on systems of objects. Not included: `create` and `destroy`, relations, container events per member, drags on members of collections.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-056: Sign references after a transition
+
+- **Status:** Accepted
+- **Original position:** RC-7.2 keeps each guard's sign reference as the sign of `g` where it was last non-zero; RC-7.6 places a located event on the far side of the crossing, so the guard there is small and already has its new sign; RC-7.4 allows two sign changes inside one step to be missed.
+- **Raised by:** the collections work (D-055): a row of balls bouncing on a floor at their radius (`falling(pos.y - r)`) fell through the floor after about fifty bounces instead of settling. The reference program bounces on a floor at zero, where steps near the floor are short, and never showed it.
+- **Builds on:** RC-7.2, RC-7.4, RC-7.6, RC-9, D-005.
+- **Question:** What sign reference does a guard take right after an event whose handler reverses it?
+- **Options considered:**
+  1. **As specified.** After a bounce the guard is a few `ε_t` below zero and its reference is negative; when the next hop is shorter than a step, the guard goes up and down again unsampled, and the landing is missed: RC-7.4 permits it, and the ball falls through.
+  2. **Ask authors to bound the step (`h_max`).** RC-7.4's remedy; but no step bound works for all hops, which shrink geometrically towards the accumulation point.
+  3. **Take the sign the guard is heading to when it is within the event tolerance of zero.** After a transition, advance the committed state `4 ε_t` by the flows; a guard that changes sign in that time takes the new sign as its reference.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30, as the elaboration RC-7.2a. Only guards within about `4 ε_t` of a crossing are affected, where the guard's own sign is below the location accuracy; everywhere else RC-7.2 applies unchanged.
+- **Reason:** a handler that reverses the motion is the common case of a repeated crossing (bounces, reflections, relays); the reference then describes where the model is going, which is what the next detection needs. Every reference program and guide case gives the same results.
+- **Consequences:** RC-7.2a; `Engine::retake_refs` and `Engine::just_ahead` in `prismal-runtime`; `prismal-present/tests/objects.rs` (a ball on a raised floor settles).
+- **History:**
+  - 2026-09-30 raised by the collections work and accepted under the owner's standing delegation of 2026-09-30.

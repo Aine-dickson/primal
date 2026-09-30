@@ -141,7 +141,8 @@ fn lowering_errors() {
     assert_eq!(codes("model M { state { p: Point = origin } }"), vec!["SX-E08", "SX-E08"], "no default space");
     assert_eq!(codes("model M { param { x: Length = 3 px } }"), vec!["SX-E05"]);
     assert_eq!(codes("model M { param { x: Speed = 3 } }"), vec!["SX-E04"]);
-    assert_eq!(codes("model M { object O { } }"), vec!["SX-E06"]);
+    // Object types are declared in the model, not inside one another (D-055).
+    assert_eq!(codes("model M { object O { object P { } } }"), vec!["SX-E06"]);
     assert_eq!(codes("model M { event a on start\n event a on start }"), vec!["SX-E09"]);
     assert_eq!(codes("model M { event a on b }"), vec!["SX-E03"]);
     assert_eq!(codes("model M { param { f(x: Real): Real = x } }"), vec!["SX-E08"]);

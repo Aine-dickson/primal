@@ -120,6 +120,9 @@ const P_ATOM: u8 = 9;
 struct Printer<'a> {
     doc: &'a Document,
     model: &'a Model,
+    /// The model whose object types and parts member expressions name (D-055): the model
+    /// itself, or the container of the object type being printed.
+    root: &'a Model,
     axes: Vec<String>,
     /// Representation identities to their names, for `highlight`.
     rep_names: HashMap<Id, String>,
@@ -133,7 +136,73 @@ impl<'a> Printer<'a> {
             .and_then(|s| doc.spaces.iter().find(|x| &x.id == s))
             .map(|s| s.axes.clone())
             .unwrap_or_else(|| vec!["x".into(), "y".into(), "z".into()]);
-        Printer { doc, model, axes, rep_names: HashMap::new() }
+        Printer { doc, model, root: model, axes, rep_names: HashMap::new() }
+    }
+
+    /// The name of a binding of an object type (D-055).
+    fn field_name(&self, id: &str) -> String {
+        self.root.objects.iter().flat_map(|o| &o.bindings).find(|b| b.id == id).map(|b| b.name.clone()).unwrap_or_else(|| id.rsplit('.').next().unwrap_or(id).to_string())
+    }
+
+    /// The name of a part, of the model or of one of its object types.
+    fn part_name(&self, id: &str) -> String {
+        std::iter::once(self.root)
+            .chain(&self.root.objects)
+            .flat_map(|m| &m.parts)
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| id.rsplit('.').next().unwrap_or(id).to_string())
+    }
+
+    /// `object Name { ... }`, indented as a section of its model (D-055).
+    fn object(&self, o: &'a Model) -> String {
+        let mut p = Printer::new(self.doc, o);
+        p.root = self.root;
+        let body = p.model();
+        let mut lines: Vec<String> = body.lines().map(|l| if l.is_empty() { String::new() } else { format!("{INDENT}{l}") }).collect();
+        if let Some(i) = lines.iter().position(|l| l.trim_start().starts_with("model ")) {
+            lines[i] = format!("{INDENT}object {} {{", o.name);
+        }
+        lines.join("\n")
+    }
+
+    /// `parts { ... }` (D-055): overrides are read in the container's scope.
+    fn parts(&self, ps: &[Part]) -> String {
+        let mut s = format!("{INDENT}parts {{\n");
+        for p in ps {
+            notes(&mut s, &INDENT.repeat(2), &p.notes);
+            let ty = self.root.object(&p.object).map(|o| o.name.clone()).unwrap_or_else(|| p.object.rsplit('.').next().unwrap_or(&p.object).to_string());
+            let count = p.count.map(|n| format!("[{n}]")).unwrap_or_default();
+            let ovs: Vec<String> = p.overrides.iter().map(|o| format!("{} = {}", self.field_name(&o.binding), self.expr(&o.value))).collect();
+            let head = format!("{INDENT}{INDENT}{}: {ty}{count}", p.name);
+            match ovs.len() {
+                0 => {
+                    let _ = writeln!(s, "{head}");
+                }
+                1 => {
+                    let _ = writeln!(s, "{head} {{ {} }}", ovs[0]);
+                }
+                _ => {
+                    let _ = writeln!(s, "{head} {{");
+                    for o in ovs {
+                        let _ = writeln!(s, "{}{o}", INDENT.repeat(3));
+                    }
+                    let _ = writeln!(s, "{INDENT}{INDENT}}}");
+                }
+            }
+        }
+        let _ = write!(s, "{INDENT}}}");
+        s
+    }
+
+    /// A member expression: `b`, `ball`, `row[2]`.
+    fn member(&self, e: &Expr, params: &[String]) -> String {
+        match e {
+            Expr::Var { var } => var.clone(),
+            Expr::Part { part } => self.part_name(part),
+            Expr::Item { item, index } => format!("{}[{}]", self.part_name(item), self.expr_p(index, params)),
+            other => self.expr_p(other, params),
+        }
     }
 
     fn binding_name(&self, id: &str) -> String {
@@ -239,6 +308,7 @@ impl<'a> Printer<'a> {
                 Builtin::T => "t".into(),
                 Builtin::T0 => "t0".into(),
                 Builtin::Elapsed => "elapsed".into(),
+                Builtin::Index => "index".into(),
             },
             Expr::Const { .. } => "π".into(),
             Expr::Origin { .. } => "origin".into(),
@@ -310,6 +380,17 @@ impl<'a> Printer<'a> {
             Expr::Match { r#match, arms } => {
                 format!("match {} {{ {} }}", p(r#match), arms.iter().map(|a| format!("{} => {}", a.case, p(&a.value))).collect::<Vec<_>>().join(", "))
             }
+            Expr::Field { field, of } => format!("{}.{}", self.member(of, params), self.field_name(field)),
+            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } => self.member(e, params),
+            Expr::Aggregate { aggregate, var, over, body, filter } => {
+                let coll = self.part_name(over);
+                let filter = filter.as_ref().map(|f| format!(" if {}", p(f))).unwrap_or_default();
+                match body {
+                    None if filter.is_empty() => format!("{}({coll})", aggregate.name()),
+                    None => format!("{}({var} for {var} in {coll}{filter})", aggregate.name()),
+                    Some(b) => format!("{}({} for {var} in {coll}{filter})", aggregate.name(), p(b)),
+                }
+            }
         }
     }
 
@@ -335,6 +416,12 @@ impl<'a> Printer<'a> {
         if !enums.is_empty() {
             sections.push(enums.join("
 "));
+        }
+        for o in &m.objects {
+            sections.push(self.object(o));
+        }
+        if !m.parts.is_empty() {
+            sections.push(self.parts(&m.parts));
         }
         for (role, word) in [
             (Role::Constant, "const"),
@@ -368,8 +455,20 @@ impl<'a> Printer<'a> {
         let top: Vec<&Flow> = m.flows.iter().filter(|f| f.process.is_none()).collect();
         if !top.is_empty() {
             let mut s = format!("{INDENT}flow {{\n");
-            for f in top {
-                let _ = writeln!(s, "{INDENT}{INDENT}{}", self.flow(f));
+            let mut i = 0;
+            while i < top.len() {
+                // Consecutive flows of one loop print as one `for` block (D-055).
+                if let Some(each) = &top[i].each {
+                    let _ = writeln!(s, "{INDENT}{INDENT}for {} in {} {{", each.var, self.part_name(&each.over));
+                    while i < top.len() && top[i].each.as_ref() == Some(each) {
+                        let _ = writeln!(s, "{}{}", INDENT.repeat(3), self.flow(top[i]));
+                        i += 1;
+                    }
+                    let _ = writeln!(s, "{INDENT}{INDENT}}}");
+                    continue;
+                }
+                let _ = writeln!(s, "{INDENT}{INDENT}{}", self.flow(top[i]));
+                i += 1;
             }
             let _ = write!(s, "{INDENT}}}");
             sections.push(s);
@@ -494,7 +593,11 @@ impl<'a> Printer<'a> {
 
     fn flow(&self, f: &Flow) -> String {
         let op = if f.kind == FlowKind::Contribute { "+=" } else { "=" };
-        format!("der({}) {op} {}", self.binding_name(&f.target), self.expr(&f.expr))
+        let target = match &f.member {
+            Some(m) => format!("{}.{}", self.member(m, &[]), self.field_name(&f.target)),
+            None => self.binding_name(&f.target),
+        };
+        format!("der({target}) {op} {}", self.expr(&f.expr))
     }
 
     fn target(&self, t: &Target) -> String {
@@ -613,6 +716,11 @@ impl<'a> Printer<'a> {
     }
 
     fn rep(&self, r: &Rep, depth: usize) -> String {
+        // `for b in row { ... }` (D-055).
+        if let Some(each) = &r.each {
+            let inner = Rep { each: None, ..r.clone() };
+            return format!("for {} in {} {{ {} }}", each.var, self.part_name(&each.over), self.rep(&inner, depth));
+        }
         let mut args: Vec<String> = r.sources.iter().map(|a| self.arg(a)).collect();
         args.extend(r.props.iter().map(|p| format!("{}: {}", p.name, self.arg(&p.value))));
         let mut s = if args.is_empty() { r.kind.clone() } else { format!("{}({})", r.kind, args.join(", ")) };

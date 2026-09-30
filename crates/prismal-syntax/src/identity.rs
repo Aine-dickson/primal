@@ -95,19 +95,7 @@ fn match_ids(new: &Document, prev: &Document) -> HashMap<Id, Id> {
     mt.pair(&new.models, &prev.models, |m| m.name.clone(), |m| &m.id);
     for nm in &new.models {
         let Some(pm) = prev.models.iter().find(|p| p.name == nm.name) else { continue };
-        mt.pair(&nm.bindings, &pm.bindings, |b| b.name.clone(), |b| &b.id);
-        mt.pair(&nm.processes, &pm.processes, |p| p.name.clone(), |p| &p.id);
-        mt.pair(&nm.events, &pm.events, |e| e.name.clone(), |e| &e.id);
-        mt.pair(&nm.equations, &pm.equations, |q| q.name.clone(), |q| &q.id);
-        mt.pair(&nm.constraints, &pm.constraints, |c| c.name.clone(), |c| &c.id);
-        mt.pair(&nm.enums, &pm.enums, |e| e.name.clone(), |e| &e.id);
-        mt.pair(&nm.functions, &pm.functions, |f| f.name.clone(), |f| &f.id);
-        let (nk, pk) = (flow_keys(nm), flow_keys(pm));
-        for (i, f) in nm.flows.iter().enumerate() {
-            if let Some(j) = pk.iter().position(|k| *k == nk[i]) {
-                mt.map.insert(f.id.clone(), pm.flows[j].id.clone());
-            }
-        }
+        match_body(&mut mt, nm, pm);
     }
     mt.pair(&new.presentations, &prev.presentations, |p| p.name.clone(), |p| &p.id);
     for np in &new.presentations {
@@ -141,6 +129,30 @@ fn match_ids(new: &Document, prev: &Document) -> HashMap<Id, Id> {
         }
     }
     mt.map
+}
+
+/// The elements of a model or object type, and of its object types and parts (D-055).
+fn match_body(mt: &mut Matcher, nm: &Model, pm: &Model) {
+    mt.pair(&nm.bindings, &pm.bindings, |b| b.name.clone(), |b| &b.id);
+    mt.pair(&nm.processes, &pm.processes, |p| p.name.clone(), |p| &p.id);
+    mt.pair(&nm.events, &pm.events, |e| e.name.clone(), |e| &e.id);
+    mt.pair(&nm.equations, &pm.equations, |q| q.name.clone(), |q| &q.id);
+    mt.pair(&nm.constraints, &pm.constraints, |c| c.name.clone(), |c| &c.id);
+    mt.pair(&nm.enums, &pm.enums, |e| e.name.clone(), |e| &e.id);
+    mt.pair(&nm.functions, &pm.functions, |f| f.name.clone(), |f| &f.id);
+    mt.pair(&nm.parts, &pm.parts, |p| p.name.clone(), |p| &p.id);
+    mt.pair(&nm.objects, &pm.objects, |o| o.name.clone(), |o| &o.id);
+    for no in &nm.objects {
+        if let Some(po) = pm.objects.iter().find(|p| p.name == no.name) {
+            match_body(mt, no, po);
+        }
+    }
+    let (nk, pk) = (flow_keys(nm), flow_keys(pm));
+    for (i, f) in nm.flows.iter().enumerate() {
+        if let Some(j) = pk.iter().position(|k| *k == nk[i]) {
+            mt.map.insert(f.id.clone(), pm.flows[j].id.clone());
+        }
+    }
 }
 
 /// Representations are matched within their container by what follows the container's
@@ -190,7 +202,7 @@ fn beat_reps(actions: &[Action]) -> Vec<Rep> {
 
 /// Keys whose string values (or lists of strings) are identities.
 const ID_KEYS: &[&str] =
-    &["id", "ref", "der", "origin", "space", "target", "binding", "event", "process", "attached_to", "default_space", "model", "presentation", "observation", "beat", "element", "view", "keep", "fn", "enum"];
+    &["id", "ref", "der", "origin", "space", "target", "binding", "event", "process", "attached_to", "default_space", "model", "presentation", "observation", "beat", "element", "view", "keep", "fn", "enum", "object", "part", "item", "over", "field"];
 
 fn remap(v: &mut Json, map: &HashMap<Id, Id>) {
     match v {
@@ -248,8 +260,7 @@ fn ids<T>(v: &[T], id: impl Fn(&T) -> &Id) -> Vec<Id> {
 fn reorder(doc: &mut Document, prev: &Document) {
     order(&mut doc.spaces, &ids(&prev.spaces, |s| &s.id), |s| &s.id);
     order(&mut doc.models, &ids(&prev.models, |m| &m.id), |m| &m.id);
-    for m in &mut doc.models {
-        let Some(p) = prev.models.iter().find(|x| x.id == m.id) else { continue };
+    fn body(m: &mut Model, p: &Model) {
         order(&mut m.bindings, &ids(&p.bindings, |b| &b.id), |b| &b.id);
         order(&mut m.processes, &ids(&p.processes, |b| &b.id), |b| &b.id);
         order(&mut m.flows, &ids(&p.flows, |b| &b.id), |b| &b.id);
@@ -258,6 +269,17 @@ fn reorder(doc: &mut Document, prev: &Document) {
         order(&mut m.constraints, &ids(&p.constraints, |b| &b.id), |b| &b.id);
         order(&mut m.enums, &ids(&p.enums, |b| &b.id), |b| &b.id);
         order(&mut m.functions, &ids(&p.functions, |b| &b.id), |b| &b.id);
+        order(&mut m.parts, &ids(&p.parts, |b| &b.id), |b| &b.id);
+        order(&mut m.objects, &ids(&p.objects, |b| &b.id), |b| &b.id);
+        for o in &mut m.objects {
+            if let Some(po) = p.objects.iter().find(|x| x.id == o.id) {
+                body(o, po);
+            }
+        }
+    }
+    for m in &mut doc.models {
+        let Some(p) = prev.models.iter().find(|x| x.id == m.id) else { continue };
+        body(m, p);
     }
     order(&mut doc.presentations, &ids(&prev.presentations, |p| &p.id), |p| &p.id);
     for pr in &mut doc.presentations {

@@ -10,7 +10,9 @@ pub mod present;
 pub mod units;
 
 pub use dim::{Dim, Ratio};
-pub use expr::{Arm, BinOp, Builtin, Constant, Expr, Func, Lambda};
+pub mod elaborate;
+
+pub use expr::{Agg, Arm, BinOp, Builtin, Constant, Expr, Func, Lambda};
 pub use units::Unit;
 
 use serde::{Deserialize, Serialize};
@@ -197,6 +199,37 @@ pub struct Flow {
     pub expr: Expr,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub process: Option<Id>,
+    /// The member whose binding `target` is, when the flow is written by a container for a
+    /// contained object: `der(ball.vel)` (`{"part": ...}`), or `der(b.vel)` in a loop
+    /// (`{"var": "b"}` with `each`) (D-055).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<Expr>,
+    /// `for b in row { ... }`: the flow is repeated for each member of `over`, named `var`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub each: Option<Each>,
+}
+
+/// A loop over the members of a collection (D-055).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Each {
+    pub var: String,
+    pub over: Id,
+}
+
+/// A contained object or a collection of fixed membership (MK-7.11, MK-8.1, D-055): `count`
+/// members (one when absent: a contained object) of the object type `object`, each with the
+/// overrides, read in the container's scope, where `{"builtin": "index"}` is its number.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Part {
+    pub id: Id,
+    pub name: String,
+    pub object: Id,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides: Vec<present::Override>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 /// Event triggers (MK-15.3).
@@ -351,6 +384,12 @@ pub struct Model {
     /// Declared functions (MK-10.3, D-048).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub functions: Vec<FunctionDecl>,
+    /// Object types declared in this model (MK-7.1, D-055), each with the body of a model.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<Model>,
+    /// Contained objects and collections (MK-7.11, MK-8.1, D-055).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<Part>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
@@ -405,6 +444,16 @@ pub struct FnParam {
 }
 
 impl Model {
+    /// Whether the model contains objects, so that it needs elaboration (D-055).
+    pub fn has_parts(&self) -> bool {
+        !self.parts.is_empty()
+    }
+    pub fn object(&self, id: &str) -> Option<&Model> {
+        self.objects.iter().find(|o| o.id == id)
+    }
+    pub fn part(&self, id: &str) -> Option<&Part> {
+        self.parts.iter().find(|p| p.id == id)
+    }
     pub fn function(&self, id: &str) -> Option<&FunctionDecl> {
         self.functions.iter().find(|f| f.id == id)
     }

@@ -372,14 +372,48 @@ impl<'a> Engine<'a> {
     }
 
     /// RC-5.4, RC-8.4: sign references from the current committed state.
+    ///
+    /// RC-7.2a (D-056): a located crossing leaves its guard within the location tolerance of
+    /// zero, on the far side (RC-7.6). When the guard changes sign again within `4 ε_t` under
+    /// the flows of the committed state (a ball whose bounce has just reversed it), its
+    /// reference is the sign it is heading to, so that the next crossing is detected even
+    /// when the whole excursion lies inside one step.
     fn retake_refs(&mut self) {
+        let vals = self.vals.clone();
+        let ahead = self.just_ahead(&vals);
         for ei in 0..self.cm.events.len() {
-            if let Ok(Some(g)) = self.guard_value(&self.vals.clone(), ei) {
-                if let Some(s) = sign(g) {
+            if let Ok(Some(g)) = self.guard_value(&vals, ei) {
+                let heading = ahead.as_ref().and_then(|v| self.guard_value(v, ei).ok().flatten()).and_then(sign);
+                let s = match (sign(g), heading) {
+                    (Some(now), Some(next)) if now != next => Some(next),
+                    (now, _) => now,
+                };
+                if let Some(s) = s {
                     self.refs[ei] = Some(s);
                 }
             }
         }
+    }
+
+    /// The state `4 ε_t` after the committed one, by one explicit step of the flows; `None`
+    /// for a model without continuous state or when the flows cannot be evaluated.
+    fn just_ahead(&self, vals: &[Value]) -> Option<Vec<Value>> {
+        let cm = self.cm;
+        let n = cm.n_y();
+        if n == 0 || cm.is_static {
+            return None;
+        }
+        let dt = 4.0 * self.cfg.eps_t();
+        let (mut y, mut dy) = (vec![0.0; n], vec![0.0; n]);
+        cm.store_y(vals, &mut y);
+        cm.rhs(vals, self.t, self.cfg.t0, &mut dy).ok()?;
+        for (a, d) in y.iter_mut().zip(&dy) {
+            *a += dt * d;
+        }
+        let mut out = vals.to_vec();
+        cm.load_y(&mut out, &y);
+        cm.update_derived(&mut out, self.t + dt, self.cfg.t0).ok()?;
+        Some(out)
     }
 
     /// Checks constraints (MK-12.3). Returns reports, or the failure of a `reject` or `stop`

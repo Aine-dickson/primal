@@ -150,8 +150,33 @@ fn lower_space(s: &ast::SpaceDecl, diags: &mut Vec<Diag>) -> Option<Space> {
     Some(sp)
 }
 
+/// An object type's names, for member expressions (D-055).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ObjInfo {
+    pub(crate) id: Id,
+    pub(crate) bindings: HashMap<String, Id>,
+    pub(crate) parts: HashMap<String, PartInfo>,
+}
+
+/// A part: its identity, its object type's name, and whether it is a collection.
+#[derive(Clone, Debug)]
+pub(crate) struct PartInfo {
+    pub(crate) id: Id,
+    pub(crate) object: String,
+    pub(crate) many: bool,
+}
+
 pub(crate) struct ModelCx<'a> {
     pub(crate) name: String,
+    /// Object types of the model by name, and the parts of the scope (D-055).
+    pub(crate) objects: HashMap<String, ObjInfo>,
+    pub(crate) parts: HashMap<String, PartInfo>,
+    /// Loop variables in scope: the member's name and its object type's name.
+    pub(crate) vars: Vec<(String, String)>,
+    /// In the overrides of a collection, `index` is the member's number.
+    index_ok: bool,
+    /// Lowering an object type's body, where object types are not declared.
+    in_object: bool,
     space: Option<&'a Space>,
     spaces: &'a [Space],
     pub(crate) bindings: HashMap<String, Id>,
@@ -171,7 +196,14 @@ pub(crate) struct ModelCx<'a> {
 impl<'a> ModelCx<'a> {
     /// The scope of a lowered model, for expressions written outside it (presentations, runs).
     pub(crate) fn scope(m: &Model, spaces: &'a [Space], diags: &'a mut Vec<Diag>, map: &'a mut SourceMap) -> ModelCx<'a> {
+        let objects: HashMap<String, ObjInfo> = m.objects.iter().map(|o| (o.name.clone(), obj_info(o))).collect();
+        let parts = obj_info(m).parts;
         ModelCx {
+            objects,
+            parts,
+            vars: vec![],
+            index_ok: false,
+            in_object: false,
             name: m.name.clone(),
             space: m.default_space.as_ref().and_then(|s| spaces.iter().find(|x| &x.id == s)),
             spaces,
@@ -204,7 +236,164 @@ impl<'a> ModelCx<'a> {
             None => None,
         };
         let model = build::ModelBuilder::new(&name).finish();
-        ModelCx { name, space, spaces, bindings: HashMap::new(), events: HashMap::new(), enums: HashMap::new(), functions: HashMap::new(), payload: None, diags, map, flows: 0, model }
+        ModelCx {
+            name,
+            objects: HashMap::new(),
+            parts: HashMap::new(),
+            vars: vec![],
+            index_ok: false,
+            in_object: false,
+            space,
+            spaces,
+            bindings: HashMap::new(),
+            events: HashMap::new(),
+            enums: HashMap::new(),
+            functions: HashMap::new(),
+            payload: None,
+            diags,
+            map,
+            flows: 0,
+            model,
+        }
+    }
+
+    /// The names of an object type or model as written: its bindings and parts (D-055).
+    fn declare_names(&mut self, id: &str, members: &[Member]) -> ObjInfo {
+        let mut info = ObjInfo { id: id.to_string(), ..Default::default() };
+        for mem in members {
+            match mem {
+                Member::Decl(d) => {
+                    info.bindings.insert(d.name.text.clone(), format!("{id}.{}", d.name.text));
+                }
+                Member::Parts(ps) => {
+                    for p in ps {
+                        let pi = PartInfo { id: format!("{id}.part.{}", p.name.text), object: p.object.text.clone(), many: p.count.is_some() };
+                        if info.parts.insert(p.name.text.clone(), pi).is_some() {
+                            self.err("SX-E09", format!("part `{}` declared twice", p.name.text), p.name.span);
+                        }
+                        if info.bindings.contains_key(&p.name.text) {
+                            self.err("SX-E09", format!("`{}` is both a binding and a part", p.name.text), p.name.span);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        info
+    }
+
+    /// Lowers an object type declared in this model (D-055).
+    fn object(&mut self, o: &ast::ObjectDecl) {
+        if self.in_object {
+            self.err("SX-E06", "object types are declared in the model, not inside another object type", o.name.span);
+            return;
+        }
+        let info = self.objects[&o.name.text].clone();
+        let decl = ast::ModelDecl { name: ast::Name { text: info.id.clone(), span: o.name.span }, space: None, members: o.members.clone(), notes: o.notes.clone(), span: o.span };
+        let objects = self.objects.clone();
+        let mut sub = ModelCx::new(&decl, self.spaces, &mut *self.diags, &mut *self.map);
+        sub.space = self.space;
+        sub.objects = objects;
+        sub.parts = info.parts.clone();
+        sub.in_object = true;
+        let mut ty = sub.lower(&decl);
+        ty.name = o.name.text.clone();
+        self.model.objects.push(ty);
+    }
+
+    /// Lowers the parts of the scope (D-055).
+    fn parts_decl(&mut self, ps: &[ast::PartDecl]) {
+        for p in ps {
+            let info = self.parts[&p.name.text].clone();
+            self.map.insert(info.id.clone(), p.span);
+            let Some(obj) = self.objects.get(&p.object.text).cloned() else {
+                // Kept, so that its uses are known and not reported again.
+                self.err("SX-E03", format!("unknown object type `{}`", p.object.text), p.object.span);
+                let object = format!("{}.{}", self.name, p.object.text);
+                self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object, count: p.count, overrides: vec![], notes: p.notes.clone() });
+                continue;
+            };
+            if p.count == Some(0) {
+                self.err("SX-E08", "a collection has at least one member", p.span);
+            }
+            let mut overrides = vec![];
+            for (n, e) in &p.overrides {
+                let Some(b) = obj.bindings.get(&n.text).cloned() else {
+                    self.err("SX-E03", format!("an object `{}` has no binding `{}`", p.object.text, n.text), n.span);
+                    continue;
+                };
+                self.index_ok = info.many;
+                let value = self.expr(e, &[]);
+                self.index_ok = false;
+                overrides.push(prismal_ir::present::Override { binding: b, value });
+            }
+            self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object: obj.id, count: p.count, overrides, notes: p.notes.clone() });
+        }
+    }
+
+    /// The member an expression selects (`b`, `ball`, `row[2]`) and its object type (D-055).
+    fn member_expr(&mut self, e: &ast::Expr, locals: &[String]) -> Option<(Expr, String)> {
+        match &e.kind {
+            ExprKind::Name(n) if !locals.contains(n) => {
+                if let Some((_, ty)) = self.vars.iter().rev().find(|(v, _)| v == n) {
+                    return Some((Expr::Var { var: n.clone() }, ty.clone()));
+                }
+                let p = self.parts.get(n)?.clone();
+                if p.many {
+                    self.err("SX-E08", format!("`{n}` is a collection: select a member, `{n}[1]`"), e.span);
+                }
+                Some((Expr::Part { part: p.id }, p.object))
+            }
+            ExprKind::Index(x, i) => {
+                let ExprKind::Name(n) = &x.kind else { return None };
+                let p = self.parts.get(n)?.clone();
+                if !p.many {
+                    self.err("SX-E08", format!("`{n}` is one object, not a collection"), e.span);
+                }
+                let index = self.expr(i, locals);
+                Some((Expr::Item { item: p.id, index: Box::new(index) }, p.object))
+            }
+            _ => None,
+        }
+    }
+
+    /// `sum(e for b in row [if c])` and the other aggregates; `count(row)` (D-055).
+    fn aggregate(&mut self, name: &str, args: &[ast::Arg], span: Span, locals: &[String]) -> Option<Expr> {
+        let agg = match name {
+            "sum" => Agg::Sum,
+            "min" => Agg::Min,
+            "max" => Agg::Max,
+            "any" => Agg::Any,
+            "all" => Agg::All,
+            "count" => Agg::Count,
+            _ => return None,
+        };
+        let [arg] = args else { return None };
+        match &arg.value.kind {
+            ExprKind::Aggregate { body, var, over, filter, .. } => {
+                let Some(p) = self.parts.get(&over.text).cloned() else {
+                    self.err("SX-E03", format!("unknown collection `{}`", over.text), over.span);
+                    return Some(Self::placeholder());
+                };
+                if !p.many {
+                    self.err("SX-E08", format!("`{}` is one object; an aggregate goes over a collection", over.text), over.span);
+                }
+                self.vars.push((var.text.clone(), p.object.clone()));
+                let body = if agg == Agg::Count { None } else { Some(Box::new(self.expr(body, locals))) };
+                let filter = filter.as_ref().map(|f| Box::new(self.expr(f, locals)));
+                self.vars.pop();
+                Some(Expr::Aggregate { aggregate: agg, var: var.text.clone(), over: p.id, body, filter })
+            }
+            ExprKind::Name(n) if agg == Agg::Count && self.parts.get(n).is_some_and(|p| p.many) => {
+                let p = self.parts[n].clone();
+                Some(Expr::Aggregate { aggregate: agg, var: "_".into(), over: p.id, body: None, filter: None })
+            }
+            _ if agg == Agg::Count => {
+                self.err("SX-E08", "`count` takes a collection: `count(row)`, or `count(b for b in row if c)`", span);
+                Some(Self::placeholder())
+            }
+            _ => None,
+        }
     }
 
     pub(crate) fn err(&mut self, code: &'static str, msg: impl Into<String>, span: Span) {
@@ -215,6 +404,18 @@ impl<'a> ModelCx<'a> {
         self.model.default_space = self.space.map(|s| s.id.clone());
         self.model.notes = m.notes.clone();
         self.map.insert(self.model.id.clone(), m.span);
+        // Object types and parts first: member expressions anywhere may name them (D-055).
+        let own = self.declare_names(&self.name.clone(), &m.members);
+        self.parts = own.parts;
+        for mem in &m.members {
+            if let Member::Object(o) = mem {
+                let id = format!("{}.{}", self.name, o.name.text);
+                let info = self.declare_names(&id, &o.members);
+                if self.objects.insert(o.name.text.clone(), info).is_some() {
+                    self.err("SX-E09", format!("object type `{}` declared twice", o.name.text), o.name.span);
+                }
+            }
+        }
         // Declared names first, so that declarations may refer to later ones.
         let mut event_names: HashMap<String, Span> = HashMap::new();
         for mem in &m.members {
@@ -324,7 +525,8 @@ impl<'a> ModelCx<'a> {
                     };
                     self.push_constraint(&name, cond, tol, policy, None, c.span);
                 }
-                Member::Object(n) => self.err("SX-E06", "contained object types are not in the v0 IR", n.span),
+                Member::Object(o) => self.object(o),
+                Member::Parts(ps) => self.parts_decl(ps),
             }
         }
         std::mem::replace(&mut self.model, build::ModelBuilder::new("").finish())
@@ -430,13 +632,49 @@ impl<'a> ModelCx<'a> {
     }
 
     fn flow(&mut self, f: &ast::FlowStmt, process: Option<&Id>) {
-        let target = self.binding(&f.target);
+        // `for b in row { der(b.vel) += e }`: the loop variable is in scope (D-055).
+        let each = match &f.each {
+            Some((var, over)) => match self.parts.get(&over.text).cloned() {
+                Some(p) => {
+                    self.vars.push((var.text.clone(), p.object.clone()));
+                    Some(Each { var: var.text.clone(), over: p.id })
+                }
+                None => {
+                    self.err("SX-E03", format!("unknown collection `{}`", over.text), over.span);
+                    None
+                }
+            },
+            None => None,
+        };
+        let (member, target) = match &f.member {
+            None => (None, self.binding(&f.target)),
+            Some(m) => match self.member_expr(m, &[]) {
+                Some((sel, ty)) if !self.objects.contains_key(&ty) => (Some(sel), f.target.text.clone()),
+                Some((sel, ty)) => {
+                    let id = self.objects.get(&ty).and_then(|o| o.bindings.get(&f.target.text)).cloned();
+                    match id {
+                        Some(id) => (Some(sel), id),
+                        None => {
+                            self.err("SX-E03", format!("an object `{ty}` has no binding `{}`", f.target.text), f.target.span);
+                            (Some(sel), f.target.text.clone())
+                        }
+                    }
+                }
+                None => {
+                    self.err("SX-E03", "a flow's target is a binding, or a member's binding: `der(b.vel)`", m.span);
+                    (None, f.target.text.clone())
+                }
+            },
+        };
         let expr = self.expr(&f.expr, &[]);
+        if each.is_some() {
+            self.vars.pop();
+        }
         self.flows += 1;
         let id = format!("{}.flow.{}", self.name, self.flows);
         self.map.insert(id.clone(), f.span);
         let kind = if f.contribute { FlowKind::Contribute } else { FlowKind::Define };
-        self.model.flows.push(Flow { id, target, kind, expr, process: process.cloned() });
+        self.model.flows.push(Flow { id, target, kind, expr, process: process.cloned(), member, each });
     }
 
     fn event(&mut self, e: &ast::EventDecl, process: Option<&Id>) {
@@ -743,18 +981,37 @@ impl<'a> ModelCx<'a> {
                 }
                 Expr::Case { case: n.text.clone() }
             }
-            ExprKind::Field(x, n) => {
-                let x = self.expr(x, locals);
-                let axis = self.axis(n);
-                build::comp(x, axis)
-            }
+            ExprKind::Field(x, n) => match self.member_expr(x, locals) {
+                // A member's binding: `b.pos`, `ball.pos`, `row[2].pos` (D-055). A part of
+                // an unknown type is reported where it is declared, not at each use.
+                Some((_, ty)) if !self.objects.contains_key(&ty) => Self::placeholder(),
+                Some((of, ty)) => match self.objects.get(&ty).and_then(|o| o.bindings.get(&n.text)).cloned() {
+                    Some(field) => Expr::Field { field, of: Box::new(of) },
+                    None => {
+                        self.err("SX-E03", format!("an object `{ty}` has no binding `{}`", n.text), n.span);
+                        Self::placeholder()
+                    }
+                },
+                None => {
+                    let x = self.expr(x, locals);
+                    let axis = self.axis(n);
+                    build::comp(x, axis)
+                }
+            },
             ExprKind::Tuple(items) => build::tuple(items.iter().map(|i| self.expr(i, locals)).collect()),
             ExprKind::Str(_) => {
                 self.err("SX-E08", "text belongs to presentations, not to a model", e.span);
                 Self::placeholder()
             }
-            ExprKind::Index(..) => {
-                self.err("SX-E06", "indexing needs collections, which the v0 IR does not have", e.span);
+            ExprKind::Index(..) => match self.member_expr(e, locals) {
+                Some((m, _)) => m,
+                None => {
+                    self.err("SX-E08", "only a collection is indexed: `row[2]`", e.span);
+                    Self::placeholder()
+                }
+            },
+            ExprKind::Aggregate { .. } => {
+                self.err("SX-E08", "an aggregate is written as the argument of `sum`, `min`, `max`, `any`, `all` or `count`", e.span);
                 Self::placeholder()
             }
             ExprKind::Match(x, arms) => {
@@ -780,6 +1037,18 @@ impl<'a> ModelCx<'a> {
         }
         if let Some(id) = self.bindings.get(n) {
             return build::r(id);
+        }
+        // Members of objects (D-055): a loop variable, a contained object.
+        if let Some((_, _)) = self.vars.iter().rev().find(|(v, _)| v == n) {
+            return Expr::Var { var: n.to_string() };
+        }
+        if let Some(p) = self.parts.get(n) {
+            if !p.many {
+                return Expr::Part { part: p.id.clone() };
+            }
+        }
+        if n == "index" && self.index_ok {
+            return Expr::Builtin { builtin: Builtin::Index };
         }
         if let Some(id) = self.functions.get(n) {
             return Expr::Fn { r#fn: id.clone() };
@@ -838,6 +1107,11 @@ impl<'a> ModelCx<'a> {
                 }
             };
         }
+        if !locals.iter().any(|l| l == name) && !self.bindings.contains_key(name) && !self.functions.contains_key(name) {
+            if let Some(a) = self.aggregate(name, args, span, locals) {
+                return a;
+            }
+        }
         let lowered: Vec<Expr> = args.iter().map(|a| self.expr(&a.value, locals)).collect();
         if locals.iter().any(|l| l == name) || self.bindings.contains_key(name) || self.functions.contains_key(name) {
             let callee = self.name(name, f.span, locals);
@@ -851,5 +1125,21 @@ impl<'a> ModelCx<'a> {
         }
         self.err("SX-E03", format!("unknown function `{name}`"), f.span);
         Self::placeholder()
+    }
+}
+
+/// The names of a lowered object type or model: its bindings and parts (D-055).
+fn obj_info(m: &Model) -> ObjInfo {
+    ObjInfo {
+        id: m.id.clone(),
+        bindings: m.bindings.iter().map(|b| (b.name.clone(), b.id.clone())).collect(),
+        parts: m
+            .parts
+            .iter()
+            .map(|p| {
+                let object = p.object.rsplit('.').next().unwrap_or(&p.object).to_string();
+                (p.name.clone(), PartInfo { id: p.id.clone(), object, many: p.count.is_some() })
+            })
+            .collect(),
     }
 }

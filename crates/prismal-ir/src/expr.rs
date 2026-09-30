@@ -29,6 +29,34 @@ pub enum Builtin {
     T,
     T0,
     Elapsed,
+    /// The number of the member being declared, from 1, in the overrides of a collection
+    /// (D-055).
+    Index,
+}
+
+/// Aggregates over the members of a collection (MK-8.3, D-055).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Agg {
+    Sum,
+    Min,
+    Max,
+    Any,
+    All,
+    Count,
+}
+
+impl Agg {
+    pub fn name(self) -> &'static str {
+        match self {
+            Agg::Sum => "sum",
+            Agg::Min => "min",
+            Agg::Max => "max",
+            Agg::Any => "any",
+            Agg::All => "all",
+            Agg::Count => "count",
+        }
+    }
 }
 
 /// Named mathematical constants, kept by name so that formulas typeset them (D-034, D-039).
@@ -158,6 +186,39 @@ pub enum Expr {
         r#match: Box<Expr>,
         arms: Vec<Arm>,
     },
+    // Objects and collections (D-055). These forms select members and read their bindings;
+    // elaboration (`crate::elaborate`) replaces them with references before checking.
+    /// A binding (`field`, the identity of its declaration in the object type) of the
+    /// member `of`: `ball.pos`, `row[2].pos`, `b.pos`.
+    Field {
+        field: Id,
+        of: Box<Expr>,
+    },
+    /// A contained object: the part with this identity, of single membership.
+    Part {
+        part: Id,
+    },
+    /// A member of a collection by its number, from 1: `row[2]`.
+    Item {
+        item: Id,
+        index: Box<Expr>,
+    },
+    /// An aggregate over the members of the collection `over`, each named `var` in `body`
+    /// and `filter`; `count` has no body.
+    Aggregate {
+        aggregate: Agg,
+        var: String,
+        over: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        body: Option<Box<Expr>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filter: Option<Box<Expr>>,
+    },
+    /// The member a loop or an aggregate is at: `b` in `for b in row`. After `Aggregate`,
+    /// which also has a `var` field: untagged forms are read in declaration order.
+    Var {
+        var: String,
+    },
 }
 
 /// One arm of a `match`: the value when the scrutinee is `case`.
@@ -210,6 +271,12 @@ impl Expr {
             Expr::Match { r#match, arms } => {
                 r#match.walk(f);
                 arms.iter().for_each(|a| a.value.walk(f));
+            }
+            Expr::Field { of, .. } => of.walk(f),
+            Expr::Item { index, .. } => index.walk(f),
+            Expr::Aggregate { body, filter, .. } => {
+                body.iter().for_each(|b| b.walk(f));
+                filter.iter().for_each(|c| c.walk(f));
             }
             _ => {}
         }

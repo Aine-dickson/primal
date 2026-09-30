@@ -51,6 +51,8 @@ pub struct Program {
 impl Program {
     /// Checks every model with the kernel and every presentation against its model.
     pub fn new(doc: Document) -> Result<Program, Vec<PDiag>> {
+        // Objects and collections become a flat model first (D-055).
+        let doc = prismal_ir::elaborate::document(&doc).map_err(|ds| ds.into_iter().map(|d| PDiag { code: d.code, message: d.message, element: d.element }).collect::<Vec<_>>())?;
         let mut diags = vec![];
         let mut models = vec![];
         for m in &doc.models {

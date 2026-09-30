@@ -146,6 +146,10 @@ impl<'a, 'b> Tc<'a, 'b> {
                 },
             },
             Expr::Match { r#match, arms } => self.match_expr(r#match, arms, exp),
+            // Members and aggregates are replaced by elaboration before checking (D-055).
+            Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } => {
+                self.err("MK-E00", "a member or an aggregate in a model that was not elaborated (D-055)".into())
+            }
             Expr::Payload { payload } => match &self.payload {
                 Some((id, i, t)) if id == payload => Some((CExpr::Payload(*i), t.clone())),
                 _ => self.err("MK-E01", format!("the payload of `{}` is read only in that event's condition and handler", payload.rsplit('.').next().unwrap_or(payload))),
@@ -159,6 +163,7 @@ impl<'a, 'b> Tc<'a, 'b> {
                 Builtin::T => (CExpr::Time, Type::Instant { dim: Dim::time() }),
                 Builtin::T0 => (CExpr::Time0, Type::Instant { dim: Dim::time() }),
                 Builtin::Elapsed => (CExpr::Elapsed, Type::Quantity { dim: Dim::time() }),
+                Builtin::Index => return self.err("MK-E25", "`index` is the number of a member, read only in the overrides of a collection (D-055)".into()),
             }),
             // A named constant is a bare dimensionless literal (MK-3.8, D-039).
             Expr::Const { r#const } => self.num(r#const.value(), None, exp),

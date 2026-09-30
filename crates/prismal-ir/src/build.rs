@@ -148,6 +148,8 @@ impl ModelBuilder {
                 flows: vec![],
                 events: vec![],
                 equations: vec![],
+                objects: vec![],
+                parts: vec![],
                 constraints: vec![],
                 enums: vec![],
                 functions: vec![],
@@ -249,7 +251,7 @@ impl ModelBuilder {
     fn add_flow(&mut self, target: &str, kind: FlowKind, expr: Expr, process: Option<&str>) -> Id {
         self.flow_count += 1;
         let id = format!("{}.flow.{}", self.model.name, self.flow_count);
-        self.model.flows.push(Flow { id: id.clone(), target: target.into(), kind, expr, process: process.map(|s| s.into()) });
+        self.model.flows.push(Flow { id: id.clone(), target: target.into(), kind, expr, process: process.map(|s| s.into()), member: None, each: None });
         id
     }
     pub fn flow(&mut self, target: &str, expr: Expr) -> Id {

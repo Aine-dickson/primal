@@ -79,6 +79,20 @@ impl PresCx<'_, '_> {
             }
         }
         self.cx.map.insert(id.clone(), r.span);
+        // `for b in row { ... }`: the member is in scope in the representation (D-055).
+        let each = match &r.each {
+            Some((var, over)) => match self.cx.parts.get(&over.text).cloned() {
+                Some(p) => {
+                    self.cx.vars.push((var.text.clone(), p.object.clone()));
+                    Some(prismal_ir::Each { var: var.text.clone(), over: p.id })
+                }
+                None => {
+                    self.err("SX-E03", format!("unknown collection `{}`", over.text), over.span);
+                    None
+                }
+            },
+            None => None,
+        };
         let mut sources = vec![];
         let mut props = vec![];
         for a in &r.args {
@@ -122,7 +136,10 @@ impl PresCx<'_, '_> {
         // Members are numbered within their group, which is their container (D-043).
         let mut inner = HashMap::new();
         let members = r.members.iter().map(|m| self.rep(m, &id, &mut inner)).collect();
-        Rep { id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members }
+        if each.is_some() {
+            self.cx.vars.pop();
+        }
+        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members }
     }
 
     fn view(&mut self, v: &ast::ViewDecl) -> Option<View> {

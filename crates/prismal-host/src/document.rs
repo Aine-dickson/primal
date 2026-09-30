@@ -138,7 +138,8 @@ impl Document {
 
     /// The span of an element, or of the nearest enclosing element that has one.
     fn span_of(&self, element: &str) -> Option<Span> {
-        let mut id = element;
+        // An element of a member is located at its declaration (D-055).
+        let mut id = prismal_ir::elaborate::declaration(element);
         loop {
             if let Some(s) = self.spans.get(id) {
                 return Some((*s).into());
@@ -172,7 +173,7 @@ impl Document {
 
     /// The source span of an element (HI section 6.1, `locate`).
     pub fn locate(&self, element: &str) -> Option<Span> {
-        self.spans.get(element).map(|s| (*s).into())
+        self.spans.get(prismal_ir::elaborate::declaration(element)).map(|s| (*s).into())
     }
 
     /// The models, presentations (with the mode each opens in) and cases (HI-3.4).
