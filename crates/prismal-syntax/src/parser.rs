@@ -23,7 +23,7 @@ pub const RESERVED: &[&str] = &[
 pub const CONTEXTUAL: &[&str] = &[
     "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "propose", "permit",
     "timeline", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
-    "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "animate", "camera", "bind", "release", "config",
+    "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "reveal", "zoom", "animate", "camera", "bind", "release", "config",
     "expect", "exactly", "rel", "of", "with", "learner", "continue",
 ];
 
@@ -1203,7 +1203,23 @@ impl<'a> Parser<'a> {
             return Ok(Action::Highlight(self.name("a representation name")?));
         }
         if self.eat_word("hide") {
-            return Ok(Action::Hide(self.name("a representation name")?));
+            let n = self.name("a representation name")?;
+            let d = if self.eat_word("for") { Some(self.expr()?) } else { None };
+            return Ok(Action::Hide(n, d));
+        }
+        if self.eat_word("reveal") {
+            let style = self.any_name("`fade` or `draw`")?;
+            let duration = if self.eat_word("for") { Some(self.expr_no_in()?) } else { None };
+            let view = if self.eat_word("in") { Some(self.name("a view name")?) } else { None };
+            let reps = self.block(|p| Self::one(p.rep()))?;
+            return Ok(Action::Reveal { style, duration, view, reps });
+        }
+        if self.eat_word("camera") {
+            let view = self.name("a view name")?;
+            let center = if self.eat_word("to") { Some(self.expr()?) } else { None };
+            let zoom = if self.eat_word("zoom") { Some(self.expr()?) } else { None };
+            let duration = if self.eat_word("for") { Some(self.expr()?) } else { None };
+            return Ok(Action::Camera { view, center, zoom, duration });
         }
         if self.eat_word("seek") {
             return Ok(Action::Seek(self.expr()?));
@@ -1239,7 +1255,7 @@ impl<'a> Parser<'a> {
         if self.eat_word("request") {
             return Ok(Action::Request(self.name("an event name")?));
         }
-        for w in ["animate", "camera", "bind", "release"] {
+        for w in ["animate", "bind", "release"] {
             if self.is_word(w) {
                 return Err(Diag::new("SX-E06", format!("the timeline action `{w}` is not yet defined by the working syntax"), self.span()));
             }

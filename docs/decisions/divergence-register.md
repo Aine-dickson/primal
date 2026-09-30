@@ -61,6 +61,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-039 | Named mathematical constants kept by name in the IR | Accepted |
 | D-040 | Reserved words and contextual keywords | Accepted |
 | D-041 | `on(E)` follows an occurrence of `E` as well as an emission | Accepted |
+| D-042 | Animations in v0: named effects (`reveal`, `hide ... for`, `camera`) | Accepted |
 
 ---
 
@@ -759,3 +760,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** MK-15.10 and RC section 8.1 step 1 state both sources; the runtime collects `on(E)` for events handled or emitted at the previous microstep (`crates/prismal-runtime/src/run.rs`, test `on_follows_occurrence`). An event triggered on itself (`event a on a`) cascades until the cascade limit, as an endless chain of emissions already did.
 - **History:**
   - 2026-09-30 found by the language guide, proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-042: Animations in v0 are named effects
+
+- **Status:** Accepted
+- **Original position:** PK-8.4 defines an animation as a change of a presentation property over presentation time, from a value to a value with a duration and easing; PK-9.2 lists `reveal(style)`, `animate`, `camera`, `bind` and `release`. The working syntax had no spelling for any of them.
+- **Raised by:** the remaining timeline actions of the prototype (`docs/prototype.md`, "Not implemented").
+- **Builds on:** D-009, D-018 (video export), PK-8.5 (animations never drive bound properties), PK-8.7 (deterministic frames).
+- **Question:** How are animations written in v0?
+- **Options considered:**
+  1. **A general property animation**, `animate ball.opacity from 0 to 1 for 1 s ease in_out`, as in Motion Canvas and the Web Animations model. Complete, but it needs a presentation property model (which properties each representation has, their types and defaults) that the specification does not have yet, and most lessons use a few effects.
+  2. **Named effects:** `reveal fade|draw [for d] [in view] { reps }`, `hide name [for d]`, `camera view [to P] [zoom z] [for d]`, with one easing. They cover the typical uses PK-8.4 lists (reveal by fade or drawing, fading out, camera moves), need no property model, and read as the lesson's intent.
+  3. **Defer all animation.** Lessons stay static apart from the simulation; video output (D-018) loses the effects authors expect from Manim-like tools.
+- **Accepted position:** option 2. `animate`, `bind` and `release` remain unspecified until a program needs them; they can be added as option 1 later without changing the named effects, which become shorthands.
+- **Reason:** delivers the effects lessons need now, keeps frames deterministic and the syntax readable, and leaves the general mechanism open.
+- **Consequences:** PK-9.2c; working syntax section 1.2; the IR actions `reveal`, `hide` with a duration and `camera` (04-ir section 7); frame descriptions carry `opacity`, `drawn` and a view `camera`; the web player renders them.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.

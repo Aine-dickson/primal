@@ -321,12 +321,12 @@ function mapFor(v) {
 /// SVG user units per screen pixel, to keep strokes and handles a constant size.
 function unitsPerPx(v) {
   const w = v.svg.clientWidth || v.svg.getBoundingClientRect().width || 600;
-  if (v.kind === 'spatial') return v.vb[2] / w;
+  if (v.kind === 'spatial') return (v.box || v.vb)[2] / w;
   return v.W / w;
 }
 
 function drawSpatialChrome(v, g, reps, u) {
-  const [x, y, w, h] = v.vb;
+  const [x, y, w, h] = v.box || v.vb;
   const step = niceStep((60 * u) / v.px_per_m) * v.px_per_m; // at least ~60 screen px
   const metres = step / v.px_per_m;
   const hasGrid = reps.some((r) => r.kind === 'grid');
@@ -408,6 +408,7 @@ function drawRep(v, g, r, u, colorIndex) {
   if (r.drag) cls.push('draggable');
   if (r.valid === false) cls.push('invalid');
   const grp = svg('g', { class: cls.join(' '), 'data-rep': r.id }, g);
+  if (r.opacity != null) grp.setAttribute('opacity', r.opacity);
   const title = svg('title', {}, grp);
   title.textContent = r.text;
   let focusable = null;
@@ -462,6 +463,18 @@ function drawRep(v, g, r, u, colorIndex) {
       grp.remove();
       return;
   }
+  if (r.drawn != null) {
+    // `reveal draw`: every stroke is drawn up to the fraction reached (D-042).
+    for (const e of grp.querySelectorAll('line, polyline, polygon')) {
+      if (e.parentNode.classList.contains('arrow') && e.tagName === 'polygon') {
+        e.style.opacity = r.drawn > 0.95 ? 1 : 0;
+        continue;
+      }
+      e.setAttribute('pathLength', '1');
+      e.style.strokeDasharray = '1';
+      e.style.strokeDashoffset = String(1 - r.drawn);
+    }
+  }
   if (focusable) {
     focusable.setAttribute('tabindex', '0');
     focusable.setAttribute('role', 'button');
@@ -496,6 +509,7 @@ function renderItem(host, r) {
     return { root, kind: r.shape };
   });
   it.root.classList.toggle('highlighted', !!r.highlighted);
+  it.root.style.opacity = r.opacity != null ? r.opacity : '';
   it.root.title = r.text;
   if (it.root.parentElement !== host) host.append(it.root);
   switch (r.shape) {
@@ -670,10 +684,10 @@ function renderFrame(frame) {
     const v = st.views[vf.id];
     if (!v) continue;
     if (v.svg) {
-      const u = unitsPerPx(v);
       if (v.kind === 'spatial') {
         if (!st.lesson) growToFit(v, vf.reps);
-        v.svg.setAttribute('viewBox', v.vb.join(' '));
+        v.box = cameraBox(v, vf.camera);
+        v.svg.setAttribute('viewBox', v.box.join(' '));
       } else {
         // A plot is drawn at its rendered size, so that text and margins stay readable.
         const w = Math.max(240, Math.round(v.svg.clientWidth || 560));
@@ -683,6 +697,7 @@ function renderFrame(frame) {
           v.svg.setAttribute('viewBox', `0 0 ${v.W} ${v.H}`);
         }
       }
+      const u = unitsPerPx(v);
       v.svg.replaceChildren();
       const g = svg('g', {}, v.svg);
       if (v.kind === 'spatial') drawSpatialChrome(v, g, vf.reps, u);
@@ -724,6 +739,17 @@ function renderFrame(frame) {
     if (f && document.activeElement !== f) f.focus({ preventScroll: true });
   }
   renderDescription(frame);
+}
+
+/// The view box of a spatial view: the view's own framing, or the timeline's camera
+/// (D-042) moving from it to its centre and zoom.
+function cameraBox(v, cam) {
+  if (!cam) return v.vb;
+  const [x, y, w, h] = v.base;
+  const c0 = [x + w / 2, y + h / 2];
+  const c = cam.center ? [c0[0] + (cam.center[0] - c0[0]) * cam.blend, c0[1] + (cam.center[1] - c0[1]) * cam.blend] : c0;
+  const [cw, ch] = [w / cam.zoom, h / cam.zoom];
+  return [c[0] - cw / 2, c[1] - ch / 2, cw, ch];
 }
 
 function cssId(id) {

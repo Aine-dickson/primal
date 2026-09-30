@@ -103,6 +103,44 @@ pub fn check_presentation(cm: &CModel, p: &Presentation) -> Vec<PDiag> {
 fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps: &mut Vec<String>, out: &mut Vec<PDiag>, time: &Type, duration: &Type) {
     for a in acts {
         match a {
+            Action::Reveal { view, reps: rs, duration: d, .. } => {
+                if let Some(d) = d {
+                    expr(cm, d, Some(duration), beat, out);
+                }
+                if let Some(v) = view {
+                    if !pr.views.iter().any(|x| &x.0 == v) {
+                        out.push(PDiag { code: "PK-E01", message: format!("unknown view `{v}`"), element: beat.into() });
+                        continue;
+                    }
+                }
+                let ctx = pr.ctx(view.as_deref());
+                for r in rs {
+                    if let Err(d) = compile_rep(cm, &ctx, r) {
+                        out.extend(d);
+                    }
+                    reps.push(r.id.clone());
+                }
+            }
+            Action::Camera { view, center, zoom, duration: d } => {
+                match pr.views.iter().find(|x| &x.0 == view) {
+                    Some((_, ViewCtx::Spatial { space, .. }, _)) => {
+                        if let Some(c) = center {
+                            expr(cm, c, Some(&Type::Point { space: space.clone() }), beat, out);
+                        }
+                    }
+                    Some(_) => out.push(PDiag { code: "PK-E05", message: "a camera moves a spatial view (D-042)".into(), element: beat.into() }),
+                    None => out.push(PDiag { code: "PK-E01", message: format!("unknown view `{view}`"), element: beat.into() }),
+                }
+                if let Some(z) = zoom {
+                    expr(cm, z, Some(&Type::real()), beat, out);
+                    if number(cm, z).is_ok_and(|z| z <= 0.0) {
+                        out.push(PDiag { code: "PK-E02", message: "a zoom is positive".into(), element: beat.into() });
+                    }
+                }
+                if let Some(d) = d {
+                    expr(cm, d, Some(duration), beat, out);
+                }
+            }
             Action::Show { view, reps: rs } => {
                 if let Some(v) = view {
                     if !pr.views.iter().any(|x| &x.0 == v) {
@@ -118,9 +156,12 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     reps.push(r.id.clone());
                 }
             }
-            Action::Highlight { target } | Action::Hide { target } => {
+            Action::Highlight { target } | Action::Hide { target, .. } => {
                 if !reps.contains(target) {
                     out.push(PDiag { code: "PK-E01", message: format!("unknown representation `{target}`"), element: beat.into() });
+                }
+                if let Action::Hide { duration: Some(d), .. } = a {
+                    expr(cm, d, Some(duration), beat, out);
                 }
             }
             Action::Narrate { duration: Some(d), .. } | Action::Wait { duration: d } => expr(cm, d, Some(duration), beat, out),

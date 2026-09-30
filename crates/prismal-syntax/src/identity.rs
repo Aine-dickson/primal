@@ -157,7 +157,7 @@ fn beat_reps(actions: &[Action]) -> Vec<Rep> {
     let mut out = vec![];
     for a in actions {
         match a {
-            Action::Show { reps, .. } => out.extend(reps.iter().cloned()),
+            Action::Show { reps, .. } | Action::Reveal { reps, .. } => out.extend(reps.iter().cloned()),
             Action::Explore { controls, fallback, .. } => {
                 out.extend(controls.iter().cloned());
                 out.extend(beat_reps(fallback));

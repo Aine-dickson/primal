@@ -13,7 +13,7 @@
 
 use crate::frame::{compile_rep, CRep, Frame, Projector, ViewCtx};
 use crate::{number, PDiag, Program};
-use prismal_ir::present::{Action as TAction, LearnerInput, Presentation};
+use prismal_ir::present::{Action as TAction, LearnerInput, Presentation, RevealStyle};
 use prismal_ir::{Id, Op};
 use prismal_kernel::{CModel, Value};
 use prismal_runtime::{run, Action, Config, Run, Scheduled};
@@ -84,6 +84,24 @@ pub struct Shown {
     pub until: f64,
     pub view: Option<Id>,
     pub rep: CRep,
+    /// A reveal: its style and duration (D-042).
+    pub reveal: Option<(RevealStyle, f64)>,
+}
+
+/// A camera move (D-042): from presentation instant `from`, over `duration`.
+#[derive(Clone, Debug)]
+pub struct CameraCue {
+    pub view: Id,
+    pub from: f64,
+    pub duration: f64,
+    pub center: Option<prismal_kernel::CExpr>,
+    pub zoom: Option<f64>,
+}
+
+/// Smooth start and end of an animation (PK-8.4): `3k² - 2k³`.
+pub fn ease(k: f64) -> f64 {
+    let k = k.clamp(0.0, 1.0);
+    k * k * (3.0 - 2.0 * k)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -114,8 +132,10 @@ pub struct Playback<'a> {
     pub announcements: Vec<Announcement>,
     pub shown: Vec<Shown>,
     pub highlights: Vec<Highlight>,
-    /// Representations hidden from a presentation instant on (PK-9.2).
-    pub hidden: Vec<(Id, f64)>,
+    /// Representations hidden from a presentation instant on (PK-9.2), fading out over a
+    /// duration (0 for at once).
+    pub hidden: Vec<(Id, f64, f64)>,
+    pub cameras: Vec<CameraCue>,
     pub refusals: Vec<Refusal>,
     /// Timeline diagnostics: unsatisfiable waits (PK-9.4), rejected interventions.
     pub diagnostics: Vec<String>,
@@ -276,7 +296,7 @@ impl Player<'_, '_> {
                 let ctx = self.pb.projector.ctx(view.as_deref());
                 for r in reps {
                     match compile_rep(self.pb.cm, &ctx, r) {
-                        Ok(c) => self.pb.shown.push(Shown { from: p, until: f64::INFINITY, view: view.clone(), rep: c }),
+                        Ok(c) => self.pb.shown.push(Shown { from: p, until: f64::INFINITY, view: view.clone(), rep: c, reveal: None }),
                         Err(d) => self.pb.diagnostics.extend(d.into_iter().map(|x| x.to_string())),
                     }
                 }
@@ -286,9 +306,37 @@ impl Player<'_, '_> {
                 self.pb.highlights.push(Highlight { target: target.clone(), from: p, until: f64::NAN });
                 p
             }
-            TAction::Hide { target } => {
-                self.pb.hidden.push((target.clone(), p));
-                p
+            TAction::Hide { target, duration } => {
+                let d = duration.as_ref().map(|d| self.num(d)).unwrap_or(0.0);
+                self.pb.hidden.push((target.clone(), p, d));
+                p + d
+            }
+            TAction::Reveal { view, style, duration, reps } => {
+                let d = duration.as_ref().map(|d| self.num(d)).unwrap_or(1.0);
+                let ctx = self.pb.projector.ctx(view.as_deref());
+                for r in reps {
+                    match compile_rep(self.pb.cm, &ctx, r) {
+                        Ok(c) => self.pb.shown.push(Shown { from: p, until: f64::INFINITY, view: view.clone(), rep: c, reveal: Some((*style, d)) }),
+                        Err(e) => self.pb.diagnostics.extend(e.into_iter().map(|x| x.to_string())),
+                    }
+                }
+                p + d
+            }
+            TAction::Camera { view, center, zoom, duration } => {
+                let d = duration.as_ref().map(|d| self.num(d)).unwrap_or(1.0);
+                let z = zoom.as_ref().map(|z| self.num(z));
+                let c = match (center, self.pb.projector.ctx(Some(view))) {
+                    (Some(e), ViewCtx::Spatial { space, .. }) => match prismal_kernel::compile_expr(self.pb.cm, e, Some(&prismal_ir::Type::Point { space })) {
+                        Ok((ce, _)) => Some(ce),
+                        Err(ds) => {
+                            self.pb.diagnostics.extend(ds.iter().map(|x| x.to_string()));
+                            None
+                        }
+                    },
+                    _ => None,
+                };
+                self.pb.cameras.push(CameraCue { view: view.clone(), from: p, duration: d, center: c, zoom: z });
+                p + d
             }
             TAction::Narrate { text, duration } => {
                 let d = match duration {
@@ -397,7 +445,7 @@ impl Player<'_, '_> {
         };
         for c in controls {
             match compile_rep(self.pb.cm, &ViewCtx::Panel, c) {
-                Ok(cr) => self.pb.shown.push(Shown { from: p, until: end, view: None, rep: cr }),
+                Ok(cr) => self.pb.shown.push(Shown { from: p, until: end, view: None, rep: cr, reveal: None }),
                 Err(d) => self.pb.diagnostics.extend(d.into_iter().map(|x| x.to_string())),
             }
         }
@@ -447,6 +495,7 @@ pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Med
         shown: vec![],
         highlights: vec![],
         hidden: vec![],
+        cameras: vec![],
         refusals: vec![],
         diagnostics: vec![],
         unsupported: vec![],
@@ -516,12 +565,59 @@ impl Playback<'_> {
         let vals: Vec<Value> = v.run.state_at(t);
         let extra: Vec<(Option<Id>, CRep)> = self.shown.iter().filter(|s| s.from <= p && p < s.until).map(|s| (s.view.clone(), s.rep.clone())).collect();
         let (mut views, mut overlay) = self.projector.frame(self.cm, &v.run, &vals, t, &extra);
-        let hidden: Vec<&Id> = self.hidden.iter().filter(|h| h.1 <= p).map(|h| &h.0).collect();
-        if !hidden.is_empty() {
-            for v in views.iter_mut() {
-                v.reps.retain(|r| !hidden.contains(&&r.id));
+        // Hidden representations: gone after their fade, fading during it.
+        let gone: Vec<&Id> = self.hidden.iter().filter(|h| h.1 + h.2 <= p).map(|h| &h.0).collect();
+        for v in views.iter_mut() {
+            v.reps.retain(|r| !gone.contains(&&r.id));
+        }
+        overlay.retain(|r| !gone.contains(&&r.id));
+        let all = views.iter_mut().flat_map(|v| v.reps.iter_mut()).chain(overlay.iter_mut());
+        for r in all {
+            if let Some(h) = self.hidden.iter().find(|h| h.0 == r.id && h.1 <= p && p < h.1 + h.2) {
+                r.opacity = Some(1.0 - ease((p - h.1) / h.2));
             }
-            overlay.retain(|r| !hidden.contains(&&r.id));
+            if let Some(s) = self.shown.iter().find(|s| s.rep.rep.id == r.id && s.from <= p) {
+                if let Some((style, d)) = s.reveal {
+                    let k = if d > 0.0 { ease((p - s.from) / d) } else { 1.0 };
+                    if k < 1.0 {
+                        let path = matches!(r.shape, crate::frame::Shape::Polyline { .. } | crate::frame::Shape::Polygon { .. } | crate::frame::Shape::Segment { .. } | crate::frame::Shape::Arrow { .. });
+                        if style == RevealStyle::Draw && path {
+                            r.drawn = Some(k);
+                        } else {
+                            r.opacity = Some(k);
+                        }
+                    }
+                }
+            }
+        }
+        // Cameras (D-042): each move starts from where the previous one left the camera.
+        for vf in views.iter_mut() {
+            let ctx = self.projector.ctx(Some(&vf.id));
+            let mut center: Option<[f64; 2]> = None;
+            let mut zoom = 1.0;
+            let mut blend = 1.0;
+            let mut any = false;
+            for c in self.cameras.iter().filter(|c| c.view == vf.id && c.from <= p) {
+                any = true;
+                let target = c.center.as_ref().and_then(|ce| v.run.eval_state(ce, &vals, t).ok()).map(|pt| ctx.to_view(&crate::flat(&pt))).or(center);
+                let tz = c.zoom.unwrap_or(zoom);
+                let k = if c.duration > 0.0 { ease((p - c.from) / c.duration) } else { 1.0 };
+                zoom += (tz - zoom) * k;
+                match (center, target) {
+                    (Some(a), Some(b)) => {
+                        center = Some([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]);
+                        blend = 1.0;
+                    }
+                    (None, Some(b)) => {
+                        center = Some(b);
+                        blend = k;
+                    }
+                    _ => {}
+                }
+            }
+            if any {
+                vf.camera = Some(crate::frame::Camera { center, zoom, blend });
+            }
         }
         for h in self.highlights.iter().filter(|h| h.from <= p && p < h.until) {
             for r in views.iter_mut().flat_map(|v| v.reps.iter_mut()).chain(overlay.iter_mut()).filter(|r| r.id == h.target) {

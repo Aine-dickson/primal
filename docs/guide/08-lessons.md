@@ -191,6 +191,47 @@ run without_learner of FreeFall with DropLesson {
 
 In the player, a lesson has play, pause, a time scrubber and a bar of beats; during `choose` the slider appears and a Continue button ends the beat. Choosing the video medium plays the fallback instead.
 
+## Animation
+
+Three actions animate the presentation itself, never the model (D-042):
+
+| Action | Effect | Duration |
+|---|---|---|
+| `reveal fade [for d] [in view] { reps }` | shows representations, their opacity rising from 0 to 1 | `d`, 1 s by default |
+| `reveal draw [for d] [in view] { reps }` | shows lines and paths drawn from start to end (points fade) | `d`, 1 s by default |
+| `hide name for d` | fades a representation out | `d` |
+| `camera view [to P] [zoom z] [for d]` | moves a spatial view's camera to centre on the point `P` and magnify `z` times | `d`, 1 s by default |
+
+The camera's point is evaluated at every frame: `camera scene to pos` keeps following the ball after the move. `zoom 1` returns to the view's own scale. Animations are functions of presentation time, so a lesson looks the same every time it plays and in a video export.
+
+```text
+presentation DropMovie for FreeFall {
+  view scene: spatial(Plane, scale: 1 m -> 12 px, y: up) {
+    axes
+  }
+  timeline {
+    scene only {
+      beat appear   { reveal fade in scene { marker(pos) as ball } }
+      beat ground   { reveal draw for 2 s in scene { polyline(origin + (-5 m, 0 m), origin + (5 m, 0 m)) } }
+      beat close_up { camera scene to pos zoom 2 for 1.5 s }
+      beat fall     { run rate 0.5 until landed }
+      beat away     { camera scene zoom 1 for 1 s; hide ball for 1 s }
+    }
+  }
+}
+```
+
+```cases
+run movie of FreeFall with DropMovie {
+  expect {
+    end of appear   == 1 s exactly
+    end of close_up == 4.5 s exactly
+    end of fall     == 7.35568624585413 s within 1e-8 s    // 4.5 s + T / 0.5
+    end of away     == 8.35568624585413 s within 1e-8 s
+  }
+}
+```
+
 ## A lab for the same model
 
 The requested event also serves a presentation without a timeline: a `button` requests it whenever the learner presses it, at the instant shown.

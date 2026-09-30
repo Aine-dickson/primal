@@ -290,9 +290,44 @@ impl PresCx<'_, '_> {
                     Some(id) => out.push(Action::Highlight { target: id.clone() }),
                     None => self.err("SX-E03", format!("no representation named `{}` before this beat", n.text), n.span),
                 },
-                ast::Action::Hide(n) => match self.aliases.get(&n.text) {
-                    Some(id) => out.push(Action::Hide { target: id.clone() }),
+                ast::Action::Hide(n, d) => match self.aliases.get(&n.text).cloned() {
+                    Some(id) => {
+                        let duration = d.as_ref().map(|d| self.expr(d));
+                        out.push(Action::Hide { target: id, duration })
+                    }
                     None => self.err("SX-E03", format!("no representation named `{}` before this beat", n.text), n.span),
+                },
+                ast::Action::Reveal { style, duration, view, reps } => {
+                    let style = match style.text.as_str() {
+                        "fade" => RevealStyle::Fade,
+                        "draw" => RevealStyle::Draw,
+                        other => {
+                            self.err("SX-E02", format!("a reveal is `fade` or `draw`, not `{other}` (D-042)"), style.span);
+                            RevealStyle::Fade
+                        }
+                    };
+                    let v = match view {
+                        Some(n) => match self.views.get(&n.text) {
+                            Some(v) => Some(v.clone()),
+                            None => {
+                                self.err("SX-E03", format!("unknown view `{}`", n.text), n.span);
+                                None
+                            }
+                        },
+                        None => None,
+                    };
+                    let duration = duration.as_ref().map(|d| self.expr(d));
+                    let reps = reps.iter().map(|r| self.rep(r, beat, counts)).collect();
+                    out.push(Action::Reveal { view: v, style, duration, reps });
+                }
+                ast::Action::Camera { view, center, zoom, duration } => match self.views.get(&view.text).cloned() {
+                    Some(v) => {
+                        let center = center.as_ref().map(|e| self.expr(e));
+                        let zoom = zoom.as_ref().map(|e| self.expr(e));
+                        let duration = duration.as_ref().map(|e| self.expr(e));
+                        out.push(Action::Camera { view: v, center, zoom, duration });
+                    }
+                    None => self.err("SX-E03", format!("unknown view `{}`", view.text), view.span),
                 },
                 ast::Action::Seek(e) => out.push(Action::Seek { time: self.expr(e) }),
                 ast::Action::Explore { limit, keep, reps, fallback } => {

@@ -677,7 +677,7 @@ impl<'a> Printer<'a> {
 
     fn collect_rep_names(&mut self, a: &Action) {
         match a {
-            Action::Show { reps, .. } => {
+            Action::Show { reps, .. } | Action::Reveal { reps, .. } => {
                 for r in reps {
                     if let Some(n) = &r.name {
                         self.rep_names.insert(r.id.clone(), n.clone());
@@ -791,7 +791,39 @@ impl<'a> Printer<'a> {
             }
             Action::Show { view: None, reps } => reps.iter().map(|r| format!("show {}", self.rep(r, depth))).collect::<Vec<_>>().join("; "),
             Action::Highlight { target } => format!("highlight {}", self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone())),
-            Action::Hide { target } => format!("hide {}", self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone())),
+            Action::Hide { target, duration } => {
+                let name = self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone());
+                match duration {
+                    Some(d) => format!("hide {name} for {}", self.expr(d)),
+                    None => format!("hide {name}"),
+                }
+            }
+            Action::Reveal { view, style, duration, reps } => {
+                let mut s = format!("reveal {}", if *style == RevealStyle::Fade { "fade" } else { "draw" });
+                if let Some(d) = duration {
+                    let _ = write!(s, " for {}", self.expr(d));
+                }
+                if let Some(v) = view {
+                    let name = p.views.iter().find(|x| &x.id == v).map(|x| x.name.clone()).unwrap_or_else(|| v.clone());
+                    let _ = write!(s, " in {name}");
+                }
+                let _ = write!(s, " {}", block(reps.iter().map(|r| self.rep(r, depth + 1)).collect()));
+                s
+            }
+            Action::Camera { view, center, zoom, duration } => {
+                let name = p.views.iter().find(|x| &x.id == view).map(|x| x.name.clone()).unwrap_or_else(|| view.clone());
+                let mut s = format!("camera {name}");
+                if let Some(c) = center {
+                    let _ = write!(s, " to {}", self.expr(c));
+                }
+                if let Some(z) = zoom {
+                    let _ = write!(s, " zoom {}", self.expr(z));
+                }
+                if let Some(d) = duration {
+                    let _ = write!(s, " for {}", self.expr(d));
+                }
+                s
+            }
             Action::Narrate { text, duration } => match duration {
                 Some(d) => format!("narrate \"{text}\" for {}", self.expr(d)),
                 None => format!("narrate \"{text}\""),

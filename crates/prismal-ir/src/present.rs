@@ -204,8 +204,32 @@ pub enum Action {
         reps: Vec<Rep>,
     },
     Highlight { target: Id },
-    /// Stops showing a representation from now on (PK-9.2).
-    Hide { target: Id },
+    /// Stops showing a representation from now on (PK-9.2), fading out over `duration`.
+    Hide {
+        target: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration: Option<Expr>,
+    },
+    /// Shows representations with an animation (PK-9.2, PK-8.4, D-042).
+    Reveal {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        view: Option<Id>,
+        style: RevealStyle,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration: Option<Expr>,
+        reps: Vec<Rep>,
+    },
+    /// Moves a view's camera (PK-9.2, D-042): its centre follows `center`, evaluated at every
+    /// frame, and its zoom; the move takes `duration`.
+    Camera {
+        view: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        center: Option<Expr>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zoom: Option<Expr>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration: Option<Expr>,
+    },
     Narrate {
         text: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -230,6 +254,16 @@ pub enum Action {
         fallback: Vec<Action>,
     },
     Sequence { actions: Vec<Action> },
+}
+
+/// How `reveal` shows a representation (D-042).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RevealStyle {
+    /// Opacity from 0 to 1.
+    Fade,
+    /// Lines and paths drawn from their start to their end; points fade.
+    Draw,
 }
 
 impl Action {

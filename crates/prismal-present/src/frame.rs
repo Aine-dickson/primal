@@ -52,6 +52,19 @@ pub struct ViewFrame {
     pub id: Id,
     pub kind: &'static str,
     pub reps: Vec<RepFrame>,
+    /// A camera set by the timeline (D-042).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera: Option<Camera>,
+}
+
+/// A view's camera (D-042): the centre in view coordinates, the zoom, and `blend`, how far
+/// the renderer moves from its own framing to this centre (1 once a move has ended).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Camera {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub center: Option<[f64; 2]>,
+    pub zoom: f64,
+    pub blend: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -69,6 +82,12 @@ pub struct RepFrame {
     /// During a drag preview: whether the proposal passed validation (PK-10.6).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub valid: Option<bool>,
+    /// During a reveal or a hide: opacity from 0 to 1 (PK-8.4, D-042).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    /// During a `reveal draw`: the fraction of a line or path drawn so far.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drawn: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -517,7 +536,7 @@ pub fn project(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], 
                 Some(Ok(v)) => coords(&v),
                 Some(Err(s)) => {
                     let (sh, tx) = status(s);
-                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None };
+                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None };
                 }
                 None => vec![0.0, 0.0],
             };
@@ -617,7 +636,7 @@ pub fn project(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], 
                     Ok(v) => pts.push(ctx.to_view(&coords(&v))),
                     Err(s) => {
                         let (sh, tx) = status(s);
-                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None };
+                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None };
                     }
                 }
             }
@@ -660,7 +679,7 @@ pub fn project(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], 
         CKind::Axes => (Shape::Axes, "axes".into()),
         CKind::Grid => (Shape::Grid, "grid".into()),
     };
-    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None }
+    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None }
 }
 
 /// Sample instants `t0, t0 + dt, ...` up to `t`, and `t` itself (PK-6.3, PK-7.5: a trace
@@ -718,7 +737,7 @@ impl Projector {
             for (_, r) in extra.iter().filter(|(v, _)| v.as_deref() == Some(id.as_str())) {
                 rs.push(project(cm, ctx, r, run, vals, t));
             }
-            out.push(ViewFrame { id: id.clone(), kind: ctx.kind(), reps: rs });
+            out.push(ViewFrame { id: id.clone(), kind: ctx.kind(), reps: rs, camera: None });
         }
         let overlay = extra.iter().filter(|(v, _)| v.is_none()).map(|(_, r)| project(cm, &ViewCtx::Panel, r, run, vals, t)).collect();
         (out, overlay)

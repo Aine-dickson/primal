@@ -82,6 +82,7 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-037:** the IR is serialized as versioned JSON.
 - **D-038:** an event is self-retriggering if its handler writes something its guard depends on through derived bindings or flows, with flows specialized on the discrete values the handler sets.
 - **D-039:** named mathematical constants are kept by name in the IR (`{"const": "pi"}`), so formulas show `2π`; `inf` is only an interval bound.
+- **D-042:** animations in v0 are named effects: `reveal fade|draw`, `hide ... for`, `camera`.
 - **D-041:** `on(E)` is due at the microstep after `E` occurs or is emitted.
 - **D-040:** only the words of the model language, expressions and top-level items are reserved; presentation, timeline and run words are contextual keywords (`process drag`, `view scene` are valid).
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
@@ -92,7 +93,13 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 
 ## Next steps
 
-**Next session starts here:** the owner learns the language from `docs/guide/` and reviews by writing programs (see Working process); earlier work to review: the overnight work, the text parser, the presentation prototype and the web player (session log 2026-09-30, `docs/prototype.md` sections "Text parser", "Presentation prototype", "Web player" and "Findings", register D-035 to D-040, 03 elaborations PK-8.2a to PK-12.1a and section 16). To try the player: `web/README.md`. Then, in order: animations (`reveal`, `animate`, `camera`, PK-8.4) and `group`; then the Mava Studio groundwork (D-019): an editor protocol over the IR (edit operations, `rename`, `reconcile`, `format`).
+**Next session starts here:** (handover written 2026-09-30 at the end of a long session.)
+
+1. Unfinished from the last milestone (D-042 animations, committed with passing tests): no kernel test yet checks the frame values of animations (`opacity` during `reveal fade` and `hide ... for`, `drawn` during `reveal draw`, a view's `camera` following `pos`); add them to `crates/prismal-present/tests/labs.rs` using guide chapter 8's `DropMovie`. The web renderer's animation code (`web/player.js`: `cameraBox`, `drawn`, `opacity`) has not been checked in a browser; run the player on `#g8-freefall`, presentation `DropMovie` (headless Edge with puppeteer-core worked; see `web/README.md` to build).
+2. Then: `group` (PK-6.3), the general `animate` if a program needs it (D-042 option 1), and the Mava Studio groundwork (D-019): an editor protocol over the IR (edit operations with `rename`, `reconcile`, `format`).
+3. The owner reviews by learning the language from `docs/guide/` and writing programs (see Working process). Keep the guide in step with every language change; `prismal-web/tests/guide.rs` enforces that its programs compile and pass.
+
+How to verify the state quickly: `cargo test` at the root (77 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`.
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances confirmed by the prototype and fixed.
@@ -105,7 +112,8 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 9. Language guide: done (`docs/guide/`, 18 programs, 67 expectations checked).
 10. Formatter and identities (D-036): done.
 11. Representations `button`, `equation`, `table`, `polyline`, `polygon` and the action `hide`: done.
-12. Next: see Next steps.
+12. Animations as named effects (D-042): `reveal`, `hide ... for`, `camera`; frame tests and browser check pending (Next steps).
+13. Next: see Next steps.
 
 ## Session log
 
@@ -125,6 +133,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 | 2026-09-30 | Language guide `docs/guide/` (README, chapters 1 to 8, reference card): every program compiled and every case run by `prismal-web/tests/guide.rs`, error examples checked against their codes; the player lists the guide's programs. Found: D-041 (`on(E)` follows an occurrence, not only an emission; MK-15.3 against MK-15.10 and RC 8.1), a kernel panic when the player logged a drag proposal that reads bindings (`constant` now refuses such expressions; the log evaluates them on the run), session horizon extended to the presentation's longest time axis. Register index gained D-039 to D-041. |
 | 2026-09-30 | Formatter `prismal-syntax/src/format.rs` (canonical printing, working syntax 1.4) and identities across edits `identity.rs` (D-036: `reconcile`, `rename`, `diff`); every reference and guide program round-trips; `fmt` example; Format button in the player. One-sided intervals lower as `where` does, so both spellings give one IR. |
 | 2026-09-30 | Representations `button` (requests an `on request` event), `equation` (typeset model equation, live values), `table` (sampled rows), `polyline`, `polygon`; timeline action `hide`; IR `element` argument; a series observation compared with a list. RP-05's lab shows its checked equation; guide chapter 8 gains a drop lab with a button and a table. |
+| 2026-09-30 | Animations (D-042): `reveal fade|draw`, `hide name for d`, `camera view to P zoom z` in syntax, IR, formatter, identity matching, lesson player (opacity, draw fraction, camera with easing) and web renderer; guide chapter 8 `DropMovie` with timed cases. Handover written in Next steps. |
 
 ## Working process
 

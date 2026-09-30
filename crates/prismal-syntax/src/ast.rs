@@ -380,7 +380,11 @@ pub enum Action {
     Run { rate: Expr, until: Option<Name> },
     Hold,
     Highlight(Name),
-    Hide(Name),
+    Hide(Name, Option<Expr>),
+    /// `reveal fade|draw [for d] [in view] { reps }`
+    Reveal { style: Name, duration: Option<Expr>, view: Option<Name>, reps: Vec<Rep> },
+    /// `camera view [to P] [zoom z] [for d]`
+    Camera { view: Name, center: Option<Expr>, zoom: Option<Expr>, duration: Option<Expr> },
     Seek(Expr),
     Show(Rep),
     Explore { limit: Option<Expr>, keep: Vec<Name>, reps: Vec<Rep>, fallback: Vec<Action> },
