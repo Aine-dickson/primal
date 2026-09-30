@@ -22,7 +22,10 @@ const st = {
   views: {},       // per view id: { kind, svg, panel, vb, base }
   gesture: null,   // a drag or pan in progress: { action, view, pointerId, resume }
   focus: null,     // { rep } of the focused draggable, restored after each render
-  items: new Map() // keyed HTML items (controls, formulas, labels) by rep id
+  items: new Map(), // keyed HTML items (controls, formulas, labels) by rep id
+  // Narration sound (D-053): off, synthesized speech, or recordings by cue name; the cues
+  // sounding in the current play-through.
+  voice: { mode: 'off', files: new Map(), notes: [], sounding: new Map(), checks: 0 }
 };
 
 // ------------------------------------------------------------------ utilities
@@ -238,8 +241,10 @@ function openPresentation() {
   $('#beats').hidden = false;
   $('#restart').textContent = 'Restart';
   $('#restart').title = 'Play the lesson again without your inputs';
+  $('#voice-label').hidden = st.layout.mode !== 'lesson' || !(st.layout.lesson.captions || []).length;
   if (st.layout.mode === 'lesson') {
     st.lesson = st.layout.lesson;
+    checkVoice();
     $('#transport').hidden = false;
     const controls = st.layout.permits.includes('timeline_controls');
     $('#scrub').disabled = !controls;
@@ -271,6 +276,7 @@ function lessonNotes() {
   const l = st.lesson;
   const notes = [];
   if (l.medium === 'video') notes.push('Video medium: explore beats play their fallbacks (PK-9.10).');
+  for (const n of st.voice.notes) notes.push(n);
   for (const d of l.diagnostics) notes.push(d);
   for (const u of l.unsupported) notes.push(u);
   return notes.join(' ');
@@ -939,11 +945,29 @@ function setupTransport() {
       status(String(e), true);
     }
   });
+  $('#voice').addEventListener('change', () => {
+    silence();
+    if ($('#voice').value === 'files') $('#voice-files').click();
+    else { st.voice.mode = $('#voice').value; checkVoice(); status(lessonNotes()); }
+  });
+  $('#voice-files').addEventListener('cancel', () => { $('#voice').value = st.voice.mode; });
+  $('#voice-files').addEventListener('change', () => {
+    for (const u of st.voice.files.values()) URL.revokeObjectURL(u);
+    st.voice.files = new Map([...$('#voice-files').files].map((f) => [f.name.replace(/\.[^.]*$/, ''), URL.createObjectURL(f)]));
+    st.voice.mode = st.voice.files.size ? 'files' : 'off';
+    $('#voice').value = st.voice.mode;
+    checkVoice();
+    status(lessonNotes());
+  });
   $('#scrub').addEventListener('input', () => {
+    silence();
     st.p = parseFloat($('#scrub').value);
     refresh();
   });
-  $('#speed').addEventListener('change', () => { st.speed = parseFloat($('#speed').value); });
+  $('#speed').addEventListener('change', () => {
+    st.speed = parseFloat($('#speed').value);
+    for (const s of st.voice.sounding.values()) if (s instanceof HTMLAudioElement) s.playbackRate = st.speed;
+  });
 }
 
 function afterLessonInput() {
@@ -968,7 +992,7 @@ function buildBeats() {
     const btn = el('button', { type: 'button', role: 'listitem', title: `${b.scene} / ${b.beat}: ${fmt(b.start)} s to ${fmt(b.end)} s`, text: b.beat });
     btn.style.flex = `${Math.max(w, end * 0.012)} 1 0`;
     if (st.lesson.explore.some((x) => x.beat === b.beat)) btn.classList.add('explore');
-    btn.addEventListener('click', () => { st.p = b.start; refresh(); });
+    btn.addEventListener('click', () => { silence(); st.p = b.start; refresh(); });
     btn.dataset.beat = b.beat;
     host.append(btn);
   }
@@ -1011,6 +1035,67 @@ function togglePlay() {
 
 function stop() {
   st.playing = false;
+  silence();
+}
+
+// ------------------------------------------------------------------ narration sound
+
+// Sound is the host's, not the program's (D-053): each caption cue is voiced by the
+// recording named after it, or by synthesized speech. The timeline decides when a cue
+// starts and how long it lasts; a recording can start part way through its cue, speech
+// only at its start.
+
+function voiceSync() {
+  const v = st.voice;
+  if (v.mode === 'off' || !st.lesson) return;
+  for (const c of st.lesson.captions || []) {
+    if (st.p < c.start || st.p >= c.end || v.sounding.has(c.cue)) continue;
+    const url = v.mode === 'files' ? v.files.get(c.cue) : null;
+    if (url) {
+      const a = new Audio(url);
+      a.currentTime = st.p - c.start;
+      a.playbackRate = st.speed;
+      a.play().catch(() => {});
+      v.sounding.set(c.cue, a);
+    } else if ('speechSynthesis' in window && st.p - c.start < 0.3) {
+      const u = new SpeechSynthesisUtterance(c.text);
+      u.rate = st.speed;
+      speechSynthesis.speak(u);
+      v.sounding.set(c.cue, u);
+    } else {
+      v.sounding.set(c.cue, null); // joined too late to speak; silent until the next cue
+    }
+  }
+}
+
+function silence() {
+  for (const s of st.voice.sounding.values()) if (s instanceof HTMLAudioElement) s.pause();
+  st.voice.sounding.clear();
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+/// Notes on the voice: cues without a recording, recordings longer than their cue.
+function checkVoice() {
+  const v = st.voice;
+  v.notes = [];
+  const check = ++v.checks; // lengths measured for an earlier choice are ignored
+  if (v.mode !== 'files' || !st.lesson) return;
+  const cues = st.lesson.captions || [];
+  const missing = cues.filter((c) => !v.files.has(c.cue)).map((c) => c.cue);
+  if (missing.length) v.notes.push(`No recording for ${missing.join(', ')}: synthesized instead.`);
+  for (const c of cues) {
+    const url = v.files.get(c.cue);
+    if (!url) continue;
+    const a = new Audio();
+    a.preload = 'metadata';
+    a.addEventListener('loadedmetadata', () => {
+      if (check === v.checks && a.duration > c.end - c.start + 0.05) {
+        v.notes.push(`Recording ${c.cue} lasts ${fmt(Math.round(a.duration * 10) / 10)} s, its cue ${fmt(c.end - c.start)} s: give the narration a longer \`for\`.`);
+        status(lessonNotes());
+      }
+    });
+    a.src = url;
+  }
 }
 
 function tick(now) {
@@ -1022,6 +1107,7 @@ function tick(now) {
   if (st.sess) st.p = JSON.parse(st.player.seek(st.p)).t;
   const frame = JSON.parse(st.player.frame(st.p, dt));
   render(frame);
+  voiceSync();
   updateTransport();
   if (st.p >= end) {
     stop();

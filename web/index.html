@@ -36,6 +36,14 @@
           <button id="restart" type="button" title="Play the lesson again without your inputs">Restart</button>
           <button id="continue" type="button" class="accent" hidden>Continue</button>
           <span id="clock" class="clock" aria-live="off">0 s</span>
+          <label class="voice" id="voice-label" hidden>Voice
+            <select id="voice" title="Narration sound: synthesized speech, or recordings named by cue (b1.mp3 ...)">
+              <option value="off">off</option>
+              <option value="speech">synthesized</option>
+              <option value="files">recordings...</option>
+            </select>
+          </label>
+          <input id="voice-files" type="file" accept="audio/*" multiple hidden>
           <label class="speed">Speed
             <select id="speed">
               <option value="0.5">0.5x</option>

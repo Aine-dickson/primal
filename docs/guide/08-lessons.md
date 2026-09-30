@@ -243,12 +243,27 @@ cargo run --release -p prismal-media -- lesson.md DropMovie drop.mp4 --fps 30 --
 - The first argument is the program (a source file, or a Markdown document whose `text` blocks form it); the second names the presentation.
 - The output's extension chooses the format: `mp4`, `mov`, `mkv`, `webm` or `gif`. The encoding is done by ffmpeg, which must be installed (or named with `--encoder` or the `PRISMAL_FFMPEG` variable).
 - `drop.png --at 4` writes the single frame at 4 s instead. Any other name is a directory: the frames as PNG images, the captions, and the ffmpeg command that makes a video of them.
-- Narration appears as captions, drawn into the frames. `--captions track` puts them only in a subtitle track the viewer can turn off; `--captions both` does both. They are always written beside the video as `drop.vtt`. Narration has no sound yet.
+- Narration appears as captions, drawn into the frames. `--captions track` puts them only in a subtitle track the viewer can turn off; `--captions both` does both. They are always written beside the video as `drop.vtt`.
 - An explore beat without a `fallback` cannot be shown in a video: the export says so, and plays on.
 - A presentation without a timeline is recorded as a run from its start; `--until 10` sets its length in simulation seconds.
 - `--dark` uses the dark theme.
 
 Since frames depend only on the program and presentation time, exporting twice gives the same video.
+
+## Narration sound
+
+A program carries narration as text; sound is added by whatever plays it (D-053). Each narration is a **cue** named after its beat: `b3` for the narration of beat `b3`, and `b3.2`, `b3.3` for further narrations in the same beat. A voice is a folder of recordings named by cue (`b1.mp3`, `b3.wav` ...), or a speech synthesizer for cues without a recording.
+
+```sh
+cargo run --release -p prismal-media -- lesson.md DropLesson script.txt
+cargo run --release -p prismal-media -- lesson.md DropLesson drop.mp4 --voice voice/ --speech system
+```
+
+- `script.txt` lists every cue with its name, start, length and text: what a narrator records.
+- `--voice voice/` uses the recordings in `voice/`; `--speech system` speaks the cues that have none with the computer's voice. `--music theme.mp3` plays music under the narration.
+- In the web player, the Voice menu offers synthesized speech, or recordings chosen as files.
+
+The lesson's timing never depends on the sound: a narration lasts its `for d`, or its reading time. A recording longer than that is reported with the duration to write, for example `give the narration for 3.6 s or more`. So a lesson plays, and its cases pass, the same with or without a voice.
 
 ## A lab for the same model
 

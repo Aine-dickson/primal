@@ -65,6 +65,9 @@ pub struct BeatTime {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Caption {
+    /// The cue's name, which hosts match voice recordings by (D-053): the name of the beat
+    /// that narrates it, and `beat.2`, `beat.3` ... for its later narrations.
+    pub cue: String,
     pub text: String,
     pub start: f64,
     pub end: f64,
@@ -357,7 +360,9 @@ impl Player {
                     Some(e) => self.num(e),
                     None => reading_time(text),
                 };
-                self.pb.captions.push(Caption { text: text.clone(), start: p, end: p + d });
+                let n = self.pb.captions.iter().filter(|c| c.cue == beat || c.cue.strip_prefix(beat).is_some_and(|r| r.starts_with('.'))).count();
+                let cue = if n == 0 { beat.to_string() } else { format!("{beat}.{}", n + 1) };
+                self.pb.captions.push(Caption { cue, text: text.clone(), start: p, end: p + d });
                 p + d
             }
             TAction::Wait { duration } => p + self.num(duration),

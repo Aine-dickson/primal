@@ -67,7 +67,7 @@ presentation ProjectileLesson for Projectile {
 }
 ```
 
-Narration durations are given explicitly so that timing is checkable. In a real lesson they come from audio or reading time.
+Narration durations are given explicitly so that timing is checkable. Without one, a narration lasts its reading time (PK-9.2b); a recording of it must fit that time, and one that does not is reported (PK-9.2d).
 
 ## Cases
 

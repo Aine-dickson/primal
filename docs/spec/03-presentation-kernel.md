@@ -225,6 +225,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 - **PK-9.2a** **Order at a beat's start** (D-033). A beat's run-directing actions (`seek`, `reset`, `branch`, `intervene`, `request`, `run`, `hold`) take effect in the order written, at the beat's start and before any presentation time passes. The beat's other actions then start together and see the resulting state. `sequence` orders actions that take time; it is not needed for run-directing actions.
 - **PK-9.2b** A `narrate` without a duration lasts its reading time: 0.4 s per word, at least 2 s. A `highlight` lasts until the end of its beat. Representations a beat shows stay shown to the end of the lesson; the controls of an `explore` beat are shown only during it.
 - **PK-9.2c** (D-042) In v0 animations are named effects. `reveal fade` raises a representation's opacity from 0 to 1 and `reveal draw` draws its lines from start to end (points and text fade); `hide ... for d` lowers opacity to 0 and then stops showing it; `camera` moves a spatial view's centre to a point, evaluated at every frame, and its zoom. Each lasts its duration (1 s by default for `reveal` and `camera`, none for `hide` without `for`) with the easing `3k² - 2k³`, and a move starts from where the previous one left the camera. They change presentation properties only (PK-8.5): the model and its runs are unaffected, and frames stay deterministic (PK-8.7).
+- **PK-9.2d** (D-053) Narration sound is not part of a program: `narrate` carries text, and its duration is its `for d` or its reading time (PK-9.2b), never the length of a recording. Hosts may voice each caption cue, identified by a name the engine gives it (its beat's name, then `beat.2`, `beat.3` ... for later narrations in the same beat), with a recording named after the cue or with synthesized speech. A recording longer than its cue is reported.
 - **PK-9.3** `wait_until(E)` with the simulation running makes presentation duration depend on the model: the beat lasts exactly as long as the simulation takes to reach `E` at the current rate. Because runs are deterministic (RC-14.5), this duration is known before playback and is identical in export.
 - **PK-9.3a** A beat ended by `wait_until(E)` shows, at its end, exactly the simulation instant at which `E` was located, not the value the time mapping gives by arithmetic (which may round to just before it). Actions of the next beat (a branch, a request) therefore apply at `E`'s instant, after `E`.
 - **PK-9.4** If a `wait_until` can never be satisfied (the run ends or stops first), the timeline reports it at the moment the run ends, continues with the next beat, and records a diagnostic. It never hangs.
@@ -461,7 +462,8 @@ The model kernel's open item (checks at an event instant) is resolved by `on(E)`
 | Conditional expectations (`expect ... when k = 0`) (13.1) | Resolved: expectations belong to named cases (run configurations), `reference-programs/README.md` |
 | Video, image and vector renderers | After the web player (D-018) |
 | Frame description format and renderer interface | Implementation specification; the prototype's format is `crates/prismal-present/src/frame.rs` (PK-12.1a) |
-| Narration audio (recorded or synthesized), language and localization | Later |
+| Narration audio (recorded or synthesized) | Resolved: supplied by hosts by cue name (PK-9.2d, D-053) |
+| Language and localization of narration | Later |
 
 ---
 
@@ -488,3 +490,4 @@ A presentation is checked against its model before it is used (PK-2.3). Each dia
 - 2026-09-30 groups: PK-6.3b (D-043).
 - 2026-09-30 formula layout for every medium: PK-6.5a (D-046); frame contents completed in PK-12.1a.
 - 2026-09-30 targeting and focus order: PK-10.2a, PK-11.2b (D-047).
+- 2026-09-30 narration sound supplied by hosts: PK-9.2d (D-053).

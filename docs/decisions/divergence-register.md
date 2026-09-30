@@ -72,6 +72,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-050 | Event payloads in v0: declared where they enter (`on request(p: T)`, `on E(p: T)`), supplied by requests and `emit E(v)` | Accepted |
 | D-051 | Inputs in v0: optional defaults, starting values from the run, piecewise-constant changes from runs and hosts (`set_input`) | Accepted |
 | D-052 | Video export: frames from the SVG renderer rasterized in process, encoding by an external encoder through a pipe, one canvas per clip, captions drawn and as a track | Accepted |
+| D-053 | Narration sound belongs to hosts, not programs: cues named after their beats, voiced by recordings named by cue or by synthesized speech; the timeline keeps the timing | Accepted |
 
 ---
 
@@ -959,3 +960,26 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** `crates/prismal-media`; `docs/prototype.md` media section; guide chapter 8 (Exporting a video). Not yet done: narration audio (the language carries narration text only; when recorded or synthesized audio is added, its cues are placed at the captions' start times and muxed as an audio track), a descriptions track from announcements, and a layout of several views on one page (PK-7.4).
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+  - 2026-09-30 narration audio settled by D-053: sound is supplied by hosts, video export included, not by the language.
+
+## D-053: Narration sound belongs to hosts
+
+- **Status:** Accepted
+- **Original position:** PK-9.2 makes a narration cue "caption text and, optionally, recorded or synthesized audio" that "ends when the audio or the reading time ends", and PK section 15 defers narration audio. D-052 left video without sound, expecting audio to enter the language.
+- **Raised by:** the owner, after D-052: sound should not be a language feature; and it is needed wherever captions play (the web player and other hosts), not only in video export.
+- **Builds on:** PK-8.7, PK-9.2, PK-9.2b, PK-11.3, D-026, D-045, D-052.
+- **Question:** Where does narration sound come from, how does a host find the sound of a cue, and what decides a cue's timing?
+- **Options considered:**
+  1. **Audio in the language** (`narrate "..." audio "b3.mp3"`), the audio's length ending the cue as PK-9.2 says. Programs would name media files, a lesson's timing and its cases would depend on assets outside the program, and every host would need the files at the same paths.
+  2. **Sound only in video export.** Keeps the language free of media, but every other host that shows captions would invent its own way to voice them.
+  3. **Sound supplied by hosts, keyed by cue names the engine gives every host.** The program carries text only; each caption cue is named after the beat that narrates it; a voice is a set of recordings named by cue, or a speech synthesizer for cues without one. The timeline keeps deciding when a cue starts and how long it lasts.
+- **Accepted position:** option 3, the owner's direction of 2026-09-30, with the details under the owner's standing delegation. A departure from PK-9.2, recorded as PK-9.2d:
+  - A cue's name is its beat's name, and `beat.2`, `beat.3` ... for the later narrations of the same beat (beat names are unique in a presentation and are what cases refer to, so names survive edits elsewhere in the lesson). Layouts list captions with `cue`, `start`, `end` and `text` (HI-5.1a); WebVTT files use the names as cue identifiers.
+  - A recording is a file named after its cue (`b3.wav`, `b3.mp3`, `.ogg`, `.opus`, `.m4a`, `.flac`, `.aac`, `.aiff`). A cue without one may be synthesized (the system's voice, a command, or a browser's speech synthesis) or stay silent, which is reported.
+  - Timing never depends on sound: a cue lasts its `for d` or its reading time (PK-9.2b), so captions, sound, frames and cases agree with or without a voice (PK-8.7). A recording longer than its cue is reported with the duration to write; it plays on, overlapping what follows.
+  - A host joining a cue part way starts its recording at the offset into the cue; synthesized speech starts only at a cue's start, since a sentence cannot be spoken from its middle.
+  - Video export: `--voice DIR`, `--speech system|COMMAND`, `--music FILE` (looped under the narration at `--music-volume`), and a recording script (`OUT.txt`, and `narration.txt` in a frame directory) listing every cue's name, start, length and text. The web player: a Voice menu (off, synthesized, recordings chosen as files).
+- **Reason:** programs stay text that runs the same everywhere; sound is a property of a medium, like captions drawn or in a track; one naming rule lets every host voice the same lesson, and recordings can be made from the script without touching the program.
+- **Consequences:** PK-9.2d; HI-5.1a; `Caption::cue` in `prismal-present`; `prismal-media` `voice` module; `web/player.js` narration sound and `web/check-voice.mjs`; guide chapter 8. Not yet done: voices for several languages (a voice directory per language is the natural extension), and fitting timing to recordings as an explicit, reported option.
+- **History:**
+  - 2026-09-30 raised by the owner and accepted; details under the owner's standing delegation of 2026-09-30.

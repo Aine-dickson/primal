@@ -12,9 +12,9 @@
 //! video codecs stay outside Prismal. Without an encoder, the frames are written as a PNG
 //! sequence with the captions and the command that encodes them.
 //!
-//! Narration has no audio yet (the language carries its text only), so a video has no
-//! sound; captions are drawn into the frames, carried as a subtitle track, or both, and
-//! always written beside the video as WebVTT (PK-11.3).
+//! Captions are drawn into the frames, carried as a subtitle track, or both, and always
+//! written beside the video as WebVTT (PK-11.3). Sound is the export's, not the program's
+//! (D-053, `voice`): recordings named by cue, synthesized speech, and music.
 
 use prismal_host::Instance;
 use prismal_svg::fmt;
@@ -23,6 +23,9 @@ use serde_json::Value as Json;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+pub mod voice;
+pub use voice::{Sound, Speech, Track};
 
 // ---------------------------------------------------------------- settings
 
@@ -60,19 +63,22 @@ pub struct Settings {
     /// How frames are drawn. The header line is off by default: it names the instant, which
     /// a video shows by playing.
     pub svg: prismal_svg::Options,
+    /// Narration voice and music.
+    pub sound: Sound,
 }
 
 impl Default for Settings {
     fn default() -> Settings {
-        Settings { fps: 30.0, scale: 1.0, captions: Captions::Burned, until: None, svg: prismal_svg::Options { header: false, ..Default::default() } }
+        Settings { fps: 30.0, scale: 1.0, captions: Captions::Burned, until: None, svg: prismal_svg::Options { header: false, ..Default::default() }, sound: Sound::default() }
     }
 }
 
 // ---------------------------------------------------------------- clips
 
-/// A caption cue, in presentation seconds.
+/// A caption cue, in presentation seconds, with the name hosts voice it by (D-053).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cue {
+    pub name: String,
     pub start: f64,
     pub end: f64,
     pub text: String,
@@ -111,7 +117,7 @@ pub fn clip(inst: &mut Instance, presentation: &str, s: &Settings) -> Result<Cli
     let list = |v: &Json| v.as_array().cloned().unwrap_or_default();
     let captions = list(&l["captions"])
         .iter()
-        .map(|c| Cue { start: c["start"].as_f64().unwrap_or(0.0), end: c["end"].as_f64().unwrap_or(0.0), text: c["text"].as_str().unwrap_or("").to_string() })
+        .map(|c| Cue { name: c["cue"].as_str().unwrap_or("").to_string(), start: c["start"].as_f64().unwrap_or(0.0), end: c["end"].as_f64().unwrap_or(0.0), text: c["text"].as_str().unwrap_or("").to_string() })
         .filter(|c| c.start <= end)
         .collect();
     let mut reports: Vec<String> = list(&l["unsupported"]).iter().chain(&list(&l["diagnostics"])).map(|r| r.as_str().map(str::to_string).unwrap_or_else(|| r.to_string())).collect();
@@ -142,11 +148,11 @@ pub fn still(inst: &mut Instance, raster: &Raster, presentation: &str, t: f64, s
 
 // ---------------------------------------------------------------- captions
 
-/// Captions as a WebVTT document.
+/// Captions as a WebVTT document, each cue identified by its name.
 pub fn webvtt(cues: &[Cue]) -> String {
     let mut out = String::from("WEBVTT\n");
-    for (k, c) in cues.iter().enumerate() {
-        out.push_str(&format!("\n{}\n{} --> {}\n{}\n", k + 1, stamp(c.start), stamp(c.end), c.text.replace("-->", "->")));
+    for c in cues {
+        out.push_str(&format!("\n{}\n{} --> {}\n{}\n", c.name, stamp(c.start), stamp(c.end), c.text.replace("-->", "->")));
     }
     out
 }
@@ -266,21 +272,65 @@ impl Container {
         }
     }
 
-    /// Whether the container carries a subtitle track.
+    /// Whether the container carries subtitle and audio tracks.
     pub fn subtitles(self) -> bool {
         self != Container::Gif
     }
 }
 
-/// The encoder's arguments: raw RGBA frames of `size` on standard input at `fps`, and a
-/// WebVTT subtitle file when given, written to `out`.
-pub fn encoder_args(container: Container, out: &Path, (w, h): (u32, u32), fps: f64, subtitles: Option<&Path>, title: &str) -> Vec<String> {
+/// The sound of a video: narration tracks at their instants and looped music, cut to the
+/// video's `duration`.
+#[derive(Clone, Debug, Default)]
+pub struct Mix {
+    pub tracks: Vec<Track>,
+    pub music: Option<(PathBuf, f64)>,
+    pub duration: f64,
+}
+
+impl Mix {
+    fn is_empty(&self) -> bool {
+        self.tracks.is_empty() && self.music.is_none()
+    }
+}
+
+/// The encoder's arguments: raw RGBA frames of `size` on standard input at `fps`, a WebVTT
+/// subtitle file when given, and the sound of `mix`, written to `out`.
+pub fn encoder_args(container: Container, out: &Path, (w, h): (u32, u32), fps: f64, subtitles: Option<&Path>, mix: &Mix, title: &str) -> Vec<String> {
     let mut a: Vec<String> = ["-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s"].map(String::from).to_vec();
     a.push(format!("{w}x{h}"));
     a.extend(["-framerate".into(), fmt(fps), "-i".into(), "-".into()]);
     let subs = subtitles.filter(|_| container.subtitles());
+    let sound = container.subtitles() && !mix.is_empty();
+    let mut maps: Vec<String> = vec![];
     if let Some(s) = subs {
-        a.extend(["-i".into(), s.display().to_string(), "-map".into(), "0:v".into(), "-map".into(), "1:s".into()]);
+        a.extend(["-i".into(), s.display().to_string()]);
+        maps.extend(["-map".into(), "1:s".into()]);
+    }
+    if sound {
+        // Each narration delayed to its instant, the music looped at its volume, all mixed.
+        let mut input = 1 + subs.is_some() as usize;
+        let mut filters = vec![];
+        let mut labels = String::new();
+        for (k, t) in mix.tracks.iter().enumerate() {
+            a.extend(["-i".into(), t.file.display().to_string()]);
+            let ms = (t.start * 1000.0).round() as u64;
+            filters.push(format!("[{input}:a]adelay={ms}:all=1[n{k}]"));
+            labels.push_str(&format!("[n{k}]"));
+            input += 1;
+        }
+        if let Some((m, v)) = &mix.music {
+            a.extend(["-stream_loop".into(), "-1".into(), "-i".into(), m.display().to_string()]);
+            filters.push(format!("[{input}:a]volume={}[m]", fmt(*v)));
+            labels.push_str("[m]");
+        }
+        let n = mix.tracks.len() + mix.music.is_some() as usize;
+        filters.push(format!("{labels}amix=inputs={n}:normalize=0:duration=longest[aout]"));
+        a.extend(["-filter_complex".into(), filters.join(";")]);
+        maps.extend(["-map".into(), "[aout]".into()]);
+    }
+    if !maps.is_empty() {
+        a.extend(["-map".into(), "0:v".into()]);
+        a.extend(maps);
     }
     let video: &[&str] = match container {
         Container::Mp4 | Container::Mov | Container::Mkv => &["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p"],
@@ -299,6 +349,10 @@ pub fn encoder_args(container: Container, out: &Path, (w, h): (u32, u32), fps: f
         };
         a.extend(["-c:s".into(), codec.into(), "-metadata:s:s:0".into(), "title=Captions".into()]);
     }
+    if sound {
+        let codec = if container == Container::Webm { "libopus" } else { "aac" };
+        a.extend(["-c:a".into(), codec.into(), "-b:a".into(), "160k".into(), "-t".into(), fmt(mix.duration)]);
+    }
     a.extend(["-metadata".into(), format!("title={title}"), out.display().to_string()]);
     a
 }
@@ -315,8 +369,9 @@ pub fn sidecar(out: &Path) -> PathBuf {
 
 /// Encodes `clip` as the video file `out` with `encoder`. Captions, when the clip has any,
 /// are written beside it as WebVTT, and carried as a subtitle track when the settings ask
-/// for one and the container has tracks.
-pub fn encode(raster: &Raster, clip: &Clip, s: &Settings, encoder: &Path, out: &Path) -> Result<(), String> {
+/// for one and the container has tracks. The settings' sound is voiced and mixed in.
+/// Returns reports on the sound: silent cues, voices longer than their cue.
+pub fn encode(raster: &Raster, clip: &Clip, s: &Settings, encoder: &Path, out: &Path) -> Result<Vec<String>, String> {
     let container = Container::of(out).ok_or_else(|| format!("{}: unknown video format (mp4, mov, mkv, webm or gif)", out.display()))?;
     let size = clip_canvas(raster, clip, s.scale)?;
     let vtt = sidecar(out);
@@ -324,7 +379,26 @@ pub fn encode(raster: &Raster, clip: &Clip, s: &Settings, encoder: &Path, out: &
         std::fs::write(&vtt, webvtt(&clip.captions)).map_err(|e| format!("{}: {e}", vtt.display()))?;
     }
     let subs = (s.captions.track() && !clip.captions.is_empty()).then_some(vtt.as_path());
-    let args = encoder_args(container, out, size, clip.fps, subs, &clip.presentation);
+    let work = std::env::temp_dir().join(format!("prismal-voice-{}", std::process::id()));
+    let mut reports = vec![];
+    let mut mix = Mix { duration: clip.frames.len() as f64 / clip.fps, ..Default::default() };
+    if !s.sound.is_silent() {
+        if !container.subtitles() {
+            reports.push("a GIF has no sound; the narration and music are left out".to_string());
+        } else {
+            std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+            let probe = voice::prober(encoder);
+            let found = Command::new(&probe).arg("-version").output().is_ok_and(|o| o.status.success());
+            if !found {
+                reports.push(format!("no ffprobe at {}: voice lengths are not checked", probe.display()));
+            }
+            let (tracks, r) = voice::narration(&clip.captions, &s.sound, &work, found.then_some(probe.as_path()));
+            mix.tracks = tracks;
+            mix.music = s.sound.music.clone().map(|m| (m, s.sound.music_volume));
+            reports.extend(r);
+        }
+    }
+    let args = encoder_args(container, out, size, clip.fps, subs, &mix, &clip.presentation);
     let mut child = Command::new(encoder)
         .args(&args)
         .stdin(Stdio::piped())
@@ -339,15 +413,17 @@ pub fn encode(raster: &Raster, clip: &Clip, s: &Settings, encoder: &Path, out: &
     }
     drop(stdin);
     let status = child.wait().map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_dir_all(&work);
     if status.success() {
-        Ok(())
+        Ok(reports)
     } else {
         Err(format!("the encoder failed ({status})"))
     }
 }
 
-/// Writes `clip` to the directory `dir` as `frame-00000.png ...`, `captions.vtt` when it has
-/// captions, and `encode.txt`, the encoder command that makes a video of them.
+/// Writes `clip` to the directory `dir` as `frame-00000.png ...`, `captions.vtt` and the
+/// recording script `narration.txt` when it has captions, and `encode.txt`, the encoder
+/// command that makes a video of them.
 pub fn write_frames(raster: &Raster, clip: &Clip, s: &Settings, dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let size = clip_canvas(raster, clip, s.scale)?;
@@ -359,6 +435,7 @@ pub fn write_frames(raster: &Raster, clip: &Clip, s: &Settings, dir: &Path) -> R
     let mut cmd = format!("ffmpeg -framerate {} -i frame-%05d.png", fmt(clip.fps));
     if !clip.captions.is_empty() {
         std::fs::write(dir.join("captions.vtt"), webvtt(&clip.captions)).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("narration.txt"), voice::script(&clip.presentation, &clip.captions)).map_err(|e| e.to_string())?;
         if s.captions.track() {
             cmd.push_str(" -i captions.vtt -c:s mov_text");
         }

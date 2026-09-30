@@ -1,7 +1,8 @@
 //! Exports a presentation as a video file, a PNG image sequence, or a PNG still (D-052).
 //!
 //! `prismal-media PROGRAM PRESENTATION OUT [--fps N] [--scale S] [--at T] [--until T]
-//! [--captions burned|track|both] [--dark] [--header] [--fonts DIR]... [--encoder PATH]`
+//! [--captions burned|track|both] [--voice DIR] [--speech system|COMMAND] [--music FILE]
+//! [--music-volume V] [--dark] [--header] [--fonts DIR]... [--encoder PATH]`
 //!
 //! PROGRAM is a source file (working syntax, or a Markdown document whose `text` and `cases`
 //! blocks form the program) or the key of an embedded example (`rp01` to `rp08`,
@@ -11,22 +12,29 @@
 //!   or `PRISMAL_FFMPEG`, or `ffmpeg` on the path), with the captions beside it as
 //!   `name.vtt`;
 //! - `name.png`: the frame at `--at T` (default 0);
+//! - `name.txt`: the recording script, every narration cue with its name, start, length and
+//!   text;
 //! - anything else: a directory of `frame-00000.png ...`, `captions.vtt` and `encode.txt`,
 //!   for encoding elsewhere.
 //!
 //! A lesson plays in the video medium: explore beats play their fallbacks (PK-9.10), and
 //! what cannot be shown is reported on standard error (PK-12.3). A session is recorded from
 //! the start of its run to its end, or to `--until`.
+//!
+//! Sound (D-053): `--voice DIR` voices each cue with the recording named after it
+//! (`b3.wav`); `--speech system` synthesizes cues without one with the system's voice, and
+//! `--speech "COMMAND ARGS {out}"` with any program that reads text on standard input and
+//! writes a WAV file to `{out}`; `--music FILE` loops music under the narration.
 
 use prismal_host::{Content, Document, Instance};
-use prismal_media::{clip, encode, still, write_frames, Captions, Container, Raster, Settings};
+use prismal_media::{clip, encode, still, voice, write_frames, Captions, Container, Raster, Settings, Speech};
 use std::path::PathBuf;
 
-const USAGE: &str = "usage: prismal-media PROGRAM PRESENTATION OUT [--fps N] [--scale S] [--at T] [--until T] [--captions burned|track|both] [--dark] [--header] [--fonts DIR]... [--encoder PATH]";
+const USAGE: &str = "usage: prismal-media PROGRAM PRESENTATION OUT [--fps N] [--scale S] [--at T] [--until T] [--captions burned|track|both] [--voice DIR] [--speech system|COMMAND] [--music FILE] [--music-volume V] [--dark] [--header] [--fonts DIR]... [--encoder PATH]";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let valued = ["--fps", "--scale", "--at", "--until", "--captions", "--fonts", "--encoder"];
+    let valued = ["--fps", "--scale", "--at", "--until", "--captions", "--fonts", "--encoder", "--voice", "--speech", "--music", "--music-volume"];
     let mut pos = vec![];
     let mut i = 0;
     while i < args.len() {
@@ -65,6 +73,19 @@ fn main() {
         s.svg.theme = prismal_svg::Theme::DARK;
     }
     s.svg.header = args.iter().any(|a| a == "--header");
+    s.sound.voice = value("--voice").map(PathBuf::from);
+    s.sound.speech = match value("--speech").map(String::as_str) {
+        None => Speech::Off,
+        Some("system") => Speech::System,
+        Some(cmd) => Speech::Command(cmd.split_whitespace().map(String::from).collect()),
+    };
+    s.sound.music = value("--music").map(PathBuf::from);
+    s.sound.music_volume = number("--music-volume").unwrap_or(s.sound.music_volume);
+    if let Some(d) = &s.sound.voice {
+        if !d.is_dir() {
+            fail(&format!("--voice {}: not a directory", d.display()));
+        }
+    }
     let fonts: Vec<PathBuf> = args.windows(2).filter(|w| w[0] == "--fonts").map(|w| PathBuf::from(&w[1])).collect();
     let encoder = value("--encoder").map(PathBuf::from).unwrap_or_else(prismal_media::default_encoder);
 
@@ -87,6 +108,12 @@ fn main() {
         println!("{}", out.display());
         return;
     }
+    if out.extension().is_some_and(|e| e.eq_ignore_ascii_case("txt")) {
+        let c = clip(&mut inst, &pos[1], &Settings { fps: 1.0, ..s.clone() }).unwrap_or_else(|e| fail(&e));
+        std::fs::write(&out, voice::script(&c.presentation, &c.captions)).unwrap_or_else(|e| fail(&format!("{}: {e}", out.display())));
+        println!("{}: {} cues", out.display(), c.captions.len());
+        return;
+    }
     let c = clip(&mut inst, &pos[1], &s).unwrap_or_else(|e| fail(&e));
     for r in &c.reports {
         eprintln!("note: {r}");
@@ -95,11 +122,14 @@ fn main() {
     if container == Some(Container::Gif) && s.captions == Captions::Track {
         eprintln!("note: a GIF has no subtitle track; captions are only in {}", prismal_media::sidecar(&out).display());
     }
-    match container {
+    let notes = match container {
         Some(_) => encode(&raster, &c, &s, &encoder, &out),
-        None => write_frames(&raster, &c, &s, &out),
+        None => write_frames(&raster, &c, &s, &out).map(|_| vec![]),
     }
     .unwrap_or_else(|e| fail(&e));
+    for n in notes {
+        eprintln!("note: {n}");
+    }
     println!("{}: {} frames at {} per second, {:.2} s", out.display(), c.frames.len(), prismal_svg::fmt(c.fps), c.frames.len() as f64 / c.fps);
 }
 
