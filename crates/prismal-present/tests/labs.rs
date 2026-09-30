@@ -7,6 +7,7 @@ use common::*;
 use prismal_ir::build::num;
 use prismal_present::frame::{Frame, Shape};
 use prismal_present::interact::Interactive;
+use prismal_present::timeline::ease;
 use prismal_present::Program;
 use prismal_runtime::Config;
 
@@ -185,6 +186,20 @@ presentation DropLesson for FreeFall {
     }
   }
 }
+presentation DropMovie for FreeFall {
+  view scene: spatial(Plane, scale: 1 m -> 12 px, y: up) {
+    axes
+  }
+  timeline {
+    scene only {
+      beat appear   { reveal fade in scene { marker(pos) as ball } }
+      beat ground   { reveal draw for 2 s in scene { polyline(origin + (-5 m, 0 m), origin + (5 m, 0 m)) } }
+      beat close_up { camera scene to pos zoom 2 for 1.5 s }
+      beat fall     { run rate 0.5 until landed }
+      beat away     { camera scene zoom 1 for 1 s; hide ball for 1 s }
+    }
+  }
+}
 ";
 
 /// `button`, `table`, `polygon`, `equation` (PK-6.3) and `hide` (PK-9.2).
@@ -224,4 +239,59 @@ fn button_table_polygon_equation_hide() {
     let pb = prismal_present::timeline::play(&prog, "DropLesson", Config::until(10.0), prismal_present::timeline::Medium::Interactive, vec![]).unwrap();
     assert!(pb.frame(0.5, 0.1).rep("ball").is_some());
     assert!(pb.frame(1.5, 0.1).rep("ball").is_none());
+}
+
+/// Animations as named effects (D-042): the frame values of `reveal fade`, `reveal draw`,
+/// `camera` and `hide ... for`, in guide chapter 8's `DropMovie`.
+#[test]
+fn animation_frames() {
+    use prismal_present::frame::Camera;
+    use prismal_present::timeline::{play, Medium};
+    let prog = program(DROP);
+    let pb = play(&prog, "DropMovie", Config::until(10.0), Medium::Interactive, vec![]).unwrap();
+    let (g, h) = (9.81, 10.0);
+    let fall = (2.0 * h / g as f64).sqrt();
+    let camera = |p: f64| pb.frame(p, 0.1).views.iter().find(|v| v.id.ends_with("scene")).unwrap().camera.clone();
+    let ground = |p: f64| pb.frame(p, 0.1).reps().find(|r| r.kind == "polyline").cloned();
+
+    // appear, 0 to 1 s: the ball fades in; eased, so half way is exactly 0.5.
+    assert_eq!(pb.frame(0.5, 0.1).rep("ball").unwrap().opacity, Some(0.5));
+    close(pb.frame(0.25, 0.1).rep("ball").unwrap().opacity.unwrap(), ease(0.25), 0.0, "eased fade");
+    assert_eq!(pb.frame(1.0, 0.1).rep("ball").unwrap().opacity, None, "fully shown after the fade");
+    assert!(ground(0.5).is_none(), "not yet revealed");
+    assert_eq!(camera(2.0), None, "no camera before the first move");
+
+    // ground, 1 to 3 s: the line is drawn from start to end, at full opacity.
+    let mid = ground(2.0).unwrap();
+    assert_eq!((mid.drawn, mid.opacity), (Some(0.5), None));
+    let Shape::Polyline { points } = &mid.shape else { panic!() };
+    assert_eq!(points, &vec![[-60.0, 0.0], [60.0, 0.0]]);
+    assert_eq!(ground(3.0).unwrap().drawn, None);
+
+    // close_up, 3 to 4.5 s: from the view's own framing to the ball, zoom 1 to 2.
+    assert_eq!(camera(3.75), Some(Camera { center: Some([0.0, -12.0 * h]), zoom: 1.5, blend: 0.5 }));
+    assert_eq!(camera(4.5), Some(Camera { center: Some([0.0, -12.0 * h]), zoom: 2.0, blend: 1.0 }));
+
+    // fall, at half speed: the camera keeps following the ball.
+    let end_fall = pb.beat("fall").end;
+    close(end_fall, 4.5 + fall / 0.5, 1e-8, "end of fall");
+    let f = pb.frame(5.5, 0.1);
+    close(f.t, 0.5, 1e-12, "simulation time");
+    let c = camera(5.5).unwrap();
+    assert_eq!(c.center, Some(point(&f, "ball")));
+    close(c.center.unwrap()[1], -12.0 * (h - 0.5 * g * 0.25), 1e-6, "ball height");
+
+    // away: zoom back to 1 and fade the ball out over 1 s, then it is gone.
+    let p = end_fall + 0.5;
+    let c = camera(p).unwrap();
+    close(c.zoom, 1.5, 1e-12, "zoom half way back");
+    close(c.center.unwrap()[1], 0.0, 1e-6, "centred on the landed ball");
+    close(pb.frame(p, 0.1).rep("ball").unwrap().opacity.unwrap(), 0.5, 1e-9, "fading out");
+    assert!(pb.frame(end_fall + 1.0, 0.1).rep("ball").is_none(), "hidden after the fade");
+    close(camera(end_fall + 1.0).unwrap().zoom, 1.0, 1e-12, "own scale");
+    // The same frames every time the movie plays (D-042, PK-8.4).
+    let again = play(&prog, "DropMovie", Config::until(10.0), Medium::Interactive, vec![]).unwrap();
+    for p in [0.3, 1.7, 3.2, 6.0, end_fall + 0.4] {
+        assert_eq!(again.frame(p, 0.1), pb.frame(p, 0.1));
+    }
 }
