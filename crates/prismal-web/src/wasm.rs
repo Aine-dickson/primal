@@ -48,6 +48,9 @@ impl WebPlayer {
     pub fn key(&mut self, rep: &str, key: &str) -> String {
         s(self.0.key(rep, key))
     }
+    pub fn press(&mut self, rep: &str) -> String {
+        s(self.0.press(rep))
+    }
     pub fn pointer_down(&mut self, rep: &str, part: Option<String>) -> String {
         s(self.0.pointer_down(rep, part.as_deref()))
     }

@@ -163,3 +163,8 @@ pub fn formula(lhs: &str, rhs: &Expr, cm: &CModel, params: &[String]) -> String 
     };
     format!("<math display=\"block\">{}</math>", row(&[left, mo("="), expr(rhs, cm, params)]))
 }
+
+/// A model equation `lhs = rhs` as a display `<math>` element (PK-6.5).
+pub fn equation(lhs: &Expr, rhs: &Expr, cm: &CModel) -> String {
+    format!("<math display=\"block\">{}</math>", row(&[expr(lhs, cm, &[]), mo("="), expr(rhs, cm, &[])]))
+}

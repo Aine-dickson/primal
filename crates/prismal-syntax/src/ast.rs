@@ -380,6 +380,7 @@ pub enum Action {
     Run { rate: Expr, until: Option<Name> },
     Hold,
     Highlight(Name),
+    Hide(Name),
     Seek(Expr),
     Show(Rep),
     Explore { limit: Option<Expr>, keep: Vec<Name>, reps: Vec<Rep>, fallback: Vec<Action> },

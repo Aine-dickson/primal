@@ -151,3 +151,77 @@ fn sampled_sources_are_checked() {
     let err = prismal_syntax::compile(&format!("{base}\nmodel Q {{ derived {{ a: Real = max(1 every 2, 3) }} }}\n")).unwrap_err();
     assert_eq!(err[0].code, "SX-E08");
 }
+
+const DROP: &str = "space Plane = euclidean(2)
+model FreeFall in Plane {
+  param { g: Acceleration = 9.81 m/s^2; h: Length = 10 m in [1 m, 50 m] }
+  state { pos: Point = origin + (0 m, h); vel: Vector<Velocity> = 0 }
+  discrete { airborne: Boolean = true }
+  flow {
+    der(pos) = if airborne then vel else 0
+    der(vel) = if airborne then (0, -g) else 0
+  }
+  event landed on falling(pos.y) { set airborne = false; set vel = 0 }
+  event drop on request { set pos = origin + (0 m, h); set vel = 0; set airborne = true }
+  equation fall_time: sqrt(2 * h / g) == sqrt(2 * h / g)
+}
+presentation DropLab for FreeFall {
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    marker(pos) as ball
+    polygon(origin, origin + (1 m, 0 m), origin + (0 m, 1 m))
+  }
+  panel controls {
+    button(drop, label: \"Drop again\")
+    table((pos.y, vel.y) every 0.5 s)
+    equation(fall_time, live: true)
+  }
+}
+presentation DropLesson for FreeFall {
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) { marker(pos) as ball }
+  timeline {
+    scene s {
+      beat a { run rate 1; wait 1 s }
+      beat b { hide ball; wait 1 s }
+    }
+  }
+}
+";
+
+/// `button`, `table`, `polygon`, `equation` (PK-6.3) and `hide` (PK-9.2).
+#[test]
+fn button_table_polygon_equation_hide() {
+    let prog = program(DROP);
+    let mut i = lab(&prog, "DropLab");
+    // The ball lands at sqrt(2 h / g) = 1.42784 s; at 3 s it rests; the button drops it again.
+    i.seek(3.0);
+    let f = i.frame();
+    let Shape::Button { label, .. } = &f.rep("button.1").unwrap().shape else { panic!() };
+    assert_eq!(label, "Drop again");
+    i.press("button.1").unwrap();
+    assert!(i.session.current.log.iter().any(|l| l.name == "drop" && l.t == 3.0), "requested at the instant shown");
+    i.seek(3.5);
+    let y = point(&i.frame(), "ball")[1];
+    close(y, -10.0 * (10.0 - 0.5 * 9.81 * 0.25), 1e-6, "falling again");
+    assert!(i.press("ball").is_err(), "a marker is not a button");
+    // Table: the time, then one column per component, up to the instant shown.
+    let f = i.frame();
+    let Shape::Table { columns, rows } = &f.rep("table.1").unwrap().shape else { panic!() };
+    assert_eq!(columns, &["t (s)", "pos.y", "vel.y"]);
+    assert_eq!(rows.len(), 8, "0, 0.5, ..., 3.5 s");
+    assert_eq!(rows[0], vec!["0", "10 m", "0 m/s"]);
+    // Polygon in view coordinates; equation with live values.
+    let Shape::Polygon { points } = &f.rep("polygon.1").unwrap().shape else { panic!() };
+    assert_eq!(points, &vec![[0.0, 0.0], [10.0, 0.0], [0.0, -10.0]]);
+    let eq = i.frame().rep("equation.1").unwrap().clone();
+    assert!(eq.text.starts_with("equation fall_time: sqrt(2 h / g) = sqrt(2 h / g), where h = 10 m"), "{}", eq.text);
+    // A button for an event that is not requestable is a presentation error (PK-E03).
+    let bad = DROP.replace("button(drop,", "button(landed,");
+    let doc = prismal_syntax::compile(&bad).unwrap().doc;
+    let codes: Vec<&str> = Program::new(doc).err().unwrap().iter().map(|d| d.code).collect();
+    assert_eq!(codes, vec!["PK-E03"]);
+
+    // `hide ball` at 1 s: shown before, not after.
+    let pb = prismal_present::timeline::play(&prog, "DropLesson", Config::until(10.0), prismal_present::timeline::Medium::Interactive, vec![]).unwrap();
+    assert!(pb.frame(0.5, 0.1).rep("ball").is_some());
+    assert!(pb.frame(1.5, 0.1).rep("ball").is_none());
+}

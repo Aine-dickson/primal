@@ -114,6 +114,8 @@ pub struct Playback<'a> {
     pub announcements: Vec<Announcement>,
     pub shown: Vec<Shown>,
     pub highlights: Vec<Highlight>,
+    /// Representations hidden from a presentation instant on (PK-9.2).
+    pub hidden: Vec<(Id, f64)>,
     pub refusals: Vec<Refusal>,
     /// Timeline diagnostics: unsatisfiable waits (PK-9.4), rejected interventions.
     pub diagnostics: Vec<String>,
@@ -284,6 +286,10 @@ impl Player<'_, '_> {
                 self.pb.highlights.push(Highlight { target: target.clone(), from: p, until: f64::NAN });
                 p
             }
+            TAction::Hide { target } => {
+                self.pb.hidden.push((target.clone(), p));
+                p
+            }
             TAction::Narrate { text, duration } => {
                 let d = match duration {
                     Some(e) => self.num(e),
@@ -440,6 +446,7 @@ pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Med
         announcements: vec![],
         shown: vec![],
         highlights: vec![],
+        hidden: vec![],
         refusals: vec![],
         diagnostics: vec![],
         unsupported: vec![],
@@ -509,6 +516,13 @@ impl Playback<'_> {
         let vals: Vec<Value> = v.run.state_at(t);
         let extra: Vec<(Option<Id>, CRep)> = self.shown.iter().filter(|s| s.from <= p && p < s.until).map(|s| (s.view.clone(), s.rep.clone())).collect();
         let (mut views, mut overlay) = self.projector.frame(self.cm, &v.run, &vals, t, &extra);
+        let hidden: Vec<&Id> = self.hidden.iter().filter(|h| h.1 <= p).map(|h| &h.0).collect();
+        if !hidden.is_empty() {
+            for v in views.iter_mut() {
+                v.reps.retain(|r| !hidden.contains(&&r.id));
+            }
+            overlay.retain(|r| !hidden.contains(&&r.id));
+        }
         for h in self.highlights.iter().filter(|h| h.from <= p && p < h.until) {
             for r in views.iter_mut().flat_map(|v| v.reps.iter_mut()).chain(overlay.iter_mut()).filter(|r| r.id == h.target) {
                 r.highlighted = true;

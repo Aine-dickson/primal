@@ -152,6 +152,13 @@ impl<'a> Interactive<'a> {
         self.commit(Action::Intervene(vec![op]))
     }
 
+    /// Presses a button: requests its event at the instant shown (D-027, RC-11.4a).
+    pub fn press(&mut self, rep: &str) -> Result<(), Report> {
+        let Some((_, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("no button `{rep}`")) };
+        let CKind::Button { event, .. } = &r.kind else { return self.report(Why::Refused, format!("`{rep}` is not a button")) };
+        self.commit(Action::Request(event.clone()))
+    }
+
     /// Sets the control of a kind that targets a binding (learner scripts: `set slider a = 2`).
     pub fn set_control_of(&mut self, control: &str, binding: &str, value: Expr) -> Result<(), Report> {
         let found = self.projector.views.iter().flat_map(|v| v.2.iter()).find(|r| matches!(&r.kind, CKind::Control { control: c, binding: b, .. } if c == control && b == binding));

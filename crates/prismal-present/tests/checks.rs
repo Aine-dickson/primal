@@ -26,7 +26,9 @@ fn presentation_diagnostics() {
     // A marker outside a spatial or plot view.
     assert_eq!(codes(&edit(&q, "slider(a, range: [-5, 5], step: 0.1)", "marker(at: (1, 2))")), vec!["PK-E05"]);
     // A representation kind the prototype does not implement.
-    assert_eq!(codes(&edit(&q, "function_graph(f)", "table(f)")), vec!["PK-E06"]);
+    assert_eq!(codes(&edit(&q, "function_graph(f)", "group(f)")), vec!["PK-E06"]);
+    // A table without a sampled source.
+    assert_eq!(codes(&edit(&q, "function_graph(f)", "table(f)")), vec!["PK-E05"]);
 
     let l = rp08();
     assert!(codes(&l).is_empty());

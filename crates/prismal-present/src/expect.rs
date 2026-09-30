@@ -93,6 +93,13 @@ impl Cx<'_, '_> {
                 }
             }
             Check::Equal { subject, expected, tolerance } => {
+                // A series compared with a list is compared as a whole: `drops == []`.
+                if let (Subject::Observation { observation, index: None }, Operand::List { items }) = (subject, expected) {
+                    let o = self.pres.and_then(|p| p.observations.iter().find(|o| &o.id == observation)).ok_or(format!("unknown observation `{observation}`"))?;
+                    if let Data::Series(series) = observe(self.cm, self.run, o, &self.run.config.log)? {
+                        return series_list(self.cm, &series, items, tolerance);
+                    }
+                }
                 let got = self.subject(subject)?;
                 match (got, expected) {
                     (Got::Data(d), Operand::List { items }) => list(&d, items),
@@ -113,6 +120,18 @@ impl Cx<'_, '_> {
             }
         }
     }
+}
+
+/// A series of values against a list of expected values, element by element.
+fn series_list(cm: &CModel, series: &[(f64, prismal_kernel::Value)], items: &[Item], tol: &Tolerance) -> Result<(), String> {
+    if series.len() != items.len() {
+        return Err(format!("{} values, expected {}", series.len(), items.len()));
+    }
+    for ((_, v), item) in series.iter().zip(items) {
+        let Item::Value { expr } = item else { return Err("a series is compared with a list of values".into()) };
+        compare(cm, &flat(v), &flat(&constant(cm, expr)?), tol)?;
+    }
+    Ok(())
 }
 
 fn list(d: &Data, items: &[Item]) -> Result<(), String> {

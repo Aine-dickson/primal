@@ -51,7 +51,7 @@ presentation SpringChecks for SpringMass {
 
 ## Lab
 
-An interactive presentation for the web player (D-018), not used by the cases. The mass is a marker in a plot whose horizontal axis is the displacement. Changing `k` or `m` changes the period shown by the live formula for `T`; changing `k` also breaks the equation `conservation`, which is checked, so the run reports it (MK section 11).
+An interactive presentation for the web player (D-018), not used by the cases. The mass is a marker in a plot whose horizontal axis is the displacement. Changing `k` or `m` changes the period shown by the live formula for `T`; changing `k` also breaks the equation `conservation`, which is checked, so the run reports it (MK section 11), and the typeset equation shows both sides' values drifting apart.
 
 ```text
 presentation SpringLab for SpringMass {
@@ -65,6 +65,7 @@ presentation SpringLab for SpringMass {
     slider(k, range: [1 N/m, 20 N/m])
     slider(m, range: [0.2 kg, 5 kg])
     formula(T, live: true)
+    equation(conservation, live: true)
     label(energy)
   }
 }
@@ -122,3 +123,4 @@ Energy drift measured with plain floating-point implementations over 100 s (`too
 - 2026-09-30 programs rewritten in the working syntax (D-028); corrections from the syntax study applied.
 - 2026-09-30 provisional tolerances confirmed by the Rust prototype and made fixed. Measured: `dopri5` `x_10` abs error 2.1e-7, worst period rel error 5.2e-8, energy drift 4.9e-5; `rk4` 2.4e-9, 1.3e-9, 1.8e-8.
 - 2026-09-30 lab presentation added for the web player (not used by the cases).
+- 2026-09-30 the lab shows the equation `conservation` (`equation` representation).

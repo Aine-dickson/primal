@@ -147,6 +147,8 @@ pub enum Arg {
     Word { word: String },
     /// A source sampled over the run: `pos every 0.02 s` (PK-6.3, `trace`, `series_plot`).
     Sampled { expr: Expr, every: Expr },
+    /// A model element that is not a value: an event (`button`) or an equation (`equation`).
+    Element { element: Id },
 }
 
 /// A declared inverse (PK-5.6): the gesture's value, `{"param": 0}`, gives proposals.
@@ -202,6 +204,8 @@ pub enum Action {
         reps: Vec<Rep>,
     },
     Highlight { target: Id },
+    /// Stops showing a representation from now on (PK-9.2).
+    Hide { target: Id },
     Narrate {
         text: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

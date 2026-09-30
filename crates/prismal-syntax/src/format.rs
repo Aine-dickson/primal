@@ -569,6 +569,7 @@ impl<'a> Printer<'a> {
             Arg::Scale { scale } => format!("{} -> {} px", self.expr(&scale.quantity), number(scale.px)),
             Arg::Word { word } => word.clone(),
             Arg::Sampled { expr, every } => format!("{} every {}", self.expr(expr), self.expr(every)),
+            Arg::Element { element } => self.element_name(element),
         }
     }
 
@@ -790,6 +791,7 @@ impl<'a> Printer<'a> {
             }
             Action::Show { view: None, reps } => reps.iter().map(|r| format!("show {}", self.rep(r, depth))).collect::<Vec<_>>().join("; "),
             Action::Highlight { target } => format!("highlight {}", self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone())),
+            Action::Hide { target } => format!("hide {}", self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone())),
             Action::Narrate { text, duration } => match duration {
                 Some(d) => format!("narrate \"{text}\" for {}", self.expr(d)),
                 None => format!("narrate \"{text}\""),

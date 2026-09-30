@@ -27,6 +27,7 @@ Beats play one after another. Within a beat, the actions that direct the run (`r
 | `seek τ` | shows simulation instant `τ` (`seek t0` goes back to the start) | none |
 | `reset` | a new run from the start | none |
 | `highlight name` | marks a named representation until the beat ends | none |
+| `hide name` | stops showing a named representation | none |
 | `in view { reps }` | adds representations to a view from now on | none |
 | `show rep` | adds a representation over the presentation (for example a formula) | none |
 | `intervene { set p = value }` | changes a parameter at the instant shown | none |
@@ -189,6 +190,43 @@ run without_learner of FreeFall with DropLesson {
 - The observation `fall_times` reads the lesson's run as it is at the end: the first landing, and the landing after the second drop. `elapsed` is simulation time since `t0`; the second drop happens at simulation time `T`, where the run was held.
 
 In the player, a lesson has play, pause, a time scrubber and a bar of beats; during `choose` the slider appears and a Continue button ends the beat. Choosing the video medium plays the fallback instead.
+
+## A lab for the same model
+
+The requested event also serves a presentation without a timeline: a `button` requests it whenever the learner presses it, at the instant shown.
+
+```text
+presentation DropLab for FreeFall {
+  view scene: spatial(Plane, scale: 1 m -> 12 px, y: up) {
+    axes
+    marker(pos) as ball
+    polyline(origin + (-2 m, 0 m), origin + (2 m, 0 m))
+  }
+  panel controls {
+    slider(h, range: [1 m, 50 m])
+    button(drop, label: "Drop again")
+    table((pos.y, vel.y) every 0.25 s)
+  }
+  observe {
+    drops = elapsed on drop
+  }
+}
+```
+
+- `button(drop, label: "Drop again")` requests the event `drop`, which must be declared `on request`. A button is an action of the learner like a slider: it takes effect at the instant shown and is logged as an intervention; undo removes it.
+- `table((pos.y, vel.y) every 0.25 s)` lists the height and vertical speed every quarter second up to the instant shown, one column per component of the tuple, with the time first.
+- `polyline(P, Q, ...)` draws a path through points (here the ground); `polygon` closes it.
+
+Changing `h` with the slider and pressing the button drops the ball from the new height: the handler of `drop` reads `h` when it happens.
+
+```cases
+run lab_drops of FreeFall with DropLab {
+  until t0 + 10 s
+  expect { drops == [] }
+}
+```
+
+A case plays the model without a learner, so the button is never pressed. The player's tests press it (`crates/prismal-present/tests/labs.rs`).
 
 ## Mistakes
 

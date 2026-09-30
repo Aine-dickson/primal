@@ -94,6 +94,9 @@ select { background: var(--surface); border: 1px solid var(--line); border-radiu
 .formula math { font-size: 1.25em; }
 .formula .values { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 .label-value { font-family: var(--mono); }
+table.data { border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+table.data th, table.data td { border-bottom: 1px solid var(--line); padding: 2px 10px; text-align: right; }
+table.data th { color: var(--muted); font-weight: 500; }
 .status-value { color: var(--bad); }
 
 .captions { min-height: 2.2em; text-align: center; font-size: 17px; }
@@ -158,6 +161,7 @@ svg .arrow.c1 line { stroke: var(--rep-2); } svg .arrow.c1 polygon { fill: var(-
 svg .arrow.c2 line { stroke: var(--rep-3); } svg .arrow.c2 polygon { fill: var(--rep-3); }
 svg .arrow.c3 line { stroke: var(--rep-4); } svg .arrow.c3 polygon { fill: var(--rep-4); }
 svg .segment { stroke: var(--rep); }
+svg .shape { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: var(--accent); }
 svg .handle { fill: var(--surface); stroke: var(--accent); }
 svg .ring { fill: none; stroke: var(--hl); }
 svg .invalid line, svg .invalid .marker, svg .invalid .handle { stroke: var(--bad); stroke-dasharray: 4 3; }

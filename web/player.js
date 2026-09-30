@@ -453,6 +453,11 @@ function drawRep(v, g, r, u, colorIndex) {
       svg('polyline', { class: trace ? 'trace' : 'graph', points: pts, 'stroke-width': (trace ? 1.5 : 2) * u }, grp);
       break;
     }
+    case 'polygon': {
+      const pts = r.points.map((p) => m.to(p).join(',')).join(' ');
+      svg('polygon', { class: 'shape', points: pts, 'stroke-width': 2 * u }, grp);
+      break;
+    }
     default:
       grp.remove();
       return;
@@ -504,6 +509,41 @@ function renderItem(host, r) {
       }
       const vals = r.symbols.filter((s) => s.value != null).map((s) => `${s.symbol} = ${s.value}`).join(',  ');
       it.values.textContent = vals;
+      break;
+    }
+    case 'equation': {
+      if (it.mathml !== r.mathml) {
+        it.root.innerHTML = r.mathml || '';
+        it.values = el('div', { class: 'values' });
+        it.root.prepend(el('span', { class: 'what', text: `equation ${r.name}` }));
+        it.root.append(it.values);
+        it.root.setAttribute('aria-label', r.text);
+        it.mathml = r.mathml;
+      }
+      it.values.textContent = r.symbols.filter((s) => s.value != null).map((s) => `${s.symbol} = ${s.value}`).join(',  ');
+      break;
+    }
+    case 'button': {
+      if (!it.button) {
+        it.button = el('button', { type: 'button', text: r.label });
+        it.button.addEventListener('click', () => {
+          if (st.lesson) { status('Buttons act in labs; in a lesson the timeline requests events.', true); return; }
+          report(JSON.parse(st.player.press(r.id)));
+          afterSessionAction();
+        });
+        it.root.replaceChildren(it.button);
+      }
+      it.button.setAttribute('aria-label', r.text);
+      break;
+    }
+    case 'table': {
+      const table = el('table', { class: 'data' });
+      table.append(el('thead', {}, el('tr', {}, ...r.columns.map((c) => el('th', { text: c })))));
+      const body = el('tbody');
+      // The latest rows, most recent last.
+      for (const row of r.rows.slice(-12)) body.append(el('tr', {}, ...row.map((c) => el('td', { text: c }))));
+      table.append(body);
+      it.root.replaceChildren(el('span', { class: 'what', text: `${r.rows.length} rows` }), table);
       break;
     }
     case 'control':
@@ -655,7 +695,7 @@ function renderFrame(frame) {
       const top = svg('g', {}, v.svg);
       let arrows = 0;
       for (const r of vf.reps) {
-        if (['point', 'arrow', 'segment', 'polyline'].includes(r.shape)) {
+        if (['point', 'arrow', 'segment', 'polyline', 'polygon'].includes(r.shape)) {
           // Draggable representations are drawn last and outside the plot's clip.
           drawRep(v, r.drag ? top : reps, r, u, r.shape === 'arrow' ? arrows++ : 0);
         } else if (!['axes', 'grid'].includes(r.shape)) {

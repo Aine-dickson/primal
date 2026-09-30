@@ -20,6 +20,8 @@ const KINDS: &[&str] = &[
 
 struct PresCx<'a, 'b> {
     cx: ModelCx<'a>,
+    /// Equations of the model by name, for `equation(name)`.
+    equations: HashMap<String, Id>,
     pres: &'b str,
     views: HashMap<String, Id>,
     aliases: HashMap<String, Id>,
@@ -90,6 +92,11 @@ impl PresCx<'_, '_> {
                     Some(scale) => Arg::Scale { scale },
                     None => continue,
                 },
+                // A positional name of an event or equation, not a binding: a model element.
+                (ExprKind::Name(n), None) if a.every.is_none() && !self.cx.bindings.contains_key(n) && (self.cx.events.contains_key(n) || self.equations.contains_key(n)) => {
+                    let element = self.cx.events.get(n).or_else(|| self.equations.get(n)).cloned().unwrap();
+                    Arg::Element { element }
+                }
                 _ => match &a.every {
                     Some(dt) => Arg::Sampled { expr: self.expr(&a.value), every: self.expr(dt) },
                     None => Arg::Expr { expr: self.expr(&a.value) },
@@ -283,6 +290,10 @@ impl PresCx<'_, '_> {
                     Some(id) => out.push(Action::Highlight { target: id.clone() }),
                     None => self.err("SX-E03", format!("no representation named `{}` before this beat", n.text), n.span),
                 },
+                ast::Action::Hide(n) => match self.aliases.get(&n.text) {
+                    Some(id) => out.push(Action::Hide { target: id.clone() }),
+                    None => self.err("SX-E03", format!("no representation named `{}` before this beat", n.text), n.span),
+                },
                 ast::Action::Seek(e) => out.push(Action::Seek { time: self.expr(e) }),
                 ast::Action::Explore { limit, keep, reps, fallback } => {
                     let limit = limit.as_ref().map(|l| self.expr(l));
@@ -320,7 +331,8 @@ pub(crate) fn presentation(p: &ast::PresentationDecl, models: &[Model], spaces: 
     let model = find_model(models, &p.model, diags)?;
     let id = p.name.text.clone();
     map.insert(id.clone(), p.span);
-    let mut px = PresCx { cx: ModelCx::scope(model, spaces, diags, map), pres: &id, views: HashMap::new(), aliases: HashMap::new() };
+    let equations = model.equations.iter().map(|q| (q.name.clone(), q.id.clone())).collect();
+    let mut px = PresCx { cx: ModelCx::scope(model, spaces, diags, map), equations, pres: &id, views: HashMap::new(), aliases: HashMap::new() };
     let mut views = vec![];
     for it in &p.items {
         if let ast::PresItem::View(v) = it {

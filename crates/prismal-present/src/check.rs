@@ -118,7 +118,7 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     reps.push(r.id.clone());
                 }
             }
-            Action::Highlight { target } => {
+            Action::Highlight { target } | Action::Hide { target } => {
                 if !reps.contains(target) {
                     out.push(PDiag { code: "PK-E01", message: format!("unknown representation `{target}`"), element: beat.into() });
                 }

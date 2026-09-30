@@ -30,6 +30,7 @@ presentation Name for Model {
 | `marker(P)`, `marker(at: (x, y))` | a point | spatial (a `Point`), plot (a pair in the axes' dimensions) |
 | `arrow(v, from: P [, scale: 1 m/s -> 4 px])` | a vector drawn from a point | spatial |
 | `segment(P, Q)` | a straight segment | spatial |
+| `polyline(P, Q, ...)`, `polygon(P, Q, ...)` | an open or closed path through points | spatial |
 | `trace(P every Δ)` | the path of a point up to the instant shown | spatial |
 | `function_graph(f)` | the graph of a function `Real -> Real` over the plot's `x` range | plot |
 | `series_plot(e every Δ)` | a value against elapsed time | plot with a time `x` axis |
@@ -37,6 +38,9 @@ presentation Name for Model {
 | `label(e)` | a value as text | any |
 | `formula(f [, live: true])` | the definition of a derived binding or function, typeset | any |
 | `formula("R", expression [, live: true])` | a labeled expression, `R = ...`, typeset | any |
+| `equation(name [, live: true])` | a model equation, typeset, with its symbols' current values | any |
+| `table(e every Δ)` | rows of sampled values; a tuple `e` gives one column per component | any |
+| `button(E [, label: "..."])` | requests the `on request` event `E` when pressed | any |
 | `slider(p, range: [a, b] [, step: s])` | a control for a parameter | any |
 | `number_input(p [, range: [a, b]])` | a typed value for a parameter | any |
 | `toggle(p)` | a switch for a Boolean parameter | any |

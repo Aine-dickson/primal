@@ -103,7 +103,7 @@ Acceptance (`prismal-web/tests/format.rs`): every reference program and every pr
 
 `cargo run -p prismal-present --example cases -- FILE...` runs the cases of a program headless and reports every expectation (for a lesson, also the beat timings).
 
-Representations implemented: `marker`, `arrow`, `segment`, `trace`, `function_graph`, `series_plot`, `label`, `formula`, `slider`, `number_input`, `toggle`, `axes`, `grid`. Others are reported as PK-E06, never dropped.
+Representations implemented: `marker`, `arrow`, `segment`, `polyline`, `polygon`, `trace`, `function_graph`, `series_plot`, `label`, `formula`, `equation`, `table`, `slider`, `number_input`, `toggle`, `button`, `axes`, `grid`. A representation argument that names a model event or equation lowers to an `element` argument (04-ir section 7): `button(drop)` requests an `on request` event (D-027) at the instant shown, `equation(name)` typesets a model equation with its symbols' values. Timeline actions: all of PK-9.2 except `animate`, `camera`, `bind`, `release`, `reveal`, `wait_for_learner`; `hide` stops showing a named representation. Others are reported as PK-E06, never dropped.
 
 An interactive session has a display clock (RC section 12): its run is computed to the configuration's end, `seek` chooses the instant shown, and the learner's actions take effect at that instant (RC-11.2), so the trajectory after it is recomputed and the one before it is unchanged; `reset` starts a new run with an empty log. A static model has one instant (RC-12.4).
 
@@ -192,9 +192,9 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
 | Declared functions (`fn`), contained objects (`object`), enumeration types and cases: no IR form or no spelling yet | MK-10.3, MK section 7, 04-ir section 3 |
-| Representations `table`, `polyline`, `polygon`, `group`, `equation`, `button`; sampled sources `over I` | PK-6.3 |
+| Representation `group`; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3 |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
-| Timeline actions `animate`, `camera`, `bind`, `release`, `hide`, `reveal`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
+| Timeline actions `animate`, `camera`, `bind`, `release`, `reveal`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
 | Renderers: video and image output (the web player renders interactively) | PK section 12 |
 | Inputs (`input` bindings, `on input`) | RC section 11.2 |
@@ -213,3 +213,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 dynamic interactive sessions (display clock, interventions at the instant shown, reset); `trace` and `series_plot` with sampled sources; plot axes with dimensions; lab presentations for RP-01, RP-03, RP-04 and RP-05, played in the web player.
 - 2026-09-30 language guide (`docs/guide/`) checked by `prismal-web/tests/guide.rs`; D-041; `constant` guarded against expressions that read state.
 - 2026-09-30 formatter and identities across edits (D-036); one-sided intervals lower as `where` does.
+- 2026-09-30 `button`, `equation`, `table`, `polyline`, `polygon`; `hide`; a series observation compared with a list (`drops == []`).

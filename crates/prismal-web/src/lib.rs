@@ -392,6 +392,14 @@ impl Player {
         }
     }
 
+    /// Presses a button: requests its event at the instant shown (D-027).
+    pub fn press(&mut self, rep: &str) -> Json {
+        match self.interactive() {
+            Ok(i) => Self::outcome(i.press(rep)),
+            Err(e) => json!({ "ok": false, "message": e }),
+        }
+    }
+
     pub fn pointer_down(&mut self, rep: &str, part: Option<&str>) -> Json {
         match self.interactive() {
             Ok(i) => Self::outcome(i.pointer_down(rep, part)),
@@ -539,6 +547,7 @@ fn enrich(r: &mut Json, cm: &CModel, compiled: &[&CRep]) {
     match &c.kind {
         CKind::Marker { label, .. } | CKind::Arrow { label, .. } | CKind::Graph { label, .. } => r["label"] = json!(label),
         CKind::Formula { lhs, rhs, params, .. } => r["mathml"] = json!(mathml::formula(lhs, rhs, cm, params)),
+        CKind::Equation { lhs, rhs, .. } => r["mathml"] = json!(mathml::equation(lhs, rhs, cm)),
         CKind::Control { binding, .. } => {
             r["symbol"] = json!(symbol(cm, binding));
             if let Some(u) = cm.ir.binding(binding).and_then(|b| b.display.unit.as_ref()).and_then(|u| prismal_ir::Unit::parse(u).ok()) {

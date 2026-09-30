@@ -23,7 +23,7 @@ pub const RESERVED: &[&str] = &[
 pub const CONTEXTUAL: &[&str] = &[
     "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "propose", "permit",
     "timeline", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
-    "explore", "limit", "keep", "fallback", "narrate", "highlight", "animate", "camera", "bind", "release", "config",
+    "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "animate", "camera", "bind", "release", "config",
     "expect", "exactly", "rel", "of", "with", "learner", "continue",
 ];
 
@@ -1128,7 +1128,9 @@ impl<'a> Parser<'a> {
 
     fn rep(&mut self) -> P<Rep> {
         let start = self.span();
-        let kind = self.name("a representation")?;
+        // `equation` is reserved in models and is also a representation kind (PK-6.3); in a
+        // representation's position it is that kind, never a name.
+        let kind = if self.is_word("equation") { self.any_name("a representation")? } else { self.name("a representation")? };
         let args = if self.is_punct("(") { self.args()? } else { vec![] };
         let alias = if self.eat_word("as") { Some(self.name("a representation name")?) } else { None };
         let interactions = if self.is_punct("{") { self.block(|p| Self::one(p.interaction()))? } else { vec![] };
@@ -1199,6 +1201,9 @@ impl<'a> Parser<'a> {
         }
         if self.eat_word("highlight") {
             return Ok(Action::Highlight(self.name("a representation name")?));
+        }
+        if self.eat_word("hide") {
+            return Ok(Action::Hide(self.name("a representation name")?));
         }
         if self.eat_word("seek") {
             return Ok(Action::Seek(self.expr()?));

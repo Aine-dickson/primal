@@ -87,6 +87,14 @@ pub enum Shape {
     Control { control: String, binding: Id, value: f64, #[serde(skip_serializing_if = "Option::is_none")] min: Option<f64>, #[serde(skip_serializing_if = "Option::is_none")] max: Option<f64>, #[serde(skip_serializing_if = "Option::is_none")] step: Option<f64> },
     /// The source has no value at this instant (PK-3.3).
     Status { status: String },
+    /// A closed path through points.
+    Polygon { points: Vec<[f64; 2]> },
+    /// A model equation typeset from the IR (PK-6.5); `name` is the equation's name.
+    Equation { name: String, lhs: Expr, rhs: Expr, symbols: Vec<Symbol> },
+    /// A button that requests an event (D-027).
+    Button { event: Id, label: String },
+    /// Rows of values: the sample instant, then one column per component.
+    Table { columns: Vec<String>, rows: Vec<Vec<String>> },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -199,6 +207,10 @@ pub enum CKind {
     Label { value: CExpr, ty: Type, label: String },
     Formula { lhs: String, rhs: Expr, params: Vec<String>, refs: Vec<(Id, usize)>, live: bool },
     Control { control: String, binding: Id, idx: usize, min: Option<f64>, max: Option<f64>, step: Option<f64> },
+    Poly { points: Vec<CExpr>, closed: bool },
+    Equation { name: String, lhs: Expr, rhs: Expr, refs: Vec<(Id, usize)>, live: bool },
+    Button { event: Id, label: String },
+    Table { value: CExpr, tys: Vec<Type>, every: f64, columns: Vec<String> },
     Axes,
     Grid,
 }
@@ -398,6 +410,64 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
             };
             CKind::Control { control: rep.kind.clone(), binding: r#ref.clone(), idx, min, max, step }
         }
+        "polyline" | "polygon" => {
+            let ViewCtx::Spatial { space, .. } = ctx else { return Err(d("PK-E05", format!("a {} belongs in a spatial view", rep.kind))) };
+            let p = Type::Point { space: space.clone() };
+            let mut points = vec![];
+            for a in &rep.sources {
+                let Arg::Expr { expr } = a else { return Err(needs("points")) };
+                points.push(ce(expr, Some(&p))?.0);
+            }
+            if points.len() < 2 {
+                return Err(needs("at least two points"));
+            }
+            CKind::Poly { points, closed: rep.kind == "polygon" }
+        }
+        "equation" => {
+            let Some(Arg::Element { element }) = rep.sources.first() else { return Err(needs("the name of a model equation")) };
+            let q = cm.ir.equations.iter().find(|q| &q.id == element).ok_or_else(|| needs("the name of a model equation"))?;
+            let live = matches!(prop_expr(rep, "live"), Some(Expr::Bool { bool: true }));
+            let mut refs: Vec<(Id, usize)> = vec![];
+            for id in q.lhs.refs().into_iter().chain(q.rhs.refs()) {
+                if let Some(&i) = cm.index.get(&id) {
+                    if !refs.iter().any(|r| r.0 == id) && !matches!(cm.bindings[i].ty, Type::Function { .. }) {
+                        refs.push((id, i));
+                    }
+                }
+            }
+            CKind::Equation { name: q.name.clone(), lhs: q.lhs.clone(), rhs: q.rhs.clone(), refs, live }
+        }
+        "button" => {
+            let msg = "the name of an event declared `on request` (D-027)";
+            let Some(Arg::Element { element }) = rep.sources.first() else { return Err(needs(msg)) };
+            let Some(ev) = cm.ir.events.iter().find(|e| &e.id == element) else { return Err(needs(msg)) };
+            if !matches!(ev.trigger, prismal_ir::Trigger::Request) {
+                return Err(d("PK-E03", format!("`{}` is not declared `on request`, so no button can request it (D-027)", ev.name)));
+            }
+            let label = match rep.prop("label") {
+                Some(Arg::Text { text }) => text.clone(),
+                _ => ev.name.clone(),
+            };
+            CKind::Button { event: element.clone(), label }
+        }
+        "table" => {
+            let Some(Arg::Sampled { expr: e, every }) = rep.sources.first() else {
+                return Err(needs("a sampled source: `table((pos.x, pos.y) every 0.5 s)`"));
+            };
+            let dt = match compile_expr(cm, every, None) {
+                Ok((_, Type::Quantity { dim })) if dim == Dim::time() => number(cm, every).map_err(|m| d("PK-E02", m))?,
+                _ => return Err(d("PK-E04", "a sampling interval is a duration: `every 0.5 s`".into())),
+            };
+            if !(dt > 0.0) {
+                return Err(d("PK-E05", "a sampling interval is positive".into()));
+            }
+            let (c, t) = ce(e, None)?;
+            let (tys, columns) = match (&t, e) {
+                (Type::Tuple { items }, Expr::Tuple { tuple }) => (items.clone(), tuple.iter().map(|x| print(x, cm, &[])).collect()),
+                _ => (vec![t.clone()], vec![print(e, cm, &[])]),
+            };
+            CKind::Table { value: c, tys, every: dt, columns }
+        }
         "axes" => CKind::Axes,
         "grid" => CKind::Grid,
         other => return Err(d("PK-E06", format!("the representation kind `{other}` is not implemented by the prototype"))),
@@ -539,6 +609,53 @@ pub fn project(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], 
             };
             let text = format!("{control} for {} = {}{range}", symbol(cm, binding), fmt_binding(cm, *idx, &vals[*idx]));
             (Shape::Control { control: control.clone(), binding: binding.clone(), value: v, min: *min, max: *max, step: *step }, text)
+        }
+        CKind::Poly { points, closed } => {
+            let mut pts = vec![];
+            for p in points {
+                match eval(p) {
+                    Ok(v) => pts.push(ctx.to_view(&coords(&v))),
+                    Err(s) => {
+                        let (sh, tx) = status(s);
+                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None };
+                    }
+                }
+            }
+            let text = format!("{} through {} points", r.rep.kind, pts.len());
+            (if *closed { Shape::Polygon { points: pts } } else { Shape::Polyline { points: pts } }, text)
+        }
+        CKind::Equation { name, lhs, rhs, refs, live } => {
+            let symbols: Vec<Symbol> = refs
+                .iter()
+                .map(|(id, i)| Symbol { binding: id.clone(), symbol: symbol(cm, id), value: if *live { Some(crate::text::fmt_binding(cm, *i, &vals[*i])) } else { None } })
+                .collect();
+            let mut text = format!("equation {name}: {} = {}", print(lhs, cm, &[]), print(rhs, cm, &[]));
+            let values: Vec<String> = symbols.iter().filter_map(|s| s.value.as_ref().map(|v| format!("{} = {v}", s.symbol))).collect();
+            if !values.is_empty() {
+                text = format!("{text}, where {}", values.join(", "));
+            }
+            (Shape::Equation { name: name.clone(), lhs: lhs.clone(), rhs: rhs.clone(), symbols }, text)
+        }
+        CKind::Button { event, label } => {
+            let name = cm.ir.events.iter().find(|e| &e.id == event).map(|e| e.name.clone()).unwrap_or_default();
+            (Shape::Button { event: event.clone(), label: label.clone() }, format!("button {label}: requests {name}"))
+        }
+        CKind::Table { value, tys, every, columns } => {
+            let t0 = run.config.t0;
+            let mut rows = vec![];
+            for s in samples(run, t, *every) {
+                let Ok(v) = run.eval_state(value, &run.state_at(s), s) else { continue };
+                let mut row = vec![fmt_num(s - t0)];
+                match (&v, tys.len()) {
+                    (Value::Tuple(items), n) if n > 1 => row.extend(items.iter().zip(tys).map(|(x, ty)| fmt_value(x, ty))),
+                    _ => row.push(fmt_value(&v, &tys[0])),
+                }
+                rows.push(row);
+            }
+            let mut cols = vec!["t (s)".to_string()];
+            cols.extend(columns.iter().cloned());
+            let text = format!("table of {} with {} rows, every {} s", columns.join(", "), rows.len(), fmt_num(*every));
+            (Shape::Table { columns: cols, rows }, text)
         }
         CKind::Axes => (Shape::Axes, "axes".into()),
         CKind::Grid => (Shape::Grid, "grid".into()),
