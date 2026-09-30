@@ -149,6 +149,8 @@ impl ModelBuilder {
                 events: vec![],
                 equations: vec![],
                 constraints: vec![],
+                enums: vec![],
+                functions: vec![],
                 notes: vec![],
             },
             flow_count: 0,

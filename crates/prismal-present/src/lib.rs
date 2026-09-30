@@ -89,13 +89,19 @@ impl Program {
 /// Evaluates an expression that reads no state (a literal, a time such as `t0 + 5 s`).
 /// Instants are seconds with `t0 = 0`.
 pub fn constant(cm: &CModel, e: &Expr) -> Result<Value, String> {
+    constant_as(cm, e, None)
+}
+
+/// [`constant`], with the type the expression is expected to have (an enumeration case
+/// takes its enumeration from it, D-049).
+pub fn constant_as(cm: &CModel, e: &Expr, expected: Option<&prismal_ir::Type>) -> Result<Value, String> {
     let mut reads = false;
     e.walk(&mut |x| reads |= matches!(x, Expr::Ref { .. } | Expr::Der { .. }));
     if reads {
         return Err("the expression reads bindings of the model; it is not a constant".into());
     }
-    let (c, _) = compile_expr(cm, e, None).map_err(|d| d.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("; "))?;
-    c.eval(&Ctx { vals: &[], der: None, t: 0.0, t0: 0.0, args: &[] }).map_err(|s| s.cause)
+    let (c, _) = compile_expr(cm, e, expected).map_err(|d| d.iter().map(|x| x.to_string()).collect::<Vec<_>>().join("; "))?;
+    c.eval(&Ctx { vals: &cm.constant_values(), der: None, t: 0.0, t0: 0.0, args: &[] }).map_err(|s| s.cause)
 }
 
 /// A constant number (a quantity in coherent SI units, or an instant in seconds).

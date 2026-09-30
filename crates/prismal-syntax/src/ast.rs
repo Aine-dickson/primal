@@ -46,6 +46,7 @@ pub struct ModelDecl {
 pub enum Member {
     Decl(Decl),
     Fn(FnDecl),
+    Enum(EnumDecl),
     Flow(FlowStmt),
     Process(ProcessDecl),
     Event(EventDecl),
@@ -85,6 +86,16 @@ pub struct FnDecl {
     pub params: Vec<(Name, TypeExpr)>,
     pub result: TypeExpr,
     pub body: Expr,
+    pub notes: Vec<String>,
+    pub span: Span,
+}
+
+/// `enum Phase { rising, falling, resting }` (MK-2.2, D-049).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnumDecl {
+    pub name: Name,
+    pub cases: Vec<Name>,
+    pub notes: Vec<String>,
     pub span: Span,
 }
 
@@ -288,6 +299,8 @@ pub enum ExprKind {
     On(Box<Expr>, Name, Option<u32>),
     /// `start of b3`, `end of b8` (timeline expectations).
     BeatTime { start: bool, beat: Name },
+    /// `match e { case => value, ... }` (MK-10.2, D-049).
+    Match(Box<Expr>, Vec<(Name, Expr)>),
 }
 
 // ---------------------------------------------------------------- presentations

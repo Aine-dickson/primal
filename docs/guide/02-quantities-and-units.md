@@ -153,6 +153,69 @@ model Wrong {
 }
 ```
 
+## Functions
+
+A formula used more than once can be declared as a **function** (MK-10.3): typed parameters, a result type and a body.
+
+```text
+model Energies {
+  const { g: Acceleration = 9.81 m/s^2 }
+  param {
+    m: Mass     = 2 kg
+    v: Velocity = 3 m/s
+    h: Length   = 5 m
+  }
+  derived {
+    moving:  Energy = kinetic(m, v)
+    raised:  Energy = potential(m, h)
+    total:   Energy = kinetic(m, v) + potential(m, h)
+    reached: Length = height_for(v)
+  }
+  /// Kinetic energy of a mass moving at a speed.
+  fn kinetic(mass: Mass, speed: Velocity): Energy = 0.5 * mass * speed^2
+  fn potential(mass: Mass, height: Length): Energy = mass * g * height
+  /// The height at which all kinetic energy has become potential energy.
+  fn height_for(speed: Velocity): Length = speed^2 / (2 * g)
+}
+
+presentation EnergyChecks for Energies {
+  observe {
+    k    = moving  live
+    p    = raised  live
+    e    = total   live
+    peak = reached live
+  }
+}
+```
+
+```cases
+run energies of Energies with EnergyChecks {
+  expect {
+    k    == 9 J within 1e-9 J
+    p    == 98.1 J within 1e-9 J
+    e    == 107.1 J within 1e-9 J
+    peak == 0.458715596330275 m within 1e-9 m
+  }
+}
+```
+
+- A function is checked like everything else: each argument must have its parameter's type (`kinetic(v, m)` is `MK-E01`), and the body must have the result type.
+- A function is **closed**: its body reads only its parameters, constants (`g` here) and other functions. What it needs from the model is passed in as an argument, as `m` and `v` are. This keeps a function's meaning independent of when it is called.
+- Functions may call other functions, but not themselves, directly or through others (`MK-E23`).
+- `formula(kinetic)` in a presentation shows the definition, `kinetic(mass, speed) = 0.5 mass speed²`.
+
+A function that reads a parameter instead of taking it as an argument:
+
+```error
+// error: MK-E18
+model Wrong {
+  param { m: Mass = 2 kg }
+  fn kinetic(speed: Velocity): Energy = 0.5 * m * speed^2
+}
+```
+
+The compiler reports that `kinetic` reads the parameter `m`: write `fn kinetic(mass: Mass, speed: Velocity)` and call `kinetic(m, v)`.
+
 ## Exercises
 
 1. Add `fuel_rate: Quantity<M/L> = 0.06 kg/km` to `Trip` and a derived `fuel: Mass = fuel_rate * distance`. Check it with a case (`7.2 kg` for the default trip).

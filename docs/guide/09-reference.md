@@ -20,6 +20,8 @@ Every form of the working syntax on one page, with the chapter that introduces i
 | `state { x: T = e [intervenable] }` | continuous state, with its initial value | 4 |
 | `discrete { x: T = e }` | discrete state: changed only by events | 5 |
 | `derived { x: T = e; f(x: A): B = e }` | derived values and functions, always current | 1 |
+| `fn f(x: A, y: B): R = e` | a declared function: reads only its parameters, constants and other functions | 2 |
+| `enum Phase { a, b, c }` | an enumeration: a type whose values are its cases | 5 |
 | `flow { der(x) = e; der(y) += e }` | rate of change: one definition, or summed contributions | 4 |
 | `process Name { flow ...; event ... }` | a named group of flows and events | 4 |
 | `event E on trigger [if c] [{ ops }] [zeno settle { ops } \| zeno stop]` | an event | 5 |
@@ -47,6 +49,8 @@ Each block keyword also has a one-line form: `param g: Acceleration = 9.81 m/s^2
 | `v.x`, `\|v\|` | component, norm | 3 |
 | `[a, b]`, `(a, b)`, `[a, b)`, `(a, inf)` | intervals | 1 |
 | `if c then a else b` | conditional | 4 |
+| `match p { a => x, b => y }` | a value per case of an enumeration, every case once | 5 |
+| `a`, `Phase.a` | a case of an enumeration | 5 |
 | `t`, `t0`, `elapsed` | current time, start, time since start | 4 |
 | `sin cos tan sqrt exp log abs min max atan2` | functions | 2 |
 
@@ -85,7 +89,7 @@ run Name of Model with Presentation {
 
 ## Words
 
-**Reserved** (never names): `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request`.
+**Reserved** (never names): `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request enum match`.
 
 **Contextual** (keywords only where expected, names elsewhere): `for view panel observe live over microstep show as drag propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight animate camera bind release config expect exactly rel of with learner continue`.
 
@@ -112,10 +116,13 @@ run Name of Model with Presentation {
 | MK-E14 | algebraic loop |
 | MK-E15 | cycle among initial definitions |
 | MK-E16 | repeating crossing event without a Zeno policy |
+| MK-E17 | `match` missing a case, or with a case twice |
+| MK-E18 | declared function reads something other than its parameters, constants and functions |
 | MK-E19 | two `set` operations on one target in one handler |
 | MK-E20 | stored function value that reads bindings |
 | MK-E21 | tuple used as a vector where no vector is expected |
-| MK-E22 | target defined twice |
+| MK-E22 | target or case defined twice |
+| MK-E23 | declared function calls itself |
 
 **Presentation** (`PK`): E01 broken reference, E02 expression does not check (the kernel's message is quoted), E03 control or action targets something the learner may not change, E04 missing or wrong scale or axis dimension, E05 representation unsuited to its sources or view, E06 representation kind not implemented.
 

@@ -62,7 +62,7 @@ bad.prismal:4:22: MK-E01: type or dimension mismatch: found Quantity<L T^-1>, ex
 | SX-E03 | unknown name, event, space or component |
 | SX-E04 | unknown type or dimension |
 | SX-E05 | unknown unit (including `px` in a model) |
-| SX-E06 | construct not in the v0 IR (`fn`, `object`, collections, payloads) |
+| SX-E06 | construct not in the v0 IR (`object`, collections, payloads) |
 | SX-E07 | reserved word used as a name (D-040) |
 | SX-E08 | form not allowed here (presentation forms in a model, `origin` without a default space, a range on a non-parameter, arity) |
 | SX-E09 | duplicate declaration (spaces, models, processes, events, equations, constraints; duplicate bindings are the kernel's MK-E22) |
@@ -223,6 +223,9 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - **Native and WebAssembly runs differ in the last digits.** Comparing the renderers, RP-08's ball at rest after landing is at `y = -7.06e-10 m` natively and `-1.06e-10 m` in the browser: the elementary functions of the two builds round differently. This is the tolerance-equivalence across platforms that D-015 allows; the comparison checks numbers in text alternatives to 1e-6.
 - **Italic correction.** Superscripts and closing parentheses touched the slanted top of italic letters in formula layouts (`v²`, `f(x)`). An italic run now takes 0.06 em more room after it (`math.rs`); renderers draw layouts with serif faces that have true italics, whose widths the layout approximates.
 - **Input belonged to each host.** The host interface took only semantic inputs, so each host had to hit-test, map screen positions to view coordinates and keep focus, and the web player's framing (extent, growth, camera, zoom and pan) had to be copied into the SVG renderer. The host now captures and forwards input and the engine interprets it (D-047); both renderers draw with the viewport in the frame. A session's framing now grows to fit each frame on its own, where the web player's used to keep the growth of earlier frames, so the same instant always gives the same frame.
+- **Constants in constant expressions.** Case parameters and expected values were evaluated with no binding values at all, so a declared function that reads a constant (`apex(10 m/s)` reading `g`) could not be called there. Constant expressions now see the model's constants (`CModel::constant_values`).
+- **Expected cases need a type.** `(phase on top) == sinking` compiled the expected side with no expected type, and a case has none of its own; an expected value now takes the enumeration of its subject.
+- **Products of words.** `0.5 * mass * speed^2` was typeset `0.5massspeed²`; a thin space now separates a name of more than one letter from its neighbours in a product.
 - **`emit` semantics.** A first version made the emitted event itself due; MK-15.10 makes the events triggered `on(E)` due. Fixed and covered by a unit test with the cascade limit (RC-8.3).
 
 ## Not implemented
@@ -230,7 +233,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Item | Where specified |
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
-| Declared functions (`fn`), contained objects (`object`), enumeration types and cases: no IR form or no spelling yet | MK-10.3, MK section 7, 04-ir section 3 |
+| Contained objects (`object`), payloads of enumeration cases, function libraries shared between models | MK section 7, MK section 2, R-55 |
 | Drags on members of a group; `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
@@ -257,5 +260,6 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 `group` (D-043), with members placed in model space; frame tests of the animations; the web player's animations checked in headless Edge.
 - 2026-09-30 host interface (`prismal-host`, D-044, D-045): the web player's logic moved into an engine any host embeds; sessions and playbacks own their model; the JSON protocol exported to JavaScript.
 - 2026-09-30 formulas typeset for every medium (D-046): math box tree and layout in frame descriptions; labels, drag parts and control symbols and units in the core frame; MathML only in the browser binding.
+- 2026-09-30 declared functions (D-048) and enumerations with `match` (D-049): IR, checker (MK-E17, MK-E18, MK-E23), syntax, formatter, identities, text and formula output; guide sections in chapters 2 and 5; `prismal-syntax/tests/functions_enums.rs`.
 - 2026-09-30 raw input and viewports (D-047): the host captures, the engine targets, pans, zooms and keeps focus; frames carry viewports; the web player forwards raw events, checked with real events in headless Edge (`web/check-input.mjs`).
 - 2026-09-30 SVG renderer (`prismal-svg`): frames as standalone SVG documents and image sequences, compared with the web player's drawing in a browser; italic correction in formula layouts; the player's address selects a presentation and instant.

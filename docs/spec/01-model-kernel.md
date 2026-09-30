@@ -110,6 +110,7 @@ model Ball in Plane {
 
 - **MK-2.1** Types describe values. A type is not a value, identity, role, state or machine representation (R-48).
 - **MK-2.2** Declared records, enumerations, object types and relation types are nominal: two declarations with the same structure are distinct types. A type alias is not a new nominal type (R-48, R-49).
+- **MK-2.2a** In v0 an enumeration is declared in a model (`enum Phase { climbing, sinking, landed }`) and is known by its identity (D-049). Its cases are distinct names in the namespace of the model's bindings and functions. A case is typed by its context: the enumeration expected where it is written. Values of an enumeration are compared only with `==` and `!=`; they have no order and no arithmetic. Payloads of cases (section 2 table) are deferred.
 - **MK-2.3** A capability (interface) is a named set of operations and bindings. A nominal type satisfies a capability only by explicit declaration (R-49). A generic parameter may be constrained by capabilities. In v0 the only generic parameters the kernel itself requires are spaces and dimensions (sections 3 and 4); general user generics follow the same rule.
 - **MK-2.4** Value restrictions such as `mass > 0 kg` are constraints (section 12), not refined types (R-50).
 - **MK-2.5** `Option<T>` expresses a value that may legitimately be absent. Absence is a value. It is distinct from every status of section 5 (R-51). There is no `null`.
@@ -317,6 +318,7 @@ The first slice (D-001) exercises neither dynamic collections nor relations. The
 - **MK-10.1** An **expression** is a pure, deterministic term: literals, binding reads, operators, function applications, conditionals, collection expressions, and status handling (MK-5.5). Evaluating an expression never changes state (R-17).
 - **MK-10.2** Conditionals are total: every `if` has an `else` branch, and `match` on an enumeration covers every alternative.
 - **MK-10.3** A **declared function** has typed parameters, a result type and a body expression. Functions are values (`A -> B`). A declared function is pure and cannot read bindings other than its parameters and constants; a declared function that needs model state takes it as an argument (D-029).
+- **MK-10.3a** In v0 a declared function is declared in a model and is known by its identity (D-048). Its body may read its parameters, constants and other declared functions; reading any other binding, the time (`t`, `t0`, `elapsed`) or a derivative is MK-E18. A function calls no function that calls it back, directly or through others (MK-E23). A declared function is a value of function type (`A -> B`) and is applied like a derived function value (MK-10.7). A `match` (MK-10.2) has exactly one arm per case of its enumeration; a missing or repeated case is MK-E17.
 - **MK-10.4** Expressions do not draw random numbers. Sampling a distribution happens only in stochastic processes and operations with a declared random stream (R-10, R-30, D-013; deferred, section 21).
 - **MK-10.5** Evaluation that does not terminate within the runtime's evaluation limit yields `invalid` (runtime contract).
 - **MK-10.6** Every expression keeps its symbolic structure in the IR. Its evaluated value is separate from it (R-48: expression is not evaluated value). This lets equations and definitions be displayed, differentiated symbolically by libraries, and consumed by a later acausal solver (D-007).
@@ -554,7 +556,8 @@ The kernel defines these static errors. They are detected before execution, on t
 | MK-E19 | Two `set` operations on overlapping targets in one handler | MK-16.4 |
 | MK-E20 | Stored binding of function type holds a function that reads bindings | MK-10.7 |
 | MK-E21 | Tuple used as a vector with no expected vector type | MK-4.8 |
-| MK-E22 | Target defined twice: two defining flows for one `der(x)`, or two definitions of one binding | MK-14.7, MK-6.1 |
+| MK-E22 | Target defined twice: two defining flows for one `der(x)`, or two definitions of one binding; a case declared twice | MK-14.7, MK-6.1, MK-2.2a |
+| MK-E23 | Declared function that calls itself, directly or through other functions | MK-10.3a |
 
 Conflicts between different events can only be detected at run time.
 

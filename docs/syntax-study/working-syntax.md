@@ -19,7 +19,8 @@ Candidate A amended as accepted in D-028: A's keyword-led statements, with group
 | `state { x: T = e ... }` | continuous state with initial definitions |
 | `discrete { x: T = e ... }` | discrete state |
 | `derived { x: T = e; f(x: A): B = e ... }` | derived bindings, including function-valued ones |
-| `fn f(x: A): B = e` | pure function (MK-10.3) |
+| `enum Phase { a, b, c }` | enumeration (MK-2.2a, D-049); cases by name (`a`) or qualified (`Phase.a`) |
+| `fn f(x: A): B = e` | declared function (MK-10.3a, D-048): reads only its parameters, constants and other functions |
 | `flow { der(x) = e; der(y) += e ... }` | defining flows and contributions (MK-14.7) |
 | `process P { flow ...; event ... }` | named process (MK-14.1), optional |
 | `event E on <trigger> [if cond] [{ ops }] [zeno stop \| zeno settle { ops }]` | event (MK-15) |
@@ -31,6 +32,8 @@ Every block keyword also has a one-line form for a single declaration (`param g:
 **Intervals** are the one range notation: `[a, b]`, `(a, b)`, `[a, b)`, `(a, b]`, with `inf` for an unbounded end. `x in [a, b)` is the constraint `a <= x < b`; an unbounded end gives a one-sided comparison (`in [0, inf)` is `x >= 0`, the same as `where x >= 0`). After a declaration's value, `in` starts the declaration's range; a membership test used as a value is written in parentheses: `ok: Boolean = (x in [0, 1))`. The formatter prints a parameter's `reject` constraint as an interval when it bounds only that parameter from both sides, as `where` otherwise.
 
 Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit deg`.
+
+Expressions add `match e { a => x, b => y }` (one arm per case, arms separated by commas or lines) to the shared sublanguage.
 
 Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E`, `on start`, `on input(i)`, `on request [(payload: T)]`. Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`.
 
@@ -57,17 +60,17 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 
 ### 1.4 Canonical printing (C4)
 
-The formatter prints, from the IR: declarations grouped in blocks by role, in the order kind (const, param, input, state, discrete, derived), then flows, processes, events, equations, constraints; parameter ranges as intervals when two-sided on that parameter alone; `run ... until` when a beat holds exactly those two actions; representations inside their views. Everything else prints in its only form. Author notes print as `///` comments before their element; other comments are not in the IR and are not printed (D-036). Implemented by `prismal_syntax::format`; `cargo run -p prismal-syntax --example fmt -- FILE` prints a program in this form.
+The formatter prints, from the IR: enumerations, then declarations grouped in blocks by role, in the order kind (const, param, input, state, discrete, derived), then functions, flows, processes, events, equations, constraints; parameter ranges as intervals when two-sided on that parameter alone; `run ... until` when a beat holds exactly those two actions; representations inside their views. Everything else prints in its only form. Author notes print as `///` comments before their element; other comments are not in the IR and are not printed (D-036). Implemented by `prismal_syntax::format`; `cargo run -p prismal-syntax --example fmt -- FILE` prints a program in this form.
 
 ### 1.5 Lexical rules and reserved words (D-035)
 
 - **Source text** is UTF-8. Identifiers are a letter or `_` followed by letters, digits or `_`; letters include Unicode letters (`θ`, `ω`, `θ0`). Identifiers are case-sensitive.
 - **Numbers:** `12`, `0.5`, `1e-9`, `2.5e3`. A number directly followed by `π` or `pi` (`2π`) is a product; any other name directly after a number is an error (write `2 * x`). A minus sign written on a number is part of the literal (`-5`).
 - **Units** follow a number and are written with unit symbols, `*`, `/` and integer powers: `9.81 m/s^2`, `4 N/m`, `0.01 /m`, `45 deg`. The unit ends at the first token that cannot continue it. A unit has no spaces inside it, so a space before `/`, `*` or `^` ends it: `0.01 /m` is a unit, while `4 / m` divides by the binding `m`. Unit symbols are recognized only directly after a number; elsewhere `m`, `s` and `g` are ordinary names.
-- **Operators** are ASCII: `+ - * / ^ == != < <= > >= = += -> .. | . , : ;` and the words `and`, `or`, `not`, `if`, `then`, `else`, `otherwise`. `|v|` is the norm.
+- **Operators** are ASCII: `+ - * / ^ == != < <= > >= = += -> => .. | . , : ;` and the words `and`, `or`, `not`, `if`, `then`, `else`, `otherwise`. `|v|` is the norm.
 - **Comments:** `//` to end of line. `///` is a documentation comment; together with an ordinary comment block directly before a declaration it becomes that element's author notes in the IR (D-036).
 - **Statements** end at a newline or `;`. Several statements on one line are separated by `;`. A line ending in an operator (other than a closing `|`), `,`, an open bracket or one of the operator words continues on the next line; so does every line inside `( )` or `[ ]`.
-- **Reserved words** (D-040), never names: `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request`.
+- **Reserved words** (D-040), never names: `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request enum match`.
 - **Representation kinds** are read where a representation is expected; there `equation`, reserved elsewhere, is the representation kind of PK-6.3.
 - **Contextual keywords** (D-040), recognized only where such a word is expected and ordinary names elsewhere (`process drag`, `view scene`): `for view panel observe live over microstep show as drag propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue`.
 - **Built-in names** (not reserved, but predefined): `t`, `t0`, `elapsed`, `origin`, `der`, `π` and `pi` (D-039), `inf` (only as an interval bound), the SI units and named dimensions of MK section 3. Named dimensions: `Length`, `Mass`, `Time`, `Current`, `Amount`, `Area`, `Volume`, `Velocity`, `Acceleration`, `Frequency`, `Momentum`, `Force`, `Energy`, `Power`, `Pressure`, and `Angle` (dimensionless, D-021); base symbols `L M T I Θ N J` inside `Quantity<...>`.
@@ -516,6 +519,7 @@ run A_keep of Projectile with ProjectileLesson {
 
 - 2026-09-29 written after D-028 was accepted with amendment.
 - 2026-09-30 zero vectors written `0` (D-030); `sequence` dropped where D-033 orders run-directing actions; reference programs converted.
+- 2026-09-30 `enum`, `fn` and `match` implemented (D-048, D-049); `enum` and `match` reserved; `=>` added.
 - 2026-09-30 implemented by the text parser. Lexical rules made precise (units without spaces, names after numbers, statement separators, `in` after a declaration's value, `inf`); reserved words split into reserved words and contextual keywords (D-040); `π` kept by name (D-039); RP-07 observation `state` renamed `values`.
 - 2026-09-30 sampled sources (`expr every Δ`) and plot axes with dimensions, from the web player.
 - 2026-09-30 canonical printing implemented (`prismal-syntax/src/format.rs`); a one-sided interval lowers as the comparison `where` writes (`x >= lo`), so both spellings give one IR.

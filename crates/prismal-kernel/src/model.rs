@@ -111,6 +111,8 @@ pub struct CModel {
     pub events: Vec<CEvent>,
     pub equations: Vec<CEquation>,
     pub constraints: Vec<CConstraint>,
+    /// Declared functions, compiled, with their types (D-048).
+    pub functions: std::collections::HashMap<Id, (std::rc::Rc<crate::eval::CExpr>, Type)>,
     /// MK-14.15: no flows and no events other than requests.
     pub is_static: bool,
 }
@@ -122,6 +124,24 @@ impl CModel {
 
     pub fn idx(&self, id: &str) -> usize {
         *self.index.get(id).unwrap_or_else(|| panic!("unknown binding {id}"))
+    }
+
+    /// Values for evaluating an expression that reads no state: the constants, which a
+    /// declared function may read (MK-10.3), and `NaN` for every other binding.
+    pub fn constant_values(&self) -> Vec<Value> {
+        let mut vals = vec![Value::Num(f64::NAN); self.bindings.len()];
+        for &i in &self.init_order {
+            let b = &self.bindings[i];
+            if b.role != Role::Constant {
+                continue;
+            }
+            if let Some(e) = &b.init {
+                if let Ok(v) = e.eval(&Ctx { vals: &vals, der: None, t: 0.0, t0: 0.0, args: &[] }) {
+                    vals[i] = v;
+                }
+            }
+        }
+        vals
     }
 
     pub fn event_idx(&self, id: &str) -> usize {

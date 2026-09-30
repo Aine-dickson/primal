@@ -181,6 +181,8 @@ pub enum CExpr {
     Comp(Box<CExpr>, usize),
     Lambda(Rc<CExpr>),
     Otherwise(Box<CExpr>, Box<CExpr>),
+    /// The value of the arm of the scrutinee's case, arms in case order (D-049).
+    Match(Box<CExpr>, Vec<CExpr>),
 }
 
 /// The environment of an evaluation.
@@ -314,6 +316,10 @@ impl CExpr {
             CExpr::Otherwise(e, d) => match e.eval(c) {
                 Ok(v) => Ok(v),
                 Err(_) => d.eval(c),
+            },
+            CExpr::Match(e, arms) => match e.eval(c)? {
+                Case(i) => arms.get(i as usize).ok_or_else(|| Status::invalid(format!("no arm for case {i}")))?.eval(c),
+                v => Err(Status::invalid(format!("{v} is not a case"))),
             },
         }
     }

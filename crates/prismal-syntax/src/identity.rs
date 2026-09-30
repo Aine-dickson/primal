@@ -100,6 +100,8 @@ fn match_ids(new: &Document, prev: &Document) -> HashMap<Id, Id> {
         mt.pair(&nm.events, &pm.events, |e| e.name.clone(), |e| &e.id);
         mt.pair(&nm.equations, &pm.equations, |q| q.name.clone(), |q| &q.id);
         mt.pair(&nm.constraints, &pm.constraints, |c| c.name.clone(), |c| &c.id);
+        mt.pair(&nm.enums, &pm.enums, |e| e.name.clone(), |e| &e.id);
+        mt.pair(&nm.functions, &pm.functions, |f| f.name.clone(), |f| &f.id);
         let (nk, pk) = (flow_keys(nm), flow_keys(pm));
         for (i, f) in nm.flows.iter().enumerate() {
             if let Some(j) = pk.iter().position(|k| *k == nk[i]) {
@@ -188,7 +190,7 @@ fn beat_reps(actions: &[Action]) -> Vec<Rep> {
 
 /// Keys whose string values (or lists of strings) are identities.
 const ID_KEYS: &[&str] =
-    &["id", "ref", "der", "origin", "space", "target", "binding", "event", "process", "attached_to", "default_space", "model", "presentation", "observation", "beat", "element", "view", "keep"];
+    &["id", "ref", "der", "origin", "space", "target", "binding", "event", "process", "attached_to", "default_space", "model", "presentation", "observation", "beat", "element", "view", "keep", "fn", "enum"];
 
 fn remap(v: &mut Json, map: &HashMap<Id, Id>) {
     match v {
@@ -254,6 +256,8 @@ fn reorder(doc: &mut Document, prev: &Document) {
         order(&mut m.events, &ids(&p.events, |b| &b.id), |b| &b.id);
         order(&mut m.equations, &ids(&p.equations, |b| &b.id), |b| &b.id);
         order(&mut m.constraints, &ids(&p.constraints, |b| &b.id), |b| &b.id);
+        order(&mut m.enums, &ids(&p.enums, |b| &b.id), |b| &b.id);
+        order(&mut m.functions, &ids(&p.functions, |b| &b.id), |b| &b.id);
     }
     order(&mut doc.presentations, &ids(&prev.presentations, |p| &p.id), |p| &p.id);
     for pr in &mut doc.presentations {
@@ -333,7 +337,7 @@ pub fn rename(doc: &Document, id: &str, new_name: &str) -> Result<Document, Stri
             m.name = new_name.into();
             return Ok(d);
         }
-        let taken: Vec<&String> = m.bindings.iter().map(|b| &b.name).chain(m.events.iter().map(|e| &e.name)).collect();
+        let taken: Vec<&String> = m.bindings.iter().map(|b| &b.name).chain(m.events.iter().map(|e| &e.name)).chain(m.functions.iter().map(|f| &f.name)).collect();
         let taken_clash = taken.iter().any(|n| *n == new_name);
         if let Some(b) = m.bindings.iter_mut().find(|b| b.id == id) {
             if taken_clash {
@@ -348,6 +352,20 @@ pub fn rename(doc: &Document, id: &str, new_name: &str) -> Result<Document, Stri
         if let Some(e) = m.events.iter_mut().find(|e| e.id == id) {
             if taken_clash {
                 return Err(format!("`{new_name}` is already declared in model `{}`", m.name));
+            }
+            e.name = new_name.into();
+            return Ok(d);
+        }
+        if let Some(f) = m.functions.iter_mut().find(|f| f.id == id) {
+            if taken_clash {
+                return Err(format!("`{new_name}` is already declared in model `{}`", m.name));
+            }
+            f.name = new_name.into();
+            return Ok(d);
+        }
+        if let Some(e) = m.enums.iter_mut().find(|e| e.id == id) {
+            if doc.models.iter().flat_map(|x| &x.enums).any(|x| x.name == new_name) {
+                return Err(format!("an enumeration `{new_name}` exists"));
             }
             e.name = new_name.into();
             return Ok(d);

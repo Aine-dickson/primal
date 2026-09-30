@@ -156,6 +156,10 @@ pub(crate) struct ModelCx<'a> {
     spaces: &'a [Space],
     pub(crate) bindings: HashMap<String, Id>,
     pub(crate) events: HashMap<String, Id>,
+    /// Declared enumerations by name: identity and cases (D-049).
+    pub(crate) enums: HashMap<String, (Id, Vec<String>)>,
+    /// Declared functions by name (D-048).
+    pub(crate) functions: HashMap<String, Id>,
     pub(crate) diags: &'a mut Vec<Diag>,
     pub(crate) map: &'a mut SourceMap,
     flows: usize,
@@ -171,6 +175,8 @@ impl<'a> ModelCx<'a> {
             spaces,
             bindings: m.bindings.iter().map(|b| (b.name.clone(), b.id.clone())).collect(),
             events: m.events.iter().map(|ev| (ev.name.clone(), ev.id.clone())).collect(),
+            enums: m.enums.iter().map(|e| (e.name.clone(), (e.id.clone(), e.cases.clone()))).collect(),
+            functions: m.functions.iter().map(|f| (f.name.clone(), f.id.clone())).collect(),
             diags,
             map,
             flows: 0,
@@ -195,7 +201,7 @@ impl<'a> ModelCx<'a> {
             None => None,
         };
         let model = build::ModelBuilder::new(&name).finish();
-        ModelCx { name, space, spaces, bindings: HashMap::new(), events: HashMap::new(), diags, map, flows: 0, model }
+        ModelCx { name, space, spaces, bindings: HashMap::new(), events: HashMap::new(), enums: HashMap::new(), functions: HashMap::new(), diags, map, flows: 0, model }
     }
 
     pub(crate) fn err(&mut self, code: &'static str, msg: impl Into<String>, span: Span) {
@@ -219,6 +225,35 @@ impl<'a> ModelCx<'a> {
                         self.declare_event(e, &mut event_names);
                     }
                 }
+                Member::Enum(e) => {
+                    let id = format!("{}.enum.{}", self.name, e.name.text);
+                    let cases = e.cases.iter().map(|c| c.text.clone()).collect();
+                    if self.enums.insert(e.name.text.clone(), (id, cases)).is_some() {
+                        self.err("SX-E09", format!("enumeration `{}` declared twice", e.name.text), e.name.span);
+                    }
+                }
+                Member::Fn(f) => {
+                    let id = format!("{}.fn.{}", self.name, f.name.text);
+                    if self.functions.insert(f.name.text.clone(), id).is_some() {
+                        self.err("SX-E09", format!("function `{}` declared twice", f.name.text), f.name.span);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // One namespace for bindings, functions and cases: a name means one thing.
+        for mem in &m.members {
+            match mem {
+                Member::Fn(f) if self.bindings.contains_key(&f.name.text) => {
+                    self.err("SX-E09", format!("`{}` is both a binding and a function", f.name.text), f.name.span)
+                }
+                Member::Enum(e) => {
+                    for c in &e.cases {
+                        if self.bindings.contains_key(&c.text) || self.functions.contains_key(&c.text) {
+                            self.err("SX-E09", format!("case `{}` has the name of a binding or function", c.text), c.span);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -227,7 +262,14 @@ impl<'a> ModelCx<'a> {
         for mem in &m.members {
             match mem {
                 Member::Decl(d) => self.decl(d),
-                Member::Fn(f) => self.err("SX-E06", "declared functions (`fn`) are not in the v0 IR; use a derived function value", f.span),
+                Member::Fn(f) => self.function(f),
+                Member::Enum(e) => {
+                    let (id, cases) = self.enums[&e.name.text].clone();
+                    self.map.insert(id.clone(), e.span);
+                    if !self.model.enums.iter().any(|x| x.id == id) {
+                        self.model.enums.push(EnumDecl { id, name: e.name.text.clone(), cases, notes: e.notes.clone() });
+                    }
+                }
                 Member::Flow(f) => self.flow(f, None),
                 Member::Process(p) => {
                     if processes.insert(p.name.text.clone(), p.span).is_some() {
@@ -283,6 +325,19 @@ impl<'a> ModelCx<'a> {
             }
         }
         std::mem::replace(&mut self.model, build::ModelBuilder::new("").finish())
+    }
+
+    /// A declared function (MK-10.3, D-048): its parameters are lambda parameters of its body.
+    fn function(&mut self, f: &ast::FnDecl) {
+        let id = format!("{}.fn.{}", self.name, f.name.text);
+        let locals: Vec<String> = f.params.iter().map(|(n, _)| n.text.clone()).collect();
+        let params = f.params.iter().map(|(n, t)| FnParam { name: n.text.clone(), ty: self.ty(t) }).collect();
+        let result = self.ty(&f.result);
+        let body = self.expr(&f.body, &locals);
+        self.map.insert(id.clone(), f.span);
+        if !self.model.functions.iter().any(|x| x.id == id) {
+            self.model.functions.push(FunctionDecl { id, name: f.name.text.clone(), params, result, body, notes: f.notes.clone() });
+        }
     }
 
     fn declare_event(&mut self, e: &ast::EventDecl, seen: &mut HashMap<String, Span>) {
@@ -556,6 +611,10 @@ impl<'a> ModelCx<'a> {
                 }
             }
             "Real" | "Angle" | "Boolean" | "Integer" | "Quantity" | "Instant" | "Point" | "Vector" => Type::real(),
+            _ if args.is_empty() && self.enums.contains_key(n) => {
+                let (id, cases) = self.enums[n].clone();
+                Type::Enum { r#enum: id, cases }
+            }
             _ => match named_dim(n) {
                 Some(dim) if args.is_empty() => Type::Quantity { dim },
                 _ => {
@@ -667,6 +726,13 @@ impl<'a> ModelCx<'a> {
             ExprKind::If(c, a, b) => build::ite(self.expr(c, locals), self.expr(a, locals), self.expr(b, locals)),
             ExprKind::Otherwise(a, b) => Expr::Otherwise { otherwise: Box::new(self.expr(a, locals)), default: Box::new(self.expr(b, locals)) },
             ExprKind::Call(f, args) => self.call(f, args, e.span, locals),
+            ExprKind::Field(x, n) if matches!(&x.kind, ExprKind::Name(e) if self.enums.contains_key(e) && !self.bindings.contains_key(e) && !locals.contains(e)) => {
+                let ExprKind::Name(e) = &x.kind else { unreachable!() };
+                if !self.enums[e].1.contains(&n.text) {
+                    self.err("SX-E03", format!("`{}` is not a case of `{e}`", n.text), n.span);
+                }
+                Expr::Case { case: n.text.clone() }
+            }
             ExprKind::Field(x, n) => {
                 let x = self.expr(x, locals);
                 let axis = self.axis(n);
@@ -681,6 +747,11 @@ impl<'a> ModelCx<'a> {
                 self.err("SX-E06", "indexing needs collections, which the v0 IR does not have", e.span);
                 Self::placeholder()
             }
+            ExprKind::Match(x, arms) => {
+                let scrutinee = self.expr(x, locals);
+                let arms = arms.iter().map(|(c, v)| Arm { case: c.text.clone(), value: self.expr(v, locals) }).collect();
+                Expr::Match { r#match: Box::new(scrutinee), arms }
+            }
             ExprKind::List(_) | ExprKind::Map(..) | ExprKind::On(..) | ExprKind::BeatTime { .. } => {
                 self.err("SX-E08", "this form belongs to presentations and runs, not to a model", e.span);
                 Self::placeholder()
@@ -694,6 +765,13 @@ impl<'a> ModelCx<'a> {
         }
         if let Some(id) = self.bindings.get(n) {
             return build::r(id);
+        }
+        if let Some(id) = self.functions.get(n) {
+            return Expr::Fn { r#fn: id.clone() };
+        }
+        // A case of a declared enumeration; its type comes from the context (D-049).
+        if self.enums.values().any(|(_, cases)| cases.iter().any(|c| c == n)) {
+            return Expr::Case { case: n.to_string() };
         }
         match n {
             "t" => build::t(),
@@ -746,7 +824,7 @@ impl<'a> ModelCx<'a> {
             };
         }
         let lowered: Vec<Expr> = args.iter().map(|a| self.expr(&a.value, locals)).collect();
-        if locals.iter().any(|l| l == name) || self.bindings.contains_key(name) {
+        if locals.iter().any(|l| l == name) || self.bindings.contains_key(name) || self.functions.contains_key(name) {
             let callee = self.name(name, f.span, locals);
             return build::apply(callee, lowered);
         }

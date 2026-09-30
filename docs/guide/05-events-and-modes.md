@@ -188,6 +188,82 @@ The tank's events are not repeating in this sense: after `full` switches the pum
 
 RP-03 in the reference programs is the complete bouncing ball, with its expected bounce times and the instant of the Zeno limit.
 
+## Modes with more than two values
+
+A Boolean mode has two values. When a system has more, declare an **enumeration**: a type whose values are named cases (MK-2.2, D-049).
+
+```text
+model Toss {
+  /// The stages of a ball thrown straight up.
+  enum Phase { climbing, sinking, landed }
+  const { g: Acceleration = 9.81 m/s^2 }
+  param { v0: Velocity = 10 m/s }
+  state {
+    h: Length   = 0 m
+    v: Velocity = v0
+  }
+  discrete { phase: Phase = climbing }
+  derived {
+    direction: Real = match phase { climbing => 1, sinking => -1, landed => 0 }
+  }
+  flow {
+    der(h) = if phase != landed then v else 0 m/s
+    der(v) = if phase != landed then -g else 0 m/s^2
+  }
+  event apex   on falling(v) if phase == climbing { set phase = sinking }
+  event ground on falling(h) if phase == sinking  { set phase = landed; set v = 0 m/s }
+}
+```
+
+- `enum Phase { climbing, sinking, landed }` declares the type; `phase: Phase = climbing` is discrete state of that type. A case is written by its name, or as `Phase.sinking` where that reads better.
+- Cases are compared with `==` and `!=`; they have no order, so `phase < landed` is an error.
+- `match phase { ... }` chooses a value by case. It must give every case exactly one arm (`MK-E17`), so adding a case to the enumeration later shows every place that has to decide what it means.
+- Two enumerations are different types even if their cases have the same names.
+- A label shows the case by name (`phase = sinking`); a formula of `direction` is typeset as one row per case.
+
+```text
+presentation TossLab for Toss {
+  view height: plot(x: [0 s, 3 s], y: [0 m, 6 m]) {
+    series_plot(h every 0.02 s)
+  }
+  panel status {
+    label(phase)
+    formula(direction)
+  }
+  observe {
+    top_time  = elapsed on apex
+    top       = h on apex
+    landed_at = elapsed on ground
+    final     = phase at t0 + 3 s
+  }
+}
+```
+
+```cases
+run toss of Toss with TossLab {
+  until t0 + 3 s
+  expect {
+    top_time[1]  == 1.01936799184506 s within 1e-6 s    // v0 / g
+    top[1]       == 5.09683995922528 m within 1e-6 m    // v0^2 / (2 g)
+    landed_at[1] == 2.03873598369011 s within 1e-6 s    // 2 v0 / g
+    final == landed exactly
+  }
+}
+```
+
+A `match` that forgets a case:
+
+```error
+// error: MK-E17
+model Wrong {
+  enum Phase { climbing, sinking, landed }
+  discrete { phase: Phase = climbing }
+  derived { direction: Real = match phase { climbing => 1, sinking => -1 } }
+}
+```
+
+The compiler reports `match does not cover landed`.
+
 ## Exercises
 
 1. Add an overflow valve to the tank: an event `spill on rising(level - 1.1 m)` that sets the level back to `1.1 m`. When can it happen?

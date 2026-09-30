@@ -144,6 +144,22 @@ pub enum Expr {
         otherwise: Box<Expr>,
         default: Box<Expr>,
     },
+    /// A declared function as a value (D-048); applied with `apply`.
+    Fn {
+        r#fn: Id,
+    },
+    /// A choice by the case of an enumeration, one arm per case (MK-10.2, D-049).
+    Match {
+        r#match: Box<Expr>,
+        arms: Vec<Arm>,
+    },
+}
+
+/// One arm of a `match`: the value when the scrutinee is `case`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Arm {
+    pub case: String,
+    pub value: Expr,
 }
 
 impl Expr {
@@ -185,6 +201,10 @@ impl Expr {
             Expr::Otherwise { otherwise, default } => {
                 otherwise.walk(f);
                 default.walk(f);
+            }
+            Expr::Match { r#match, arms } => {
+                r#match.walk(f);
+                arms.iter().for_each(|a| a.value.walk(f));
             }
             _ => {}
         }

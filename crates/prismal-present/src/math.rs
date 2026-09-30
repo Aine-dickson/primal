@@ -95,7 +95,7 @@ fn list(items: Vec<MathBox>) -> MathBox {
 
 fn prec(e: &Expr) -> u8 {
     match e {
-        Expr::If { .. } | Expr::Otherwise { .. } => 0,
+        Expr::If { .. } | Expr::Otherwise { .. } | Expr::Match { .. } => 0,
         Expr::Bin { bin, .. } => match bin {
             BinOp::Or => 1,
             BinOp::And => 2,
@@ -191,9 +191,22 @@ pub fn boxes(e: &Expr, cm: &CModel, params: &[String]) -> MathBox {
                 BinOp::Ge => op("≥", OpKind::Relation),
                 BinOp::Div | BinOp::Pow => unreachable!(),
             };
-            // A thin space before a named function: v² sin(2θ).
+            // A thin space before a named function, v² sin(2θ), and around a name of more than
+            // one letter, which would otherwise run into its neighbour: 0.5 mass speed².
             let named = matches!(**r, Expr::Call { call, .. } if !matches!(call, Func::Sqrt | Func::Abs));
-            if *bin == BinOp::Mul && named {
+            let word = |x: &Expr| -> bool {
+                let base = match x {
+                    Expr::Bin { bin: BinOp::Pow, l, .. } => &**l,
+                    other => other,
+                };
+                match base {
+                    Expr::Ref { r#ref } => symbol(cm, r#ref).chars().count() > 1,
+                    Expr::Param { param } => params.get(*param).is_some_and(|n| n.chars().count() > 1),
+                    Expr::Apply { .. } => true,
+                    _ => false,
+                }
+            };
+            if *bin == BinOp::Mul && (named || word(l) || word(r)) {
                 return row(vec![ls, o, MathBox::Space { em: 0.17 }, rs]);
             }
             row(vec![ls, o, rs])
@@ -238,6 +251,25 @@ pub fn boxes(e: &Expr, cm: &CModel, params: &[String]) -> MathBox {
         Expr::Otherwise { otherwise, default } => {
             row(vec![p(otherwise), MathBox::Space { em: 0.3 }, MathBox::Text { text: "otherwise".into() }, MathBox::Space { em: 0.3 }, p(default)])
         }
+        // A declared function's name: a single letter in italics, a word upright, as `sin`.
+        Expr::Fn { r#fn } => {
+            let name = crate::text::fn_name(cm, r#fn);
+            if name.chars().count() == 1 {
+                ident(&name)
+            } else {
+                upright(&name)
+            }
+        }
+        // One row per case, as a conditional: `value if s = case` (D-049).
+        Expr::Match { r#match, arms } => MathBox::Cases {
+            rows: arms
+                .iter()
+                .map(|a| {
+                    let cond = row(vec![p(r#match), op("=", OpKind::Relation), MathBox::Text { text: a.case.clone() }]);
+                    (p(&a.value), row(vec![MathBox::Text { text: "if".into() }, MathBox::Space { em: 0.3 }, cond]))
+                })
+                .collect(),
+        },
     }
 }
 

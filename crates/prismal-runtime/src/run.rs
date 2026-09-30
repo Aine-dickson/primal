@@ -231,7 +231,7 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
         };
         let v = compile_expr(cm, e, Some(&cm.bindings[i].ty))
             .map_err(|d| format!("{d:?}"))
-            .and_then(|(c, _)| c.eval(&Ctx { vals: &[], der: None, t: cfg.t0, t0: cfg.t0, args: &[] }).map_err(|s| s.cause));
+            .and_then(|(c, _)| c.eval(&Ctx { vals: &cm.constant_values(), der: None, t: cfg.t0, t0: cfg.t0, args: &[] }).map_err(|s| s.cause));
         match v {
             Ok(v) => overrides.push((i, v)),
             Err(m) => {

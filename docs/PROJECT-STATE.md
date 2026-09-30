@@ -91,6 +91,8 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-045:** the host interface: an engine of documents and instances by handle, offered as a Rust API and as one JSON protocol carried unchanged by every binding (WebAssembly now; a C ABI or a standard-input process when a host needs one). Documents load from text or the IR and update by whole replacement with identities kept.
 - **D-046:** formulas are typeset for every medium: a math box tree from the IR and its layout (text runs, rules, paths in em units) in frame descriptions; a medium with a math engine may typeset the tree (MathML in the browser binding). Frame descriptions hold nothing specific to one medium.
 - **D-047:** the host captures input and forwards it; the engine interprets it (targeting, viewports, zoom and pan, keyboard focus). Raw inputs (`pointer`, `wheel`, `key_down`, `focus`, `view_reset`) and semantic inputs may be mixed; frames carry each view's viewport.
+- **D-048:** declared functions in v0: model-level `fn`, closed (parameters, constants, other functions), non-recursive; IR `functions` and `{"fn": id}`.
+- **D-049:** enumerations in v0: model-level `enum`, nominal by identity, cases typed by context, `match` with one arm per case; `enum`, `match` reserved.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
@@ -105,10 +107,10 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 2. **Media from the SVG renderer**, when content needs them: encoding image sequences to a video file with narration (an external encoder over `prismal-svg` frames, PK-12.3 fallbacks already applied by the `video` medium), raster images, and a layout of several views on one page chosen by the author (PK-7.4).
 3. Input follow-ups, when content needs them: drags on members of a group (D-043), multi-touch gestures (pinch zoom), drags in lessons if explore beats come to offer them.
 4. Host interface follow-ups, when a host needs them: a C ABI (`prismal-ffi`) or a process speaking the protocol on standard input and output (HI-6.4); fine-grained edit operations (D-045 option 2); introspection for editors (the bindings, types, units and representations available for a value, D-019) as protocol operations.
-5. Language and runtime items still open (`docs/prototype.md`, "Not implemented"): declared functions and enumerations, inputs (`on input`), backward seek within a run, event payloads. Each makes the IR more complete for every host.
+5. Language and runtime items still open (`docs/prototype.md`, "Not implemented"): inputs (`on input`), event payloads, backward seek within a run, payloads of enumeration cases. Each makes the IR more complete for every host.
 6. The owner reviews by learning the language from `docs/guide/` and writing programs (see Working process). Keep the guide in step with every language change; `prismal-web/tests/guide.rs` enforces that its programs compile and pass.
 
-How to verify the state quickly: `cargo test` at the root (94 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`; from PowerShell or a terminal that can start a browser, `node crates/prismal-svg/compare.mjs` compares both renderers and `node web/check-input.mjs` drives the player with real input events.
+How to verify the state quickly: `cargo test` at the root (98 tests pass as of this handover); `./web/build.sh` then `python -m http.server 8000 -d web`; from PowerShell or a terminal that can start a browser, `node crates/prismal-svg/compare.mjs` compares both renderers and `node web/check-input.mjs` drives the player with real input events.
 
 1. Core semantics spec v0: all three parts drafted; decisions D-020 to D-026 accepted.
 2. Reference programs with expected results (D-012): first-slice suite written (RP-01 to RP-08); provisional tolerances confirmed by the prototype and fixed.
@@ -127,7 +129,8 @@ How to verify the state quickly: `cargo test` at the root (94 tests pass as of t
 15. Formulas for every medium (D-046); frame descriptions free of browser specifics.
 16. Second renderer: SVG documents and image sequences (`prismal-svg`), compared with the web player.
 17. Input for every host (D-047): raw input interpreted by the engine, viewports in frames.
-18. Next: see Next steps.
+18. Declared functions (D-048) and enumerations with `match` (D-049).
+19. Next: see Next steps.
 
 ## Session log
 
@@ -153,6 +156,7 @@ How to verify the state quickly: `cargo test` at the root (94 tests pass as of t
 | 2026-09-30 | Rendering reviewed for swappable targets (PK-12.2): MathML moved out of the host interface into the browser binding; labels, drag parts, control symbols and display units moved into the core frame description. Formulas typeset for every medium (D-046): `prismal-present/src/math.rs` builds a math box tree from the IR and lays it out as text runs, rules and paths; MathML is generated from the same tree. Fixed on the way: a fraction or power as a base is parenthesized, and a thin space precedes a function name. The SVG renderer is carried over to the next session. |
 | 2026-09-30 | Second renderer `crates/prismal-svg` (PK-12.2): a frame description drawn as a standalone SVG document from the host's layout and frame JSON only, following the web player's drawing (framing, cameras, ticks, marks, colors), with panels, formulas from their layouts, controls, tables, captions, themes and text alternatives; `render` example for frames at chosen instants or image sequences at N frames per second. Tests draw 63 frames of every presentation of the reference programs and the guide and DropMovie's animations frame by frame. `compare.mjs` draws 13 frames in both renderers (the player now opens `#program/Presentation@seconds`) and finds the same view boxes, geometry and text alternatives. Found: native and WebAssembly runs differ near 1e-10 (D-015 tolerance); formula layouts gained an italic correction. |
 | 2026-09-30 | Owner question on input for hosts that are not browsers; owner confirmed the host keeps the capture of events. D-047: the host forwards raw pointer, wheel and key events and the engine interprets them (`prismal-host/src/input.rs`: viewports, pixel mapping, hit testing with a reach by pointer kind, focus order); protocol operations `pointer`, `wheel`, `key_down`, `focus`, `view_reset`; frames carry viewports and focus; HI-1.4, HI-4.5, HI-5.2a, PK-10.2a, PK-11.2b. The web player forwards raw events and draws with the frame's viewport (its framing, hit testing and zoom and pan code removed); the SVG renderer likewise. Tests drive drags, focus, keys, zoom and pan through the protocol alone (`prismal-web/tests/input.rs`, 5 tests); `web/check-input.mjs` drives the player with real events in headless Edge (8 checks pass); the renderer comparison still agrees on all 13 frames. |
+| 2026-09-30 | Owner direction: complete the language, then a binding for other languages. Declared functions (D-048: model-level `fn`, closed, non-recursive, MK-E18, MK-E23; `formula(f)` shows the definition) and enumerations (D-049: model-level `enum`, nominal, cases typed by context, `match` with one arm per case, MK-E17) through IR, checker, syntax, formatter, identities, text and typesetting; MK-2.2a, MK-10.3a, 04-ir 5.5. Found: constant expressions could not read constants (a function calling `g` in a case), expected cases had no type, words in products ran together in formulas, D-038 did not decide `!=`. Guide chapters 2 (Functions) and 5 (Modes with more than two values); `prismal-syntax/tests/functions_enums.rs`. 98 tests pass. |
 
 ## Working process
 

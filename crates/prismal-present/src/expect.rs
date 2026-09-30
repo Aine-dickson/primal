@@ -6,7 +6,7 @@
 
 use crate::data::{observe, Data};
 use crate::timeline::{play, Input, Medium, Playback};
-use crate::{config, constant, flat, number, Program, LESSON_HORIZON};
+use crate::{config, constant, constant_as, flat, number, Program, LESSON_HORIZON};
 use prismal_ir::present::{Check, Item, Operand, Outcome, RunCase, Subject, Tolerance};
 use prismal_ir::Id;
 use prismal_kernel::CModel;
@@ -46,6 +46,23 @@ struct Cx<'a, 'b> {
 }
 
 impl Cx<'_, '_> {
+    /// The type of a subject that is an expression, so that an expected enumeration case
+    /// takes its enumeration from it (D-049).
+    fn subject_type(&self, s: &Subject) -> Option<prismal_ir::Type> {
+        let e = match s {
+            Subject::On { expr, .. } => expr,
+            Subject::Observation { observation, .. } => {
+                let o = self.pres?.observations.iter().find(|o| &o.id == observation)?;
+                match &o.source {
+                    prismal_ir::present::Source::Expr { expr } => expr,
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+        prismal_kernel::compile_expr(self.cm, e, None).ok().map(|x| x.1)
+    }
+
     fn subject(&self, s: &Subject) -> Result<Got, String> {
         match s {
             Subject::Observation { observation, index } => {
@@ -106,7 +123,8 @@ impl Cx<'_, '_> {
                     (Got::Data(_), _) => Err("a log is compared with a list".into()),
                     (Got::Values(g), Operand::List { .. }) => Err(format!("{g:?} is not a list")),
                     (Got::Values(g), Operand::Value { expr }) => {
-                        let mut w = flat(&constant(&self.cm, expr)?);
+                        let ty = self.subject_type(subject).filter(|t| matches!(t, prismal_ir::Type::Enum { .. }));
+                        let mut w = flat(&constant_as(&self.cm, expr, ty.as_ref())?);
                         if w == [0.0] && g.len() > 1 {
                             w = vec![0.0; g.len()]; // `0` is the zero vector (D-030)
                         }

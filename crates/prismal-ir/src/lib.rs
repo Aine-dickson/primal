@@ -10,7 +10,7 @@ pub mod present;
 pub mod units;
 
 pub use dim::{Dim, Ratio};
-pub use expr::{BinOp, Builtin, Constant, Expr, Func, Lambda};
+pub use expr::{Arm, BinOp, Builtin, Constant, Expr, Func, Lambda};
 pub use units::Unit;
 
 use serde::{Deserialize, Serialize};
@@ -69,7 +69,9 @@ pub enum Type {
     Point { space: Id },
     Vector { space: Id, dim: Dim },
     Tuple { items: Vec<Type> },
-    Enum { cases: Vec<String> },
+    /// A declared enumeration (D-049): its identity, which makes it nominal (MK-2.2), and
+    /// its cases in declaration order.
+    Enum { r#enum: Id, cases: Vec<String> },
     Function { params: Vec<Type>, result: Box<Type> },
 }
 
@@ -331,11 +333,72 @@ pub struct Model {
     pub equations: Vec<Equation>,
     #[serde(default)]
     pub constraints: Vec<Constraint>,
+    /// Declared enumerations (MK-2.2, D-049).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enums: Vec<EnumDecl>,
+    /// Declared functions (MK-10.3, D-048).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub functions: Vec<FunctionDecl>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
 
+/// A declared enumeration (MK-2.2, D-049): a nominal type whose values are its cases. Its
+/// identity is `Model.enum.Name`; types that use it carry that identity and the cases.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnumDecl {
+    pub id: Id,
+    pub name: String,
+    pub cases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+impl EnumDecl {
+    /// The type whose values are this enumeration's cases.
+    pub fn ty(&self) -> Type {
+        Type::Enum { r#enum: self.id.clone(), cases: self.cases.clone() }
+    }
+}
+
+/// A declared function (MK-10.3, D-048): typed parameters, a result type and a body that
+/// reads only its parameters (`{"param": i}`), constants and other declared functions. Its
+/// identity is `Model.fn.name`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FunctionDecl {
+    pub id: Id,
+    pub name: String,
+    pub params: Vec<FnParam>,
+    pub result: Type,
+    pub body: Expr,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+impl FunctionDecl {
+    /// The function's type, `(A, B) -> R`.
+    pub fn ty(&self) -> Type {
+        Type::func(self.params.iter().map(|p| p.ty.clone()).collect(), self.result.clone())
+    }
+    pub fn param_names(&self) -> Vec<String> {
+        self.params.iter().map(|p| p.name.clone()).collect()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FnParam {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: Type,
+}
+
 impl Model {
+    pub fn function(&self, id: &str) -> Option<&FunctionDecl> {
+        self.functions.iter().find(|f| f.id == id)
+    }
+    pub fn enum_decl(&self, id: &str) -> Option<&EnumDecl> {
+        self.enums.iter().find(|e| e.id == id)
+    }
     pub fn binding(&self, id: &str) -> Option<&Binding> {
         self.bindings.iter().find(|b| b.id == id)
     }

@@ -102,7 +102,7 @@ pub fn fmt_value(v: &Value, ty: &Type) -> String {
             format!("({})", items.iter().zip(tys).map(|(v, t)| fmt_value(v, t)).collect::<Vec<_>>().join(", "))
         }
         (Value::Tuple(items), _) => format!("({})", items.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")),
-        (Value::Case(c), Type::Enum { cases }) => cases.get(*c as usize).cloned().unwrap_or_default(),
+        (Value::Case(c), Type::Enum { cases, .. }) => cases.get(*c as usize).cloned().unwrap_or_default(),
         (v, _) => v.to_string(),
     }
 }
@@ -117,7 +117,7 @@ pub fn symbol(cm: &CModel, id: &str) -> String {
 
 fn prec(e: &Expr) -> u8 {
     match e {
-        Expr::If { .. } | Expr::Otherwise { .. } => 0,
+        Expr::If { .. } | Expr::Otherwise { .. } | Expr::Match { .. } => 0,
         Expr::Bin { bin, .. } => match bin {
             BinOp::Or => 1,
             BinOp::And => 2,
@@ -225,7 +225,16 @@ pub fn print(e: &Expr, cm: &CModel, params: &[String]) -> String {
         }
         Expr::Lambda { lambda } => print(&lambda.body, cm, &lambda.names),
         Expr::Otherwise { otherwise, default } => format!("{} otherwise {}", p(otherwise), p(default)),
+        Expr::Fn { r#fn } => fn_name(cm, r#fn),
+        Expr::Match { r#match, arms } => {
+            format!("match {} {{ {} }}", p(r#match), arms.iter().map(|a| format!("{} => {}", a.case, p(&a.value))).collect::<Vec<_>>().join(", "))
+        }
     }
+}
+
+/// The name of a declared function (D-048).
+pub fn fn_name(cm: &CModel, id: &str) -> String {
+    cm.ir.function(id).map(|f| f.name.clone()).unwrap_or_else(|| id.rsplit('.').next().unwrap_or(id).to_string())
 }
 
 #[cfg(test)]

@@ -67,6 +67,8 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-045 | Host interface: an engine with handles, a Rust API and one JSON protocol offered by every binding | Accepted |
 | D-046 | Formulas typeset for every medium: a math box tree and its layout in frames; MathML only in the browser binding | Accepted |
 | D-047 | Input: the host captures and forwards, the engine interprets (targeting, viewports, zoom and pan, focus); raw and semantic inputs | Accepted |
+| D-048 | Declared functions in v0: model-level `fn`, closed, non-recursive, in the IR as `functions` and `{"fn": id}` | Accepted |
+| D-049 | Enumerations in v0: model-level `enum`, nominal by identity, cases typed by context, `match` with one arm per case | Accepted |
 
 ---
 
@@ -865,3 +867,37 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** HI-1.4, HI-4.5, HI-5.2a, HI-6.5; PK-10.2a, PK-11.2b; `prismal-host/src/input.rs` and the raw operations of `Instance`; the web player forwards raw events and draws with the frame's viewport (its own framing, hit testing and zoom and pan code removed); the SVG renderer draws with the frame's viewport. A session's framing grows to fit each frame without memory of earlier frames, so the same instant gives the same frame (HI-4.2).
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30, after the owner's direction: "my worry was us doing the actual event catching".
+
+## D-048: Declared functions in v0
+
+- **Status:** Accepted
+- **Original position:** MK-10.3 specifies declared functions (typed parameters, a result, a closed body) and the working syntax lists `fn f(x: A): B = e`, but the v0 IR had no form for them and the parser rejected `fn` (SX-E06). Authors could only write derived function values (MK-10.7), which read model bindings and cannot be shared between formulas without repeating them.
+- **Raised by:** the language completeness step after D-047 (owner's direction to complete the language items listed as not implemented).
+- **Builds on:** MK-10.3, MK-10.7, D-029, D-034, D-036, D-037.
+- **Question:** Where are functions declared, what may their bodies read, and how are they represented and called?
+- **Options considered:**
+  1. **Lower `fn` to a constant binding holding a lambda.** No new IR form, but a function would appear as a binding (in controls, observations and intervention checks), and constants of function type already carry the closedness rule MK-E20 with a different meaning.
+  2. **Model-level declarations with their own IR list and a function-value expression.** `functions: [{id, name, params, result, body}]`, `{"fn": id}` as a value, applied with the existing `apply`. The body reads parameters as lambda parameters; the checker enforces closedness (MK-E18) and forbids recursion (MK-E23).
+  3. **Document-level function libraries shared across models.** Useful later (R-55, modules), but needs imports and packaging, which are deferred.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30. A function body may read its parameters, constants and other declared functions; reading any other binding, the time or a derivative is MK-E18, so a function's meaning never depends on when it is called. Recursion, direct or mutual, is MK-E23: with no conditionals over unbounded data in v0, recursion would only loop. Functions share the namespace of bindings (SX-E09). `formula(f)` shows the definition. Constants are available wherever constant expressions are evaluated (case parameters, expectations), so a function that reads `g` can be called there.
+- **Reason:** keeps functions distinct from bindings in every tool that lists bindings, uses the application form the kernel already has, and keeps each function a self-contained piece of mathematics that can be typeset and reused.
+- **Consequences:** MK-10.3a, MK-E23; 04-ir sections 5.5 and 6; working syntax `fn`; `CModel::functions`, `CModel::constant_values`; formatter, identity matching and rename for functions; guide chapter 2 (Functions).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-049: Enumerations in v0
+
+- **Status:** Accepted
+- **Original position:** MK-2.2 makes enumerations nominal and MK-10.2 requires `match` to cover every case, but the v0 IR had an anonymous enumeration type (`{"kind": "enum", "cases": [...]}`), no declaration, no `match`, and the working syntax no spelling. Modes with more than two values had to be coded as numbers or several Booleans.
+- **Raised by:** the language completeness step after D-047.
+- **Builds on:** MK-2.2, MK-10.2, D-036, D-037, D-038.
+- **Question:** How are enumerations declared, how is a case written, and how is a value chosen by case?
+- **Options considered:**
+  1. **Structural enumeration types** (the type is its list of cases). Simple, but two unrelated enumerations with the same cases would be interchangeable, contrary to MK-2.2.
+  2. **Declared, nominal enumerations whose type carries the declaration's identity and its cases.** `enum Phase { a, b }` in a model; the type is `{"kind": "enum", "enum": id, "cases": [...]}`, so equality is by identity while every value can still be printed by name without a lookup. A case is written by name and typed by its context; `Phase.a` qualifies it. `match e { a => x, b => y }` has exactly one arm per case.
+  3. **Enumerations with payloads** (tagged unions). Specified in MK section 2, but no reference program needs them yet and they need pattern binding in `match`.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30; payloads deferred. Cases have no order and no arithmetic (`==`, `!=` only). Cases share the namespace of bindings and functions. `enum` and `match` become reserved words; `=>` is added to the operators. The self-retriggering analysis of D-038 decides `phase == c` and `phase != c` on the cases a handler sets.
+- **Reason:** gives modes names a learner can read in text alternatives and formulas (`phase = sinking`, one typeset row per case), and makes forgetting a case a static error.
+- **Consequences:** MK-2.2a, MK-10.3a (match), MK-E17 and MK-E22 for enumerations; 04-ir sections 3, 5.5 and 6; working syntax `enum`, `match`, `=>`; `CExpr::Match`; expectations type an expected case from their subject; formatter, identity matching and rename for enumerations; guide chapter 5 (Modes with more than two values).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.

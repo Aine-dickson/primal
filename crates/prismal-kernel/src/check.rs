@@ -29,6 +29,8 @@ pub(crate) struct Scope<'a> {
     pub spaces: &'a [Space],
     pub model: &'a Model,
     pub index: &'a HashMap<Id, usize>,
+    /// Declared functions compiled so far, with their types (D-048).
+    pub funcs: &'a HashMap<Id, (Rc<CExpr>, Type)>,
 }
 
 pub(crate) struct Tc<'a, 'b> {
@@ -36,6 +38,9 @@ pub(crate) struct Tc<'a, 'b> {
     pub diags: &'b mut Vec<Diagnostic>,
     pub element: String,
     lambda: Vec<Vec<Type>>,
+    /// While checking a declared function's body: its name. The body reads only its
+    /// parameters, constants and other declared functions (MK-10.3).
+    closed: Option<String>,
 }
 
 type Typed = Option<(CExpr, Type)>;
@@ -55,7 +60,14 @@ fn is_dimensioned(t: &Type) -> bool {
 
 impl<'a, 'b> Tc<'a, 'b> {
     pub fn new(scope: &'b Scope<'a>, diags: &'b mut Vec<Diagnostic>, element: &str) -> Self {
-        Tc { scope, diags, element: element.to_string(), lambda: vec![] }
+        Tc { scope, diags, element: element.to_string(), lambda: vec![], closed: None }
+    }
+
+    /// MK-E18: a declared function's body reads something other than its parameters,
+    /// constants and declared functions.
+    fn open_read(&mut self, what: &str) -> Typed {
+        let f = self.closed.clone().unwrap_or_default();
+        self.err("MK-E18", format!("declared function `{f}` reads {what}; a function takes what it needs as a parameter (MK-10.3)"))
     }
 
     fn err(&mut self, code: &'static str, message: String) -> Typed {
@@ -75,9 +87,10 @@ impl<'a, 'b> Tc<'a, 'b> {
     fn needs_ctx(e: &Expr) -> bool {
         match e {
             Expr::Tuple { .. } => true,
-            Expr::Num { unit: None, .. } | Expr::Const { .. } => true,
+            Expr::Num { unit: None, .. } | Expr::Const { .. } | Expr::Case { .. } => true,
             Expr::Neg { neg } => Self::needs_ctx(neg),
             Expr::If { then, r#else, .. } => Self::needs_ctx(then) && Self::needs_ctx(r#else),
+            Expr::Match { arms, .. } => arms.iter().all(|a| Self::needs_ctx(&a.value)),
             _ => false,
         }
     }
@@ -108,16 +121,30 @@ impl<'a, 'b> Tc<'a, 'b> {
             Expr::Num { num, unit } => self.num(*num, unit.as_ref(), exp),
             Expr::Bool { bool } => Some((CExpr::Const(Value::Bool(*bool)), Type::Boolean)),
             Expr::Case { case } => match exp {
-                Some(Type::Enum { cases }) => match cases.iter().position(|c| c == case) {
+                Some(t @ Type::Enum { cases, .. }) => match cases.iter().position(|c| c == case) {
                     Some(i) => Some((CExpr::Const(Value::Case(i as u32)), exp.unwrap().clone())),
-                    None => self.err("MK-E01", format!("`{case}` is not a case of the expected enumeration")),
+                    None => self.err("MK-E01", format!("`{case}` is not a case of {}", show(t))),
                 },
                 _ => self.err("MK-E01", format!("enumeration case `{case}` without an expected enumeration")),
             },
             Expr::Ref { r#ref } => match self.binding(r#ref) {
+                Some((_, b)) if self.closed.is_some() && b.role != Role::Constant => {
+                    let what = format!("the {} `{}`", role_word(b.role), b.name);
+                    self.open_read(&what)
+                }
                 Some((i, b)) => Some((CExpr::Load(i), b.ty.clone())),
                 None => self.err("MK-E00", format!("unknown binding `{ref}`", ref = r#ref)),
             },
+            Expr::Fn { r#fn } => match self.scope.funcs.get(r#fn) {
+                Some((body, ty)) => Some((CExpr::Const(Value::Func(body.clone())), ty.clone())),
+                None => match self.scope.model.function(r#fn) {
+                    // Declared but not compiled: its own diagnostics are reported with it.
+                    Some(_) => None,
+                    None => self.err("MK-E00", format!("unknown function `{}`", r#fn)),
+                },
+            },
+            Expr::Match { r#match, arms } => self.match_expr(r#match, arms, exp),
+            Expr::Builtin { .. } | Expr::Der { .. } if self.closed.is_some() => self.open_read("the simulation's time or a derivative"),
             Expr::Param { param } => match self.lambda.last().and_then(|p| p.get(*param)) {
                 Some(t) => Some((CExpr::Arg(*param), t.clone())),
                 None => self.err("MK-E00", format!("parameter {param} outside a lambda")),
@@ -245,6 +272,40 @@ impl<'a, 'b> Tc<'a, 'b> {
                 Some((CExpr::Otherwise(Box::new(a), Box::new(b)), t))
             }
         }
+    }
+
+    /// `match e { case => value, ... }` (MK-10.2, D-049): the scrutinee is an enumeration and
+    /// every case has exactly one arm (MK-E17); the arms have one type.
+    fn match_expr(&mut self, scrutinee: &Expr, arms: &[Arm], exp: Option<&Type>) -> Typed {
+        let (sc, st) = self.expr(scrutinee, None)?;
+        let cases = match &st {
+            Type::Enum { cases, .. } => cases.clone(),
+            other => return self.err("MK-E01", format!("`match` needs an enumeration, found {}", show(other))),
+        };
+        for a in arms {
+            if !cases.contains(&a.case) {
+                return self.err("MK-E01", format!("`{}` is not a case of {}", a.case, show(&st)));
+            }
+            if arms.iter().filter(|b| b.case == a.case).count() > 1 {
+                return self.err("MK-E17", format!("case `{}` has more than one arm", a.case));
+            }
+        }
+        let missing: Vec<&String> = cases.iter().filter(|c| !arms.iter().any(|a| &&a.case == c)).collect();
+        if !missing.is_empty() {
+            let list = missing.iter().map(|c| format!("`{c}`")).collect::<Vec<_>>().join(", ");
+            return self.err("MK-E17", format!("`match` does not cover {list} (MK-10.2)"));
+        }
+        // The first arm that fixes a type gives it to the others.
+        let lead = arms.iter().position(|a| !Self::needs_ctx(&a.value)).unwrap_or(0);
+        let (_, t) = self.expr(&arms[lead].value, exp)?;
+        let mut by_case: Vec<Option<CExpr>> = vec![None; cases.len()];
+        for a in arms {
+            let c = self.expect(&a.value, &t)?;
+            by_case[cases.iter().position(|x| x == &a.case).unwrap()] = Some(c);
+        }
+        // A case left without an arm is a duplicated case, reported with its enumeration.
+        let arms = by_case.into_iter().collect::<Option<Vec<_>>>()?;
+        Some((CExpr::Match(Box::new(sc), arms), t))
     }
 
     fn num(&mut self, v: f64, unit: Option<&Unit>, exp: Option<&Type>) -> Typed {
@@ -478,9 +539,94 @@ pub fn show(t: &Type) -> String {
         Type::Point { space } => format!("Point<{space}>"),
         Type::Vector { space, dim } => format!("Vector<{space}, {dim}>"),
         Type::Tuple { items } => format!("Tuple<{}>", items.iter().map(show).collect::<Vec<_>>().join(", ")),
-        Type::Enum { cases } => format!("enum {{{}}}", cases.join(", ")),
+        Type::Enum { r#enum, .. } => r#enum.rsplit('.').next().unwrap_or(r#enum).to_string(),
         Type::Function { params, result } => format!("({}) -> {}", params.iter().map(show).collect::<Vec<_>>().join(", "), show(result)),
     }
+}
+
+fn role_word(r: Role) -> &'static str {
+    match r {
+        Role::Constant => "constant",
+        Role::Parameter => "parameter",
+        Role::Input => "input",
+        Role::Discrete => "discrete state",
+        Role::Continuous => "state",
+        Role::Derived => "derived binding",
+    }
+}
+
+/// Checks and compiles the declared enumerations and functions of a model (D-048, D-049).
+/// Functions are compiled callees first; a function that calls itself, directly or
+/// through others, is MK-E23.
+fn check_functions(spaces: &[Space], model: &Model, index: &HashMap<Id, usize>, diags: &mut Vec<Diagnostic>) -> HashMap<Id, (Rc<CExpr>, Type)> {
+    for e in &model.enums {
+        if e.cases.is_empty() {
+            diags.push(Diagnostic { code: "MK-E01", message: format!("enumeration `{}` has no cases", e.name), element: e.id.clone() });
+        }
+        for (i, c) in e.cases.iter().enumerate() {
+            if e.cases[..i].contains(c) {
+                diags.push(Diagnostic { code: "MK-E22", message: format!("case `{c}` of `{}` declared twice", e.name), element: e.id.clone() });
+            }
+        }
+    }
+    let calls = |f: &FunctionDecl| -> Vec<Id> {
+        let mut out = vec![];
+        f.body.walk(&mut |e| {
+            if let Expr::Fn { r#fn } = e {
+                if !out.contains(r#fn) {
+                    out.push(r#fn.clone());
+                }
+            }
+        });
+        out
+    };
+    // Callees first (depth-first order); a function met again on the current path recurses.
+    fn visit(i: usize, fs: &[FunctionDecl], calls: &dyn Fn(&FunctionDecl) -> Vec<Id>, state: &mut [u8], order: &mut Vec<usize>, rec: &mut Vec<usize>) {
+        if state[i] == 2 {
+            return;
+        }
+        if state[i] == 1 {
+            if !rec.contains(&i) {
+                rec.push(i);
+            }
+            return;
+        }
+        state[i] = 1;
+        for c in calls(&fs[i]) {
+            if let Some(j) = fs.iter().position(|f| f.id == c) {
+                visit(j, fs, calls, state, order, rec);
+            }
+        }
+        state[i] = 2;
+        order.push(i);
+    }
+    let fs = &model.functions;
+    let (mut state, mut order, mut rec) = (vec![0u8; fs.len()], vec![], vec![]);
+    for i in 0..fs.len() {
+        visit(i, fs, &calls, &mut state, &mut order, &mut rec);
+    }
+    for &i in &rec {
+        diags.push(Diagnostic { code: "MK-E23", message: format!("declared function `{}` calls itself (MK-10.3)", fs[i].name), element: fs[i].id.clone() });
+    }
+    let mut funcs: HashMap<Id, (Rc<CExpr>, Type)> = HashMap::new();
+    for i in order {
+        let f = &fs[i];
+        if fs[..i].iter().any(|g| g.name == f.name) || model.bindings.iter().any(|b| b.name == f.name) {
+            diags.push(Diagnostic { code: "MK-E22", message: format!("`{}` declared twice", f.name), element: f.id.clone() });
+        }
+        if rec.contains(&i) || calls(f).iter().any(|c| fs.iter().position(|g| &g.id == c).is_some_and(|j| rec.contains(&j))) {
+            continue;
+        }
+        let snapshot = funcs.clone();
+        let scope = Scope { spaces, model, index, funcs: &snapshot };
+        let mut tc = Tc::new(&scope, diags, &f.id);
+        tc.closed = Some(f.name.clone());
+        tc.lambda.push(f.params.iter().map(|p| p.ty.clone()).collect());
+        if let Some(body) = tc.expect(&f.body, &f.result) {
+            funcs.insert(f.id.clone(), (Rc::new(body), f.ty()));
+        }
+    }
+    funcs
 }
 
 // ------------------------------------------------------------------ model checking
@@ -494,7 +640,8 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
             diags.push(Diagnostic { code: "MK-E22", message: format!("binding `{}` defined twice", b.name), element: b.id.clone() });
         }
     }
-    let scope = Scope { spaces, model, index: &index };
+    let funcs = check_functions(spaces, model, &index, &mut diags);
+    let scope = Scope { spaces, model, index: &index, funcs: &funcs };
 
     // Bindings: initial definitions and definitions.
     let mut cbindings = vec![];
@@ -739,6 +886,7 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
         events: cevents,
         equations: cequations,
         constraints: cconstraints,
+        functions: funcs,
         is_static,
     })
 }
@@ -824,7 +972,7 @@ pub fn check_intervention(cm: &CModel, ops: &[Op]) -> Result<Vec<COp>, Vec<Diagn
     if !diags.is_empty() {
         return Err(diags);
     }
-    let scope = Scope { spaces: &cm.spaces, model: &cm.ir, index: &cm.index };
+    let scope = Scope { spaces: &cm.spaces, model: &cm.ir, index: &cm.index, funcs: &cm.functions };
     let mut tc = Tc::new(&scope, &mut diags, "intervention");
     let out = check_ops(&mut tc, &cm.ir, &cm.index, ops, true);
     if diags.is_empty() {
@@ -837,7 +985,7 @@ pub fn check_intervention(cm: &CModel, ops: &[Op]) -> Result<Vec<COp>, Vec<Diagn
 /// Compiles an expression over a checked model (used by observations and expectations).
 pub fn compile_expr(cm: &CModel, e: &Expr, expected: Option<&Type>) -> Result<(CExpr, Type), Vec<Diagnostic>> {
     let mut diags = vec![];
-    let scope = Scope { spaces: &cm.spaces, model: &cm.ir, index: &cm.index };
+    let scope = Scope { spaces: &cm.spaces, model: &cm.ir, index: &cm.index, funcs: &cm.functions };
     let mut tc = Tc::new(&scope, &mut diags, "expression");
     let r = match expected {
         Some(t) => tc.expect(e, t).map(|c| (c, t.clone())),
@@ -946,8 +1094,8 @@ fn specialize(e: &Expr, consts: &HashMap<Id, Expr>) -> Expr {
                 _ => None,
             },
             Expr::Not { not } => decide(not, consts).map(|b| !b),
-            Expr::Bin { bin: BinOp::Eq, l, r } => match (&**l, &**r) {
-                (Expr::Ref { r#ref }, v) | (v, Expr::Ref { r#ref }) => consts.get(r#ref).map(|c| c == v),
+            Expr::Bin { bin: bin @ (BinOp::Eq | BinOp::Ne), l, r } => match (&**l, &**r) {
+                (Expr::Ref { r#ref }, v) | (v, Expr::Ref { r#ref }) => consts.get(r#ref).map(|c| (c == v) == (*bin == BinOp::Eq)),
                 _ => None,
             },
             _ => None,

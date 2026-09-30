@@ -1,8 +1,8 @@
 //! Canonical printing of the IR as working-syntax text (working syntax section 1.4).
 //!
-//! The formatter prints from the IR, not from the source: declarations are grouped in blocks
-//! by role (const, param, input, state, discrete, derived), then flows, processes, events,
-//! equations and constraints; a parameter's range is printed as an interval when it bounds
+//! The formatter prints from the IR, not from the source: enumerations first, then
+//! declarations grouped in blocks by role (const, param, input, state, discrete, derived),
+//! then functions, flows, processes, events, equations and constraints; a parameter's range is printed as an interval when it bounds
 //! that parameter from both sides, as `where` otherwise; `run rate r` followed by
 //! `wait until E` is printed `run rate r until E`; representations are printed inside their
 //! views. Author notes (D-036) print as `///` comments before their element. Comments that
@@ -180,7 +180,7 @@ impl<'a> Printer<'a> {
                 }
             }
             Type::Tuple { items } => format!("({})", items.iter().map(|i| self.ty(i)).collect::<Vec<_>>().join(", ")),
-            Type::Enum { cases } => format!("Enum<{}>", cases.join(", ")),
+            Type::Enum { r#enum, .. } => self.model.enum_decl(r#enum).map(|e| e.name.clone()).unwrap_or_else(|| r#enum.rsplit('.').next().unwrap_or(r#enum).to_string()),
             Type::Function { result, .. } => self.ty(result),
         }
     }
@@ -190,6 +190,7 @@ impl<'a> Printer<'a> {
     fn prec(e: &Expr) -> u8 {
         match e {
             Expr::If { .. } | Expr::Otherwise { .. } => P_IF,
+            Expr::Match { .. } => P_ATOM,
             Expr::Bin { bin, l, r } => match bin {
                 BinOp::Or => P_OR,
                 BinOp::And => P_AND,
@@ -304,6 +305,10 @@ impl<'a> Printer<'a> {
             }
             Expr::Lambda { lambda } => self.expr_p(&lambda.body, &lambda.names),
             Expr::Otherwise { otherwise, default } => format!("{} otherwise {}", w(otherwise, P_OR), w(default, P_OR)),
+            Expr::Fn { r#fn } => self.model.function(r#fn).map(|f| f.name.clone()).unwrap_or_else(|| r#fn.rsplit('.').next().unwrap_or(r#fn).to_string()),
+            Expr::Match { r#match, arms } => {
+                format!("match {} {{ {} }}", p(r#match), arms.iter().map(|a| format!("{} => {}", a.case, p(&a.value))).collect::<Vec<_>>().join(", "))
+            }
         }
     }
 
@@ -316,6 +321,20 @@ impl<'a> Printer<'a> {
         let space = m.default_space.as_ref().map(|s| format!(" in {}", self.space_name(s))).unwrap_or_default();
         let _ = writeln!(out, "model {}{space} {{", m.name);
         let mut sections: Vec<String> = vec![];
+        let enums: Vec<String> = m
+            .enums
+            .iter()
+            .map(|e| {
+                let mut s = String::new();
+                notes(&mut s, INDENT, &e.notes);
+                let _ = write!(s, "{INDENT}enum {} {{ {} }}", e.name, e.cases.join(", "));
+                s
+            })
+            .collect();
+        if !enums.is_empty() {
+            sections.push(enums.join("
+"));
+        }
         for (role, word) in [
             (Role::Constant, "const"),
             (Role::Parameter, "param"),
@@ -328,6 +347,22 @@ impl<'a> Printer<'a> {
             if !bs.is_empty() {
                 sections.push(self.block(word, &bs));
             }
+        }
+        let fns: Vec<String> = m
+            .functions
+            .iter()
+            .map(|f| {
+                let mut s = String::new();
+                notes(&mut s, INDENT, &f.notes);
+                let names = f.param_names();
+                let ps: Vec<String> = f.params.iter().map(|p| format!("{}: {}", p.name, self.ty(&p.ty))).collect();
+                let _ = write!(s, "{INDENT}fn {}({}): {} = {}", f.name, ps.join(", "), self.ty(&f.result), self.expr_p(&f.body, &names));
+                s
+            })
+            .collect();
+        if !fns.is_empty() {
+            sections.push(fns.join("
+"));
         }
         let top: Vec<&Flow> = m.flows.iter().filter(|f| f.process.is_none()).collect();
         if !top.is_empty() {

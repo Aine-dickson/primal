@@ -504,6 +504,12 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
                         _ => return Err(d("PK-E05", format!("a formula of `{}` shows its definition; it is not a derived binding (D-034)", b.name))),
                     }
                 }
+                // A declared function shows its definition: `kinetic(m, v) = 0.5 m v²` (D-048).
+                (Some(Arg::Expr { expr: Expr::Fn { r#fn } }), None) => {
+                    let f = cm.ir.function(r#fn).ok_or_else(|| d("PK-E01", format!("unknown function `{}`", r#fn)))?;
+                    let names = f.param_names();
+                    (format!("{}({})", f.name, names.join(", ")), f.body.clone(), names)
+                }
                 _ => return Err(needs("a derived binding, or a label and an expression (D-034)")),
             };
             let refs = rhs

@@ -15,7 +15,8 @@ pub const RESERVED: &[&str] = &[
     "fn", "flow", "process", "event", "equation", "constraint", "on", "if", "then", "else", "and", "or", "not",
     "otherwise", "in", "where", "true", "false", "zeno", "stop", "settle", "set", "contribute", "create", "destroy",
     "connect", "disconnect", "emit", "enter", "checked", "within", "policy", "reject", "report", "intervenable",
-    "private", "symbol", "unit", "rising", "falling", "crossing", "at", "every", "from", "start", "request",
+    "private", "symbol", "unit", "rising", "falling", "crossing", "at", "every", "from", "start", "request", "enum",
+    "match",
 ];
 
 /// Contextual keywords: words of presentations, timelines and runs, recognized only where
@@ -358,13 +359,32 @@ impl<'a> Parser<'a> {
             return Ok(vec![Member::Process(ProcessDecl { name, flows, events, notes, span: self.since(start) })]);
         }
         if self.eat_word("fn") {
+            let notes = self.notes_before(start.line);
             let name = self.name("a function name")?;
             let params = self.typed_params()?;
             self.expect_punct(":")?;
             let result = self.type_expr()?;
             self.expect_punct("=")?;
             let body = self.expr()?;
-            return Ok(vec![Member::Fn(FnDecl { name, params, result, body, span: self.since(start) })]);
+            return Ok(vec![Member::Fn(FnDecl { name, params, result, body, notes, span: self.since(start) })]);
+        }
+        if self.eat_word("enum") {
+            // `enum Phase { rising, falling, resting }`, cases separated by commas or lines.
+            let notes = self.notes_before(start.line);
+            let name = self.name("an enumeration name")?;
+            self.expect_punct("{")?;
+            let mut cases = vec![];
+            loop {
+                self.skip_seps();
+                if self.eat_punct("}") {
+                    break;
+                }
+                cases.push(self.name("a case name")?);
+                if !self.eat_punct(",") && !matches!(self.peek(), Tok::Newline) && !self.is_punct("}") {
+                    return Err(self.unexpected("`,` or `}` after a case"));
+                }
+            }
+            return Ok(vec![Member::Enum(EnumDecl { name, cases, notes, span: self.since(start) })]);
         }
         if self.eat_word("equation") {
             let name = self.name("an equation name")?;
@@ -981,6 +1001,27 @@ impl<'a> Parser<'a> {
                     Ok(Expr { kind: ExprKind::BeatTime { start: w == "start", beat }, span: self.since(start) })
                 }
                 "if" => self.expr(),
+                "match" => {
+                    // `match e { case => value, ... }` (MK-10.2), arms separated by commas or lines.
+                    self.bump();
+                    let scrutinee = self.expr()?;
+                    self.expect_punct("{")?;
+                    let mut arms = vec![];
+                    loop {
+                        self.skip_seps();
+                        if self.eat_punct("}") {
+                            break;
+                        }
+                        let case = self.name("a case name")?;
+                        self.expect_punct("=>")?;
+                        let value = self.expr()?;
+                        arms.push((case, value));
+                        if !self.eat_punct(",") && !matches!(self.peek(), Tok::Newline) && !self.is_punct("}") {
+                            return Err(self.unexpected("`,` or `}` after an arm"));
+                        }
+                    }
+                    Ok(Expr { kind: ExprKind::Match(Box::new(scrutinee), arms), span: self.since(start) })
+                }
                 _ if is_reserved(&w) => Err(self.unexpected("an expression")),
                 _ => {
                     self.bump();
