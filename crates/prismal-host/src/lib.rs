@@ -283,6 +283,7 @@ fn instance_op(i: &mut Instance, op: &str, r: &Json, s: Field<&str>, n: Field<f6
                 y: n("y")?,
                 size: drawn_size(r),
                 pointer: r.get("pointer").and_then(Json::as_str).unwrap_or("mouse"),
+                id: r.get("id").and_then(Json::as_u64),
                 time: lesson_time()?,
             };
             Ok(i.pointer(&e))

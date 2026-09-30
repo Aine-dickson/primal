@@ -76,8 +76,9 @@ impl WebPlayer {
     /// A raw pointer event (HI-4.5, D-047): position in pixels of the view as drawn, which is
     /// `width` by `height` pixels large.
     #[allow(clippy::too_many_arguments)]
-    pub fn pointer(&mut self, phase: &str, view: &str, x: f64, y: f64, width: f64, height: f64, pointer: &str, time: f64) -> String {
-        let e = prismal_host::PointerEvent { phase, view, x, y, size: Some([width, height]), pointer, time };
+    pub fn pointer(&mut self, phase: &str, view: &str, x: f64, y: f64, width: f64, height: f64, pointer: &str, id: f64, time: f64) -> String {
+        let id = if id >= 0.0 { Some(id as u64) } else { None };
+        let e = prismal_host::PointerEvent { phase, view, x, y, size: Some([width, height]), pointer, id, time };
         s(self.0.pointer(&e))
     }
     pub fn wheel(&mut self, view: &str, x: f64, y: f64, width: f64, height: f64, delta: f64, time: f64) -> String {

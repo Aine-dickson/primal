@@ -76,7 +76,14 @@ enum Gesture {
     /// unit; `before` is the learner's framing to restore on cancel.
     /// `click` holds the tolerance while a release would still click the point pressed
     /// instead (D-060).
-    Pan { view: usize, from: [f64; 2], shown: [f64; 4], scale: f64, before: Option<[f64; 4]>, click: Option<f64> },
+    /// `id` is the pointer's, and `at` where it is now, so that a second touch can make the
+    /// pan a pinch.
+    Pan { view: usize, from: [f64; 2], shown: [f64; 4], scale: f64, before: Option<[f64; 4]>, click: Option<f64>, id: Option<u64>, at: [f64; 2] },
+    /// Two touches zooming and moving a spatial view (HI-4.5): `p0` where they were when the
+    /// second came down, `p` where they are, over the framing `shown` drawn at `scale`
+    /// pixels per view unit; `before` is the learner's framing to restore on cancel.
+    /// `q0` is the view point under the touches' first midpoint.
+    Pinch { view: usize, ids: [Option<u64>; 2], p0: [[f64; 2]; 2], p: [[f64; 2]; 2], q0: [f64; 2], shown: [f64; 4], scale: f64, before: Option<[f64; 4]> },
     /// A press on an empty point of a view that requests an event when clicked, and that
     /// does not pan: a release within `tol` pixels of `from` clicks the point (D-060).
     Point { view: usize, from: [f64; 2], tol: f64 },
@@ -95,6 +102,8 @@ pub struct PointerEvent<'a> {
     pub y: f64,
     pub size: Option<[f64; 2]>,
     pub pointer: &'a str,
+    /// The pointer's identity, for several pointers at once (two touches pinch).
+    pub id: Option<u64>,
     pub time: f64,
 }
 
@@ -597,6 +606,16 @@ impl Instance {
         let p = [e.x, e.y];
         match e.phase {
             "down" => {
+                // A second touch during a pan pinches the view, where zoom is permitted.
+                if let Some(Gesture::Pan { view, id, at, before, .. }) = self.gesture.clone() {
+                    if view == vi && e.pointer == "touch" && e.id.is_some() && e.id != id && self.permits("zoom") {
+                        if let Viewport::Spatial { shown, .. } = vp {
+                            let q0 = map.to_view([(at[0] + p[0]) / 2.0, (at[1] + p[1]) / 2.0]);
+                            self.gesture = Some(Gesture::Pinch { view, ids: [id, e.id], p0: [at, p], p: [at, p], q0, shown, scale: map.scale(), before });
+                            return json!({ "handled": true, "action": "pinch" });
+                        }
+                    }
+                }
                 if self.gesture.is_some() {
                     return merge(unhandled(), json!({ "message": "a gesture is already in progress" }));
                 }
@@ -623,7 +642,7 @@ impl Instance {
                 let click = if session && vf.click.is_some() { Some(tolerance(e.pointer)) } else { None };
                 match vp {
                     Viewport::Spatial { shown, .. } if self.permits("pan") => {
-                        self.gesture = Some(Gesture::Pan { view: vi, from: p, shown, scale: map.scale(), before: self.views[vi].user, click });
+                        self.gesture = Some(Gesture::Pan { view: vi, from: p, shown, scale: map.scale(), before: self.views[vi].user, click, id: e.id, at: p });
                         json!({ "handled": true, "action": "pan", "target": null })
                     }
                     _ => match click {
@@ -651,7 +670,32 @@ impl Instance {
                     json!({ "handled": true, "action": "click", "ok": true })
                 }
                 // Within the tolerance of the press, a clickable view is not panned (D-060).
-                Some(Gesture::Pan { view, from, click: Some(tol), .. }) if view == vi && dist(p, from) <= tol => json!({ "handled": true, "action": "pan" }),
+                Some(Gesture::Pinch { view, ids, p0, p: mut at, q0, shown, scale, before }) if view == vi => {
+                    let Some(k) = ids.iter().position(|i| *i == e.id) else { return unhandled() };
+                    at[k] = p;
+                    self.gesture = Some(Gesture::Pinch { view, ids, p0, p: at, q0, shown, scale, before });
+                    // The box grows as the touches close in; the view point under the first
+                    // midpoint stays under the midpoint.
+                    let (d0, d) = (dist(p0[0], p0[1]), dist(at[0], at[1]));
+                    if d0 < 1.0 || d < 1.0 {
+                        return json!({ "handled": true, "action": "pinch" });
+                    }
+                    let f = d0 / d;
+                    let m0 = [(p0[0][0] + p0[1][0]) / 2.0, (p0[0][1] + p0[1][1]) / 2.0];
+                    let m = [(at[0][0] + at[1][0]) / 2.0, (at[0][1] + at[1][1]) / 2.0];
+                    let bx = q0[0] - f * (m[0] - m0[0]) / scale - f * (q0[0] - shown[0]);
+                    let by = q0[1] - f * (m[1] - m0[1]) / scale - f * (q0[1] - shown[1]);
+                    self.views[vi].user = Some([bx, by, shown[2] * f, shown[3] * f]);
+                    json!({ "handled": true, "action": "pinch", "zoom": 1.0 / f })
+                }
+                // Moves of another pointer than the one panning are not the pan's.
+                Some(Gesture::Pan { id, .. }) if e.id.is_some() && id.is_some() && e.id != id => unhandled(),
+                Some(Gesture::Pan { view, from, click: Some(tol), .. }) if view == vi && dist(p, from) <= tol => {
+                    if let Some(Gesture::Pan { at, .. }) = self.gesture.as_mut() {
+                        *at = p;
+                    }
+                    json!({ "handled": true, "action": "pan" })
+                }
                 Some(Gesture::Point { view, from, tol }) if view == vi => {
                     if dist(p, from) > tol {
                         self.gesture = None;
@@ -659,8 +703,8 @@ impl Instance {
                     }
                     json!({ "handled": true, "action": "click", "ok": true })
                 }
-                Some(Gesture::Pan { view, from, shown, scale, before, .. }) if view == vi => {
-                    self.gesture = Some(Gesture::Pan { view, from, shown, scale, before, click: None });
+                Some(Gesture::Pan { view, from, shown, scale, before, id, .. }) if view == vi => {
+                    self.gesture = Some(Gesture::Pan { view, from, shown, scale, before, click: None, id, at: p });
                     self.views[vi].user = Some([shown[0] - (p[0] - from[0]) / scale, shown[1] - (p[1] - from[1]) / scale, shown[2], shown[3]]);
                     json!({ "handled": true, "action": "pan" })
                 }
@@ -683,6 +727,8 @@ impl Instance {
                     merge(self.click_at(&id, q[0], q[1]), json!({ "handled": true, "action": "click", "target": null, "at": q }))
                 }
                 Some(Gesture::Pan { .. }) => json!({ "handled": true, "action": "pan" }),
+                // Lifting either touch ends a pinch; the view stays where it was pinched to.
+                Some(Gesture::Pinch { .. }) => json!({ "handled": true, "action": "pinch" }),
                 None => unhandled(),
             },
             "cancel" => self.cancel_gesture(),
@@ -695,7 +741,7 @@ impl Instance {
         match self.gesture.take() {
             Some(Gesture::Drag { .. }) => self.cancel(),
             Some(Gesture::Click { .. } | Gesture::Point { .. }) => {}
-            Some(Gesture::Pan { view, before, .. }) => self.views[view].user = before,
+            Some(Gesture::Pan { view, before, .. } | Gesture::Pinch { view, before, .. }) => self.views[view].user = before,
             None => return unhandled(),
         }
         json!({ "handled": true, "action": "cancel" })

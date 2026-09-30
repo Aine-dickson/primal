@@ -417,3 +417,43 @@ fn drags_on_members_of_groups() {
     let k = h.key("ArrowUp", json!({}));
     assert_eq!(k["handled"], true, "{k}");
 }
+
+/// Two touches pinch a view that permits zoom (HI-4.5): spreading them apart zooms in, the
+/// view point under their first midpoint stays under the midpoint, lifting one ends the
+/// pinch, and cancel returns to the framing before it.
+#[test]
+fn pinch_zoom_with_two_touches() {
+    let (mut h, _) = Host::open("rp08", "ProjectileLesson");
+    let box_at = |h: &mut Host| -> Vec<f64> { h.frame(1.0)["views"][0]["box"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect() };
+    let own = box_at(&mut h);
+    let size = h.frame(1.0)["views"][0]["size"].clone();
+    let (w, hh) = (size[0].as_f64().unwrap(), size[1].as_f64().unwrap());
+    let (cx, cy) = (w / 2.0, hh / 2.0);
+    let touch = |id: u64| json!({ "time": 1.0, "pointer": "touch", "id": id });
+    assert_eq!(h.pointer("down", "scene", cx - 20.0, cy, touch(1))["action"], "pan");
+    assert_eq!(h.pointer("down", "scene", cx + 20.0, cy, touch(2))["action"], "pinch");
+    // Twice as far apart: half the box, about the same centre.
+    h.pointer("move", "scene", cx - 40.0, cy, touch(1));
+    let z = h.pointer("move", "scene", cx + 40.0, cy, touch(2));
+    assert_eq!(z["action"], "pinch", "{z}");
+    let zoomed = box_at(&mut h);
+    assert!((zoomed[2] - own[2] / 2.0).abs() < 1e-9 * own[2], "{zoomed:?} from {own:?}");
+    let centre = |b: &[f64]| [b[0] + b[2] / 2.0, b[1] + b[3] / 2.0];
+    assert!((centre(&zoomed)[0] - centre(&own)[0]).abs() < 1e-6 && (centre(&zoomed)[1] - centre(&own)[1]).abs() < 1e-6, "{zoomed:?}");
+    // Both touches moving together move the view with them.
+    h.pointer("move", "scene", cx - 30.0, cy, touch(1));
+    h.pointer("move", "scene", cx + 50.0, cy, touch(2));
+    let moved = box_at(&mut h);
+    assert!(moved[0] < zoomed[0], "the content follows the touches to the right: {moved:?}");
+    assert_eq!(h.pointer("up", "scene", cx + 50.0, cy, touch(2))["action"], "pinch");
+    assert_eq!(box_at(&mut h), moved, "the view stays where it was pinched to");
+    // A pinch cancelled returns to where it began.
+    h.pointer("down", "scene", cx - 20.0, cy, touch(3));
+    h.pointer("down", "scene", cx + 20.0, cy, touch(4));
+    h.pointer("move", "scene", cx + 60.0, cy, touch(4));
+    assert_eq!(h.pointer("cancel", "scene", cx, cy, touch(4))["action"], "cancel");
+    assert_eq!(box_at(&mut h), moved);
+    // A mouse never pinches.
+    h.pointer("down", "scene", cx, cy, json!({ "time": 1.0 }));
+    assert_eq!(h.pointer("down", "scene", cx + 10.0, cy, json!({ "time": 1.0 }))["handled"], false);
+}

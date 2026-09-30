@@ -167,6 +167,15 @@ check('a press and move on empty space pans', +panned.split(' ')[0] < +zoomed.sp
 await ev(`[...document.querySelectorAll('figcaption button')].find((b) => b.textContent === 'Reset view').click()`);
 await sleep(200);
 check('Reset view returns to the framing', (await vb()) === before);
+// Two touches spreading apart pinch the view in (HI-4.5).
+const pts = (d) => [{ x: sx - d, y: sy, id: 1 }, { x: sx + d, y: sy, id: 2 }];
+await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(20) });
+await cdp('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(40) });
+await cdp('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(60) });
+await cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+await sleep(200);
+const pinched = await vb();
+check('two touches spreading apart zoom in', +pinched.split(' ')[2] < +before.split(' ')[2] * 0.6, `${before} to ${pinched}`);
 
 ws.close();
 edge.kill();

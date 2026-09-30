@@ -20,7 +20,7 @@ const st = {
   speed: 1,
   lastTick: null,
   views: {},       // per view id: { kind, svg, panel, vb, base }
-  gesture: null,   // a drag or pan in progress: { action, view, pointerId, resume }
+  gesture: null,   // a drag or pan in progress: { action, view, ids (pointers taking part), resume }
   focus: null,     // { rep } of the focused draggable, restored after each render
   items: new Map(), // keyed HTML items (controls, formulas, labels) by rep id
   // Narration sound (D-053): off, synthesized speech, or recordings by cue name; the cues
@@ -876,24 +876,36 @@ function drawnPoint(v, e) {
 
 function forward(v, phase, e) {
   const p = drawnPoint(v, e);
-  return JSON.parse(st.player.pointer(phase, v.id, p.x, p.y, p.width, p.height, e.pointerType || 'mouse', st.p));
+  const id = Number.isInteger(e.pointerId) ? e.pointerId : -1;
+  return JSON.parse(st.player.pointer(phase, v.id, p.x, p.y, p.width, p.height, e.pointerType || 'mouse', id, st.p));
 }
 
 function setupPointer(v) {
   v.svg.addEventListener('pointerdown', (e) => {
+    // A second touch during a pan pinches the view (HI-4.5).
+    if (st.gesture && st.gesture.action === 'pan' && st.gesture.view === v && e.pointerType === 'touch') {
+      const res = forward(v, 'down', e);
+      if (res.action === 'pinch') {
+        e.preventDefault();
+        st.gesture.action = 'pinch';
+        st.gesture.ids.push(e.pointerId);
+        v.svg.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     if (st.gesture) return;
     const res = forward(v, 'down', e);
     if (!res.handled) return;
     e.preventDefault();
     if (res.action === 'drag' && !res.ok) { report(res); return; }
     // Drag mode `hold`: the run pauses while dragging and resumes after the commit (PK-10.9).
-    st.gesture = { action: res.action, view: v, pointerId: e.pointerId, resume: res.action === 'drag' && st.playing };
+    st.gesture = { action: res.action, view: v, ids: [e.pointerId], resume: res.action === 'drag' && st.playing };
     if (res.action === 'drag') stop();
     v.svg.setPointerCapture(e.pointerId);
   });
   v.svg.addEventListener('pointermove', (e) => {
     const g = st.gesture;
-    if (g && g.pointerId !== e.pointerId) return;
+    if (g && !g.ids.includes(e.pointerId)) return;
     const res = forward(v, 'move', e);
     if (!g) {
       // Hovering: show what can be grabbed, or clicked (D-059); an empty point of a view
@@ -906,7 +918,7 @@ function setupPointer(v) {
   });
   v.svg.addEventListener('pointerup', (e) => {
     const g = st.gesture;
-    if (!g || g.pointerId !== e.pointerId) return;
+    if (!g || !g.ids.includes(e.pointerId)) return;
     st.gesture = null;
     const res = forward(v, 'up', e);
     if (res.action === 'click') {
