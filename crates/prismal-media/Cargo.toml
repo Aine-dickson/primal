@@ -1,0 +1,15 @@
+[package]
+name = "prismal-media"
+description = "Prismal media export: presentations as video files and raster images, from the SVG renderer's frames (PK-12.2, D-052)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+# Frames are drawn by `prismal-svg` and rasterized here with resvg (pure Rust). Encoding is
+# left to an external encoder process (ffmpeg) fed through a pipe, D-052.
+[dependencies]
+prismal-host = { path = "../prismal-host" }
+prismal-svg = { path = "../prismal-svg" }
+prismal-web = { path = "../prismal-web" }
+serde_json.workspace = true
+resvg = "0.48"

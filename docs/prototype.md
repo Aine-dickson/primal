@@ -17,6 +17,7 @@ The first implementation of Prismal's core semantics, built kernel-first (D-002)
 | `crates/prismal-web` and `web/` | D-018, `03-presentation-kernel.md` section 12 | The web player: the host interface compiled to WebAssembly and a browser front end that renders frame descriptions |
 | `crates/prismal-stdio` | `05-host-interface.md` HI-6.4 | The host interface as a process: the JSON protocol over standard input and output, one request and one response per line, with request ids; a Python host (`client.py`) |
 | `crates/prismal-svg` | `03-presentation-kernel.md` section 12, `05-host-interface.md` section 5 | The SVG renderer: frame descriptions drawn as standalone SVG documents with no browser, for still images, vector documents and image sequences |
+| `crates/prismal-media` | `03-presentation-kernel.md` section 12, D-052 | Media export: the SVG renderer's frames rasterized (resvg) and encoded by an external encoder (ffmpeg) as video files, PNG stills and PNG sequences, with captions as WebVTT |
 | `crates/prismal-runtime` | `02-runtime-contract.md` | Runs, `dopri5` and `rk4` with dense output, crossing detection and location, event iteration in superdense time, Zeno detection, constraints and equation checks, interventions and requests, time events, observation, an interactive session with undo and redo |
 
 The reference programs are in `crates/prismal-runtime/tests/common/mod.rs`, each mirroring its working-syntax text in `docs/spec/reference-programs/`. Each program has its own test file.
@@ -173,6 +174,21 @@ Acceptance:
 - `prismal-svg/tests/frames.rs`: every presentation with views of the reference programs and the guide, drawn at its start, a third of the way and its end (at least 60 documents): each is well formed, every representation is present with its text alternative, markers stand at the frame's view coordinates, formulas have one text element per text run of their layouts; panels, controls, buttons, tables, captions and the dark theme; DropMovie as an image sequence at 10 frames per second, with the ball fading in, the ground drawn, the view box halved by `zoom 2` and restored by `zoom 1`. The documents are written to `target/svg-tests` for inspection.
 - `node crates/prismal-svg/compare.mjs` compares frames drawn by this renderer with the same frames drawn by the web player in headless Edge (13 frames of RP-01, RP-03 to RP-08 and the guide's wheel and DropMovie, sessions and lessons, cameras and fades): the view boxes of spatial views, and for every representation its text alternative and the geometry of its marks (marker and handle centres, line ends, path and polygon points; plots normalized to their frame). All 13 agree; a camera zoom perturbed by 1% is reported. The player opens a program, presentation and instant from its address for this (`#rp08/ProjectileLesson@20`).
 
+## Media export
+
+`crates/prismal-media` turns a presentation into a video file or raster images (D-052). Frames are the SVG renderer's; the crate rasterizes them with resvg and leaves encoding to ffmpeg, fed raw RGBA frames through a pipe.
+
+| Part | Content |
+|---|---|
+| `clip(instance, presentation, settings)` | opens a lesson in the `video` medium (fallbacks, PK-9.10) or a session from the start of its run, and draws frame `k` at `k / fps` up to and including the end; collects captions and what the medium could not show (PK-12.3) |
+| `Raster` | resvg with the system's fonts and any font directories; generic families resolve to the first installed common font |
+| `canvas`, `draw` | one canvas per clip, the largest frame rounded up to even pixels; each frame drawn from its top left corner on the theme's background |
+| `encode` | the encoder's arguments per container (`mp4`, `mov`, `mkv`: H.264; `webm`: VP9; `gif`: a generated palette), captions as a subtitle track when asked, a WebVTT file beside the video |
+| `still`, `write_frames` | a PNG of one instant; a directory of PNG frames with `captions.vtt` and the encoder command |
+| `prismal-media` (binary) | `prismal-media PROGRAM PRESENTATION OUT [--fps N] [--scale S] [--at T] [--until T] [--captions burned\|track\|both] [--dark] [--header] [--fonts DIR]... [--encoder PATH]` |
+
+Acceptance: `prismal-media/tests/export.rs` checks frame instants, WebVTT, canvases and encoder arguments; exports RP-08 in the video medium (no report, captions from the narration, drawn or not, identical on a second export, frames of different sizes on one opaque canvas); reports a lesson whose explore beat has no fallback; records RP-04's session; writes a still and a frame directory; names a missing encoder. When ffmpeg is found (`PRISMAL_FFMPEG` or the path), RP-08 is encoded as MP4, WebM and GIF, and ffprobe counts the MP4's frames and finds its caption track; otherwise that test says so and passes.
+
 
 | Program | Covered by the prototype | Not yet covered |
 |---|---|---|
@@ -240,7 +256,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
-| Video files and raster images: the SVG renderer writes vector frames and image sequences, and encoding them is left to external tools | PK section 12 |
+| Narration audio in videos; a descriptions track from announcements; several views laid out on one page | PK-9.1, PK-11.3, PK-7.4, D-052 |
 | Snapshots and backward seek within a dynamic run (undo recomputes from the start) | RC section 14.1 |
 | `contribute` operations on discrete state; collections and relations | MK sections 8, 16 |
 | Failure policy `pause` (interactive) | RC-10.3 |
@@ -265,3 +281,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 declared functions (D-048) and enumerations with `match` (D-049): IR, checker (MK-E17, MK-E18, MK-E23), syntax, formatter, identities, text and formula output; guide sections in chapters 2 and 5; `prismal-syntax/tests/functions_enums.rs`.
 - 2026-09-30 raw input and viewports (D-047): the host captures, the engine targets, pans, zooms and keeps focus; frames carry viewports; the web player forwards raw events, checked with real events in headless Edge (`web/check-input.mjs`).
 - 2026-09-30 SVG renderer (`prismal-svg`): frames as standalone SVG documents and image sequences, compared with the web player's drawing in a browser; italic correction in formula layouts; the player's address selects a presentation and instant.
+- 2026-09-30 media export (`prismal-media`, D-052): video files through ffmpeg, PNG stills and sequences, captions drawn, as a track and as WebVTT.

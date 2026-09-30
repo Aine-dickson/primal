@@ -232,6 +232,24 @@ run movie of FreeFall with DropMovie {
 }
 ```
 
+## Exporting a video
+
+A lesson can be exported as a video file (D-052). The export opens the lesson in the video medium, so explore beats play their `fallback`, and draws every frame at a fixed rate:
+
+```sh
+cargo run --release -p prismal-media -- lesson.md DropMovie drop.mp4 --fps 30 --scale 2
+```
+
+- The first argument is the program (a source file, or a Markdown document whose `text` blocks form it); the second names the presentation.
+- The output's extension chooses the format: `mp4`, `mov`, `mkv`, `webm` or `gif`. The encoding is done by ffmpeg, which must be installed (or named with `--encoder` or the `PRISMAL_FFMPEG` variable).
+- `drop.png --at 4` writes the single frame at 4 s instead. Any other name is a directory: the frames as PNG images, the captions, and the ffmpeg command that makes a video of them.
+- Narration appears as captions, drawn into the frames. `--captions track` puts them only in a subtitle track the viewer can turn off; `--captions both` does both. They are always written beside the video as `drop.vtt`. Narration has no sound yet.
+- An explore beat without a `fallback` cannot be shown in a video: the export says so, and plays on.
+- A presentation without a timeline is recorded as a run from its start; `--until 10` sets its length in simulation seconds.
+- `--dark` uses the dark theme.
+
+Since frames depend only on the program and presentation time, exporting twice gives the same video.
+
 ## A lab for the same model
 
 The requested event also serves a presentation without a timeline: a `button` requests it whenever the learner presses it, at the instant shown.

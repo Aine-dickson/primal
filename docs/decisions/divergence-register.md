@@ -71,6 +71,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-049 | Enumerations in v0: model-level `enum`, nominal by identity, cases typed by context, `match` with one arm per case | Accepted |
 | D-050 | Event payloads in v0: declared where they enter (`on request(p: T)`, `on E(p: T)`), supplied by requests and `emit E(v)` | Accepted |
 | D-051 | Inputs in v0: optional defaults, starting values from the run, piecewise-constant changes from runs and hosts (`set_input`) | Accepted |
+| D-052 | Video export: frames from the SVG renderer rasterized in process, encoding by an external encoder through a pipe, one canvas per clip, captions drawn and as a track | Accepted |
 
 ---
 
@@ -933,5 +934,28 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30; a departure from MK-6.7, recorded as MK-6.7a. Without a default or a starting value the run does not start, with a message naming the input. Values are evaluated against the input's type and read only constants; a wrong type or a binding that is not an input is rejected and logged. Inputs stay outside interventions: no control, handler or intervention sets them.
 - **Reason:** a model can be written, checked and run standalone with sensible defaults, and the same model embedded in a host receives the host's values; each change is logged, so runs replay without the host (RC-11.7).
 - **Consequences:** MK-6.7a, RC-11.6a; the runtime's `Input` action; 04-ir run `inputs`; HI-4.3a `set_input`; guide chapter 5.
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-052: Video export
+
+- **Status:** Accepted
+- **Original position:** PK-12.2 lists video among the media a renderer produces, and PK-8.7 makes frames deterministic so that video export is possible; how pixels and video frames are produced is left to renderers (PK section 1). The SVG renderer (`prismal-svg`) wrote image sequences of SVG documents and left encoding to external tools.
+- **Raised by:** the media step after the second renderer (PROJECT-STATE next steps).
+- **Builds on:** PK-8.7, PK-9.10, PK-11.3, PK-12.2, PK-12.3, D-015, D-018, D-046.
+- **Question:** How does a presentation become a video file, and what does Prismal own in that path?
+- **Options considered:**
+  1. **Encode in process with a codec written in Rust.** One binary with no outside program, but a pure Rust encoder of a widely played codec (H.264) does not exist; AV1 encoders are slow and large, and codec and container work is outside the language's specification.
+  2. **Rasterize in process, encode with an external encoder fed through a pipe.** Frames are drawn by the SVG renderer and rasterized with resvg (pure Rust); raw frames go to ffmpeg's standard input. Without an encoder, the frames are written as PNG images with the captions and the encoder command.
+  3. **Keep writing SVG sequences only.** Every user rasterizes and encodes; results depend on the tools chosen and on their fonts, and captions are lost.
+- **Accepted position:** option 2, in a crate `prismal-media` with a command `prismal-media PROGRAM PRESENTATION OUT`, under the owner's standing delegation of 2026-09-30. The output's extension decides the medium: `mp4`, `mov`, `mkv`, `webm` or `gif` for a video, `png` for a still, anything else for a directory of frames. Settings:
+  - A lesson is opened in the `video` medium: explore beats play their fallbacks (PK-9.10) and elements without one are reported on standard error (PK-12.3). A session is recorded from the start of its run to its end or to `--until`.
+  - Frame `k` is the instant `k / fps`, up to and including the last instant not after the end, so the final state is shown.
+  - Frames of one clip may differ in size (a caption or a panel appears); every frame is drawn from its top left corner on one canvas, the largest frame rounded up to even pixels, filled with the theme's background, so views stay in place.
+  - Captions (PK-11.3) are drawn into the frames by default, or carried only as a subtitle track (`--captions track`), or both; they are always written beside the video as WebVTT.
+  - The SVG renderer's header line is off: it names the instant, which a video shows by playing.
+  - Generic font families resolve to the first installed of a list of common fonts; `--fonts DIR` adds fonts, so an export can be made identical across machines.
+- **Reason:** Prismal owns what its specification defines (the frames, their instants, fallbacks, captions) and nothing of codecs and containers; a pipe to one widely installed encoder gives every common format, and the frame directory keeps export possible with no encoder at all.
+- **Consequences:** `crates/prismal-media`; `docs/prototype.md` media section; guide chapter 8 (Exporting a video). Not yet done: narration audio (the language carries narration text only; when recorded or synthesized audio is added, its cues are placed at the captions' start times and muxed as an audio track), a descriptions track from announcements, and a layout of several views on one page (PK-7.4).
 - **History:**
   - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
