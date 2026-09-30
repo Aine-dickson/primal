@@ -52,6 +52,22 @@ presentation Name for Model {
 
 A `marker` is a dot of fixed size on the screen. A `circle`, `ellipse` or `arc` has radii in the model's units, so it grows when the view is zoomed. Their angles are measured counterclockwise from the space's `x` axis: `arc(P, r, from: 0 deg, to: 90 deg)` is the quarter from the right of `P` to above it.
 
+### Color and line
+
+A drawn representation may say how it looks: `color:` names a color, and `line:` how a stroke is drawn (D-061).
+
+```prismal
+segment(origin, pos, color: blue, line: dashed) as rod
+trace(pos every 0.1 s, color: green, line: dotted)
+marker(pos, color: red) as ball
+```
+
+- Colors are named: `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `gray`, `ink`. Each medium draws a name with a value that suits its theme, so a program looks right on a light page, a dark one, or in a video; `ink` is the color of text.
+- Lines are `solid`, `dashed` or `dotted`.
+- Markers take a color; arrows, segments, polylines, polygons, circles, ellipses, arcs, traces, graphs and series take a color and a line. Other kinds, and groups, take neither.
+- Without them, each kind is drawn its own way (arrows take turns through a few colors, a trace is dashed).
+- Color never carries meaning alone (D-026): what a color distinguishes is also named (`as rod`) or labeled, and the text alternative does not mention it.
+
 Every representation has a **text alternative** generated from what it shows ("slider for θ = 45 deg, from 5 deg to 85 deg"), for screen readers and the player's Description tab (D-026).
 
 ## Controls and inverses
@@ -180,8 +196,8 @@ presentation WheelView for Wheel {
     axes
     group(at: origin + (x, r), rotate: φ) as wheel {
       circle(origin, r) as tyre
-      segment(origin, origin + (r, 0 m))
-      marker(origin + (r, 0 m)) as valve
+      segment(origin, origin + (r, 0 m), color: gray)
+      marker(origin + (r, 0 m), color: red) as valve
     }
     trace(rim every 0.02 s)
   }

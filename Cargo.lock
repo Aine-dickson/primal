@@ -383,6 +383,7 @@ name = "prismal-svg"
 version = "0.1.0"
 dependencies = [
  "prismal-host",
+ "prismal-syntax",
  "prismal-web",
  "serde_json",
 ]

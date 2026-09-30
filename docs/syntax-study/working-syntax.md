@@ -53,6 +53,7 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 | `panel name { reps }` | region without a coordinate system (controls, formulas) |
 | `rep(...) [as name] { on drag [part] as p { propose x = e } }` | representation with its declared inverse; in `for b in c { ... }`, `propose b.x = e` moves that member (D-059) |
 | `rep(...) [as name] { on click request E(v) }` | representation that requests an event when clicked; `on click request E(b)` for its member (D-059) |
+| `segment(P, Q, color: blue, line: dashed)` | author styles: a named color and a line style (D-061) |
 | `view v: ... { on click as q request E(q) ... }` | a view that requests an event with the point clicked, where no representation takes the click (D-060) |
 | `group(at: P, rotate: θ, scale: k) [as name] { reps }` | representations placed, turned and scaled together; members are written in the group's frame (D-043) |
 | `trace(pos every 0.02 s)`, `series_plot(y every 0.01 s)` | a sampled source: `expr every Δ`, only as a representation's argument (PK-6.3a) |
@@ -531,6 +532,7 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-10-01 member payloads and several payloads (`on request(b in balls, j: T)`, `request E(balls[2], v)`) implemented (D-059).
 - 2026-10-01 drags on members (`propose b.pos = p`) and clicks (`on click request E(b)`) implemented (D-059).
 - 2026-10-01 clicks on an empty point of a view (`on click as q request E(q)`) implemented (D-060).
+- 2026-10-01 author styles `color:` and `line:` implemented (D-061).
 - 2026-09-30 `enum`, `fn` and `match` implemented (D-048, D-049); `enum` and `match` reserved; `=>` added.
 - 2026-09-30 implemented by the text parser. Lexical rules made precise (units without spaces, names after numbers, statement separators, `in` after a declaration's value, `inf`); reserved words split into reserved words and contextual keywords (D-040); `π` kept by name (D-039); RP-07 observation `state` renamed `values`.
 - 2026-09-30 sampled sources (`expr every Δ`) and plot axes with dimensions, from the web player.

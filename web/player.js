@@ -436,7 +436,10 @@ function drawRep(v, g, r, u, colorIndex) {
   if (r.drag) cls.push('draggable');
   else if (r.click) cls.push('clickable');
   if (r.valid === false) cls.push('invalid');
+  // The author's color (D-061); an invalid preview keeps its own.
+  if (r.color && r.valid !== false) cls.push('styled');
   const grp = svg('g', { class: cls.join(' '), 'data-rep': r.id }, g);
+  if (r.color && r.valid !== false) grp.style.setProperty('--c', `var(--color-${r.color})`);
   if (r.opacity != null) grp.setAttribute('opacity', r.opacity);
   const title = svg('title', {}, grp);
   title.textContent = r.text;
@@ -503,6 +506,15 @@ function drawRep(v, g, r, u, colorIndex) {
     default:
       grp.remove();
       return;
+  }
+  if (r.line && r.drawn == null && r.valid !== false) {
+    // The author's line style (D-061), as prismal-svg draws it.
+    const dash = r.line === 'dashed' ? `${6 * u} ${4 * u}` : `${0.01 * u} ${4 * u}`;
+    for (const e of grp.querySelectorAll('line, polyline, polygon, path')) {
+      if (e.parentNode.classList.contains('arrow') && e.tagName === 'polygon') continue;
+      e.style.strokeDasharray = dash;
+      if (r.line === 'dotted') e.style.strokeLinecap = 'round';
+    }
   }
   if (r.drawn != null) {
     // `reveal draw`: every stroke is drawn up to the fraction reached (D-042).

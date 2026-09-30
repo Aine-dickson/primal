@@ -98,6 +98,8 @@ impl PresCx<'_, '_> {
         for a in &r.args {
             let value = match (&a.value.kind, a.name.as_ref().map(|n| n.text.as_str())) {
                 (ExprKind::Str(s), _) => Arg::Text { text: s.clone() },
+                // Style words (D-061): `color: blue`, `line: dashed`.
+                (ExprKind::Name(w), Some("color" | "line")) => Arg::Word { word: w.clone() },
                 (ExprKind::List(_), _) => match self.range(&a.value) {
                     Some((lo, hi)) => Arg::Range { lo, hi },
                     None => continue,

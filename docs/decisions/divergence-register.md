@@ -80,6 +80,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-057 | Collections whose membership changes: a declared capacity (`Drop[max 50]`), `create` and `destroy` in handlers, events per member, `set b.x` from the container; elaborated to members with a liveness binding | Accepted |
 | D-059 | Members as payloads (`on request(b in balls)`), several payloads per event, drags and clicks on members; requests refused with a reason | Accepted |
 | D-060 | Clicks on an empty point of a view: `on click as q request E(q)` in the view, the point as payload | Accepted |
+| D-061 | Author styles: `color:` from a named palette each medium maps to its theme; `line:` solid, dashed or dotted | Accepted |
 
 ---
 
@@ -1133,5 +1134,22 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. `on click as q request E(q)` in a spatial or plot view (at most one per view; none in a panel, SX-E06). The payload has the event's declared type (PK-E02); the event is declared `on request` (PK-E03). A press on an empty point that is released within the pointer's reach clicks; with `pan` permitted, a press that moves pans. The host's `click_at` names a view and a point in view coordinates, for hosts that target input themselves. Frames carry the event a view's click requests; the web player shows a crosshair over an empty point.
 - **Reason:** the point is data the author turns into a payload with the language's own expressions, and nothing reaches the model but a request the author declared, validated, logged and undone like any other (D-027, D-059). Option 2 was set aside because it adds a representation that draws nothing; option 3 because the model would depend on the presentation.
 - **Consequences:** PK-10.5c; HI-4.3 (`click_at`), HI-4.5 (presses on an empty point); 04-ir: a view's `click`; working syntax; the parser reads `on click as q request E(q)` in a view's block, the formatter prints it first; elaboration carries the payload; `Projector` checks view clicks; `Interactive::click_at`; the host's gestures (`Point`, and a pan that may still click); the web player's crosshair; guide chapter 9 (`place` in the orbits lab); tests `view_clicks.rs`, the raw input test `clicks_on_an_empty_point`, and `web/check-input.mjs` in a browser. Keyboard users reach the same event through a control or button (D-026): a point is not chosen with keys in v0.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-061: Author styles of representations
+
+- **Status:** Accepted
+- **Original position:** PK-2.4 and PK-5.5 name colors as presentation configuration, but no syntax or frame field existed: every kind was drawn with the renderer's own colors (arrows taking turns through four). The guide's circumference lesson (session of 2026-09-30) had to draw a laid edge as a polyline to share the arc's color, and an author could not tell two segments apart except by name.
+- **Raised by:** the circumference lesson (PROJECT-STATE session log, 2026-09-30, D-054); the language completeness step.
+- **Builds on:** PK-2.4, PK-5.5, PK-6.2, PK-11.4, PK-12.1, PK-12.2, D-026, D-046.
+- **Question:** How does an author choose how a representation looks, while frames stay free of any one medium?
+- **Options considered:**
+  1. **Named colors and line styles as set properties**: `color: blue`, `line: dashed`. Frames carry the names; each medium maps them to values for its theme (light, dark, print, video).
+  2. **Color values** (`color: "#2458c6"`): exact, but a value chosen for a light page is wrong on a dark one, and frames would carry a medium's values.
+  3. **Style sheets or classes** (`class: highlight` with a separate style block): flexible, but a second language inside the presentation, not needed by any content yet.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. Ten colors (`red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `gray`, `ink`) and three lines (`solid`, `dashed`, `dotted`). Markers take a color; stroked kinds take both; other kinds and groups take neither (PK-E05). Styles are decoration: not in text alternatives, never the only encoding (PK-11.4). Styles bound to model values (color scales) are later work.
+- **Reason:** names keep the frame description medium-independent (PK-12.1a) and let every renderer keep contrast in its own theme; a small fixed palette is what educational diagrams use, and the names read as intent. Option 2 was set aside for dark themes and medium independence, option 3 as more than content needs.
+- **Consequences:** PK-6.6a; HI-5.2; 04-ir (`word` arguments `color`, `line`); working syntax; lowering of style words; `compile_rep` checks and strips style properties before each kind's checks; `RepFrame` gains `color` and `line`; `prismal-svg` themes gain a palette (`Theme::color`, `COLORS`); the web player's style sheet gains `--color-*` for light and dark and draws `--c` and dash styles as `prismal-svg` does; guide chapter 7, Color and line (the wheel's spoke and valve), reference; tests `prismal-svg/tests/styles.rs`.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

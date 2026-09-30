@@ -112,6 +112,53 @@ pub struct RepFrame {
     /// name (D-059).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub click: Option<String>,
+    /// The author's color, a name from the palette every medium maps to its own values
+    /// (PK-6.6a, D-061).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// The author's line style: `dashed` or `dotted`; absent is the kind's own (D-061).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+}
+
+/// Named colors an author may give a representation (D-061). Media map them to values that
+/// suit their theme; the names are the frame's.
+pub const COLORS: &[&str] = &["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "gray", "ink"];
+/// Line styles (D-061).
+pub const LINES: &[&str] = &["solid", "dashed", "dotted"];
+
+/// Kinds that take `color` and `line` (D-061): what is drawn with ink or strokes.
+fn styled(kind: &str) -> (bool, bool) {
+    match kind {
+        "marker" => (true, false),
+        "arrow" | "segment" | "polyline" | "polygon" | "circle" | "ellipse" | "arc" | "trace" | "function_graph" | "series_plot" => (true, true),
+        _ => (false, false),
+    }
+}
+
+/// Checks and removes the style properties of a representation (D-061), so that each kind's
+/// own checks see only its own properties.
+fn style_props(rep: &Rep) -> Result<Rep, PDiag> {
+    let d = |message: String| PDiag { code: "PK-E05", message, element: rep.id.clone() };
+    let (color, line) = styled(&rep.kind);
+    for p in rep.props.iter().filter(|p| p.name == "color" || p.name == "line") {
+        let (ok, words) = if p.name == "color" { (color, COLORS) } else { (line, LINES) };
+        if !ok {
+            return Err(d(format!("a {} takes no `{}` (PK-6.6a)", rep.kind, p.name)));
+        }
+        match &p.value {
+            Arg::Word { word } if words.contains(&word.as_str()) => {}
+            _ => return Err(d(format!("`{}` is one of {} (PK-6.6a)", p.name, words.join(", ")))),
+        }
+    }
+    Ok(Rep { props: rep.props.iter().filter(|p| p.name != "color" && p.name != "line").cloned().collect(), ..rep.clone() })
+}
+
+fn style_word(rep: &Rep, name: &str) -> Option<String> {
+    match rep.prop(name) {
+        Some(Arg::Word { word }) if !(name == "line" && word == "solid") => Some(word.clone()),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -415,7 +462,9 @@ fn prop_expr<'a>(rep: &'a Rep, name: &str) -> Option<&'a Expr> {
 }
 
 /// Compiles a representation for a view, checking its sources, scales and inverse.
-pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PDiag>> {
+pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, full: &Rep) -> Result<CRep, Vec<PDiag>> {
+    let stripped = style_props(full).map_err(|d| vec![d])?;
+    let rep = &stripped;
     let d = |code: &'static str, message: String| vec![PDiag { code, message, element: rep.id.clone() }];
     let ce = |e: &Expr, exp: Option<&Type>| -> Result<(CExpr, Type), Vec<PDiag>> {
         compile_expr(cm, e, exp).map_err(|ds| d("PK-E02", ds.iter().map(|x| format!("{}: {}", x.code, x.message)).collect::<Vec<_>>().join("; ")))
@@ -773,7 +822,7 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
         Some(w) => Some(compile_expr(cm, w, Some(&Type::Boolean)).map_err(|ds| d("PK-E02", ds.iter().map(|x| format!("{}: {}", x.code, x.message)).collect::<Vec<_>>().join("; ")))?.0),
         None => None,
     };
-    Ok(CRep { rep: rep.clone(), kind, when })
+    Ok(CRep { rep: full.clone(), kind, when })
 }
 
 fn coords(v: &Value) -> Vec<f64> {
@@ -803,7 +852,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                 Some(Ok(v)) => coords(&v),
                 Some(Err(s)) => {
                     let (sh, tx) = status(s);
-                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None };
+                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None, color: None, line: None };
                 }
                 None => vec![0.0, 0.0],
             };
@@ -920,7 +969,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                     Ok(v) => pts.push(ctx.to_view(&coords(&v))),
                     Err(s) => {
                         let (sh, tx) = status(s);
-                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None };
+                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None, color: None, line: None };
                     }
                 }
             }
@@ -1038,7 +1087,8 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
         Some(e) => format!("{text}, activate: {e}"),
         None => text,
     };
-    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag, click }
+    let (color, line) = (style_word(&r.rep, "color"), style_word(&r.rep, "line"));
+    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag, click, color, line }
 }
 
 /// Sample instants `t0, t0 + dt, ...` up to `t`, and `t` itself (PK-6.3, PK-7.5: a trace

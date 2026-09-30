@@ -20,6 +20,10 @@ use std::fmt::Write;
 
 // ---------------------------------------------------------------- options
 
+/// The author's named colors (D-061), as frames carry them (the kernel's
+/// `prismal_present::frame::COLORS`).
+pub const COLORS: [&str; 10] = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "gray", "ink"];
+
 /// Colors of a rendering, as in the web player's style sheet.
 #[derive(Clone, Debug)]
 pub struct Theme {
@@ -35,6 +39,9 @@ pub struct Theme {
     pub reps: [&'static str; 4],
     pub bad: &'static str,
     pub hl: &'static str,
+    /// Values of the author's named colors (D-061), in the order of
+    /// `COLORS`.
+    pub palette: [&'static str; 10],
 }
 
 impl Theme {
@@ -50,6 +57,7 @@ impl Theme {
         reps: ["#1d1f24", "#b3471d", "#1f7a4d", "#7a3fb0"],
         bad: "#b3261e",
         hl: "#e0a800",
+        palette: ["#c62828", "#d9730d", "#b58900", "#2e7d32", "#00897b", "#2458c6", "#7a3fb0", "#c2185b", "#6b7080", "#1d1f24"],
     };
     pub const DARK: Theme = Theme {
         bg: "#15171b",
@@ -63,7 +71,13 @@ impl Theme {
         reps: ["#e7e8eb", "#ff9d6e", "#6fd3a0", "#c9a2ff"],
         bad: "#ff8a80",
         hl: "#ffd24d",
+        palette: ["#ff8a80", "#ffb070", "#ffd54f", "#81c784", "#4dd0c4", "#7ea6ff", "#c9a2ff", "#f48fb1", "#a0a5b0", "#e7e8eb"],
     };
+
+    /// The value of an author's named color (D-061).
+    pub fn color(&self, name: &str) -> Option<&'static str> {
+        COLORS.iter().position(|c| *c == name).map(|i| self.palette[i])
+    }
 }
 
 /// How frames are drawn.
@@ -471,10 +485,17 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
     let invalid = r["valid"] == false;
     let drawn = r["drawn"].as_f64();
     // `reveal draw`: every stroke drawn up to the fraction reached (D-042).
+    // The author's color and line style (D-061).
+    let custom = r["color"].as_str().and_then(|c| th.color(c));
+    let style = match r["line"].as_str() {
+        Some("dashed") => format!(" stroke-dasharray=\"{} {}\"", n(6.0 * u), n(4.0 * u)),
+        Some("dotted") => format!(" stroke-dasharray=\"{} {}\" stroke-linecap=\"round\"", n(0.01 * u), n(4.0 * u)),
+        _ => String::new(),
+    };
     let dash = match drawn {
         Some(d) => format!(" pathLength=\"1\" stroke-dasharray=\"1\" stroke-dashoffset=\"{}\"", n(1.0 - d)),
         None if invalid => " stroke-dasharray=\"4 3\"".to_string(),
-        None => String::new(),
+        None => style.clone(),
     };
     let mut cls = vec!["rep".to_string()];
     if r["drag"].is_string() {
@@ -511,7 +532,7 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
             let p = map.to(pt(&r["at"]));
             ring(out, p);
             let rad = if r["drag"].is_string() { 8.0 } else { 6.0 } * u;
-            let (fill, stroke, sd) = if invalid { ("none", th.bad, " stroke-dasharray=\"4 3\"") } else { (th.reps[1], th.surface, "") };
+            let (fill, stroke, sd) = if invalid { ("none", th.bad, " stroke-dasharray=\"4 3\"") } else { (custom.unwrap_or(th.reps[1]), th.surface, "") };
             let _ = write!(
                 out,
                 "<circle class=\"marker\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"{}\"{sd}/>",
@@ -524,7 +545,7 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
         }
         "arrow" => {
             let (a, b) = (map.to(pt(&r["from"])), map.to(pt(&r["to"])));
-            let color = if invalid { th.bad } else { th.reps[ci % 4] };
+            let color = if invalid { th.bad } else { custom.unwrap_or(th.reps[ci % 4]) };
             let _ = write!(
                 out,
                 "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{color}\" stroke-width=\"{}\"{dash}/>",
@@ -540,7 +561,7 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
                     Some(d) if d <= 0.95 => " opacity=\"0\"",
                     _ => "",
                 };
-                let _ = write!(out, "<polygon points=\"{head}\" fill=\"{}\"{op}/>", th.reps[ci % 4]);
+                let _ = write!(out, "<polygon points=\"{head}\" fill=\"{}\"{op}/>", custom.unwrap_or(th.reps[ci % 4]));
             }
             ring(out, b);
             let len = (b[0] - a[0]).hypot(b[1] - a[1]);
@@ -564,7 +585,7 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
         }
         "segment" => {
             let (a, b) = (map.to(pt(&r["from"])), map.to(pt(&r["to"])));
-            let color = if invalid { th.bad } else { th.reps[0] };
+            let color = if invalid { th.bad } else { custom.unwrap_or(th.reps[0]) };
             let _ = write!(
                 out,
                 "<line class=\"segment\" x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{color}\" stroke-width=\"{}\"{dash}/>",
@@ -578,8 +599,10 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
         "polyline" => {
             let trace = r["kind"] == "trace";
             let (cls, color, width, extra) = if trace { ("trace", th.muted, 1.5, " stroke-dasharray=\"3 3\"") } else { ("graph", th.accent, 2.0, "") };
-            // A drawn fraction replaces the trace's own dashes, as in the browser.
-            let extra = if drawn.is_some() { dash.as_str() } else { extra };
+            let color = custom.unwrap_or(color);
+            // A drawn fraction, or the author's line, replaces the trace's own dashes, as in
+            // the browser.
+            let extra = if drawn.is_some() || !style.is_empty() { dash.as_str() } else { extra };
             let _ = write!(out, "<polyline class=\"{cls}\" points=\"{}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\"{extra}/>", pts("points"), n(width * u));
         }
         "polygon" => {
@@ -588,15 +611,16 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
                 "<polygon class=\"shape\" points=\"{}\" fill=\"{accent}\" fill-opacity=\"0.12\" stroke=\"{accent}\" stroke-width=\"{}\"{dash}/>",
                 pts("points"),
                 n(2.0 * u),
-                accent = th.accent
+                accent = custom.unwrap_or(th.accent)
             );
         }
         "ellipse" => {
             // A circle, ellipse or arc (PK-6.3c): a whole one filled as a polygon is, an
             // arc stroked only.
-            let fill = if r["closed"] == true { format!("fill=\"{}\" fill-opacity=\"0.12\"", th.accent) } else { "fill=\"none\"".to_string() };
+            let accent = custom.unwrap_or(th.accent);
+            let fill = if r["closed"] == true { format!("fill=\"{accent}\" fill-opacity=\"0.12\"") } else { "fill=\"none\"".to_string() };
             let cls = if r["closed"] == true { "shape" } else { "curve" };
-            let _ = write!(out, "<path class=\"{cls}\" d=\"{}\" {fill} stroke=\"{}\" stroke-width=\"{}\"{dash}/>", curve_path(r), th.accent, n(2.0 * u));
+            let _ = write!(out, "<path class=\"{cls}\" d=\"{}\" {fill} stroke=\"{}\" stroke-width=\"{}\"{dash}/>", curve_path(r), accent, n(2.0 * u));
         }
         "group" => {
             // Members are placed by the kernel; the group carries opacity and highlight

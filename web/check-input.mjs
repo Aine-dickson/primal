@@ -131,6 +131,11 @@ await mouse('mouseReleased', cx, cy);
 await sleep(200);
 check('a click on an empty point places planet 3', await shown(3));
 
+// D-061: the author's color reaches the browser, from the theme's palette.
+await open('g7-wheel/WheelView');
+const valveFill = await ev(`getComputedStyle(document.querySelector('[data-rep$="valve"] circle.marker')).fill`);
+check('the valve is drawn in the red of the theme', ['rgb(198, 40, 40)', 'rgb(255, 138, 128)'].includes(valveFill), valveFill);
+
 // RP-08 permits zoom and pan.
 await open('rp08/ProjectileLesson@1');
 const vb = () => ev(`document.querySelector('#views svg').getAttribute('viewBox')`);
