@@ -462,7 +462,7 @@ impl Instance {
 
     /// Requests an event declared `on request` (by name or identity) at the instant shown,
     /// with its payload (HI-4.3b, D-050, D-059): a number in coherent SI units (0 and 1 for a
-    /// Boolean), an array of numbers for a vector or a point, a member as `"balls[2]"`, and
+    /// Boolean), an array of numbers for a vector or a point, a case by name, a member as `"balls[2]"`, and
     /// several payloads as an array with one entry each.
     pub fn request(&mut self, event: &str, payload: Option<&Json>) -> Json {
         let i = match self.interactive() {
@@ -906,6 +906,14 @@ fn payload_expr(p: &prismal_ir::Payload, v: &Json) -> Result<prismal_ir::Expr, S
             Some(xs) => Ok(Expr::Tuple { tuple: xs.into_iter().map(|x| si_literal(x, &Type::Quantity { dim: *dim })).collect() }),
             None => Err(format!("the payload `{}` is an array of numbers", p.name)),
         },
+        // A point: its coordinates in metres in the space's standard axes.
+        (Json::Array(a), Type::Point { space }) => match nums(a) {
+            Some(xs) => Ok(prismal_ir::build::origin(space) + Expr::Tuple { tuple: xs.into_iter().map(|x| prismal_ir::build::num(x, "m")).collect() }),
+            None => Err(format!("the payload `{}` is an array of coordinates", p.name)),
+        },
+        // An enumeration's case by name (D-049).
+        (Json::String(c), Type::Enum { cases, .. }) if cases.contains(c) => Ok(Expr::Case { case: c.clone() }),
+        (_, Type::Enum { cases, .. }) => Err(format!("the payload `{}` is one of {}", p.name, cases.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(", "))),
         _ => Err(format!("the payload `{}` is not given as its type needs", p.name)),
     }
 }

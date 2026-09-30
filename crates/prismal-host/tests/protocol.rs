@@ -263,6 +263,37 @@ presentation Lab for Table {
     assert!(f.contains("n = 2"), "{f}");
 }
 
+/// A request carries a point as its coordinates in metres, and an enumeration's case by name.
+#[test]
+fn requests_with_points_and_cases() {
+    const LAMP: &str = "space Plane = euclidean(2)
+model Lamp in Plane {
+  enum Color { red, green, blue }
+  discrete { c: Color = red; spot: Point = origin }
+  state { x: Length = 0 m }
+  flow { der(x) = 1 m/s }
+  event paint on request(k: Color) { set c = k }
+  event move on request(q: Point) { set spot = q }
+  derived { g: Real = match c { red => 1, green => 2, blue => 3 }; ax: Length = spot.x }
+}
+presentation Lab for Lamp {
+  panel status { label(g); label(ax) }
+}
+";
+    let mut e = Engine::new();
+    let d = load(&mut e, LAMP);
+    let lab = ok(&mut e, json!({ "protocol": 1, "op": "open", "document": d, "presentation": "Lab" }))["instance"].as_str().unwrap().to_string();
+    let req = |e: &mut Engine, event: &str, payload: Json| ok(e, json!({ "protocol": 1, "op": "request", "instance": lab, "event": event, "payload": payload }));
+    assert_eq!(req(&mut e, "paint", json!("blue"))["ok"], true);
+    let r = req(&mut e, "paint", json!("pink"));
+    assert_eq!(r["ok"], false);
+    assert!(r["message"].as_str().unwrap().contains("\"red\", \"green\", \"blue\""), "{r}");
+    assert_eq!(req(&mut e, "move", json!([3.0, 4.0]))["ok"], true);
+    let f = ok(&mut e, json!({ "protocol": 1, "op": "frame", "instance": lab })).to_string();
+    assert!(f.contains("g = 3"), "{f}");
+    assert!(f.contains("ax = 3 m"), "{f}");
+}
+
 #[test]
 fn closing_frees_documents_and_instances() {
     let mut e = Engine::new();
