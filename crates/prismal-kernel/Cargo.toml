@@ -7,3 +7,6 @@ license.workspace = true
 
 [dependencies]
 prismal-ir = { path = "../prismal-ir" }
+
+[lints]
+workspace = true

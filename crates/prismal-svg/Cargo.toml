@@ -15,3 +15,6 @@ prismal-host = { path = "../prismal-host" }
 prismal-ir = { path = "../prismal-ir" }
 prismal-web = { path = "../prismal-web" }
 prismal-syntax = { path = "../prismal-syntax" }
+
+[lints]
+workspace = true

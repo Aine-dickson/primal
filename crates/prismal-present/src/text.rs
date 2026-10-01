@@ -26,6 +26,14 @@ pub fn fmt_num(x: f64) -> String {
     }
 }
 
+/// The components of a vector or point as text shows them: a component smaller than `1e-9`
+/// of the largest is rounding left by a computation (a drag mapped from pixels, a rotation)
+/// and is shown as 0, never as `4.44089e-16 m`.
+pub fn components(a: &[f64]) -> Vec<f64> {
+    let big = a.iter().fold(0.0f64, |m, x| m.max(x.abs()));
+    a.iter().map(|&x| if x.abs() <= 1e-9 * big { 0.0 } else { x }).collect()
+}
+
 /// The coherent SI unit of a dimension: `m`, `m/s`, `m/s^2`, `kg`, `J`, `N`, `1/s`.
 pub fn unit_text(d: &Dim) -> String {
     let named = [
@@ -103,10 +111,10 @@ pub fn fmt_value(v: &Value, ty: &Type) -> String {
         (Value::Num(x), _) => fmt_num(*x),
         (Value::Vec(a), Type::Vector { dim, .. }) => {
             let u = unit_text(dim);
-            format!("({})", a.as_slice().iter().map(|x| with_unit(*x, &u)).collect::<Vec<_>>().join(", "))
+            format!("({})", components(a.as_slice()).iter().map(|x| with_unit(*x, &u)).collect::<Vec<_>>().join(", "))
         }
-        (Value::Point(a), _) => format!("({})", a.as_slice().iter().map(|x| with_unit(*x, "m")).collect::<Vec<_>>().join(", ")),
-        (Value::Vec(a), _) => format!("({})", a.as_slice().iter().map(|x| fmt_num(*x)).collect::<Vec<_>>().join(", ")),
+        (Value::Point(a), _) => format!("({})", components(a.as_slice()).iter().map(|x| with_unit(*x, "m")).collect::<Vec<_>>().join(", ")),
+        (Value::Vec(a), _) => format!("({})", components(a.as_slice()).iter().map(|x| fmt_num(*x)).collect::<Vec<_>>().join(", ")),
         (Value::Tuple(items), Type::Tuple { items: tys }) => {
             format!("({})", items.iter().zip(tys).map(|(v, t)| fmt_value(v, t)).collect::<Vec<_>>().join(", "))
         }
@@ -266,6 +274,8 @@ mod tests {
         assert_eq!(fmt_num(-1.0), "-1");
         assert_eq!(fmt_num(1e-9), "1e-9");
         assert_eq!(fmt_num(40.7747196738022), "40.7747");
+        assert_eq!(components(&[4.0, 4.440892098500626e-16]), [4.0, 0.0]);
+        assert_eq!(components(&[1e-12, 2e-12]), [1e-12, 2e-12]);
         assert_eq!(unit_text(&Dim::parse("L/T").unwrap()), "m/s");
     }
 }

@@ -148,12 +148,12 @@ pub fn render(layout: &Json, frame: &Json, opts: &Options) -> String {
     let mut out = String::new();
     let title = format!("{}: {} run, simulation time {} s", s(&layout["presentation"]), s(&frame["run"]), fmt(f(&frame["t"])));
     let desc: Vec<String> = all_reps(frame).into_iter().filter(|r| r["shape"] != "axes" && r["shape"] != "grid").map(|r| s(&r["text"]).to_string()).collect();
-    let _ = write!(
+    let _ = writeln!(
         out,
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" role=\"img\" aria-labelledby=\"title desc\">\
 <title id=\"title\">{}</title><desc id=\"desc\">{}</desc>\
 <defs><filter id=\"highlight\" x=\"-50%\" y=\"-50%\" width=\"200%\" height=\"200%\"><feDropShadow dx=\"0\" dy=\"0\" stdDeviation=\"3\" flood-color=\"{}\"/></filter></defs>\
-<rect width=\"{w}\" height=\"{h}\" fill=\"{}\"/><g transform=\"translate({pad} {pad})\">{}</g></svg>\n",
+<rect width=\"{w}\" height=\"{h}\" fill=\"{}\"/><g transform=\"translate({pad} {pad})\">{}</g></svg>",
         esc(&title),
         esc(&desc.join("\n")),
         th.hl,
@@ -814,7 +814,7 @@ fn math(layout: &Json, em: f64, color: &str) -> Block {
                 );
             }
             "path" => {
-                let pts: Vec<String> = arr(&it["points"]).iter().map(|p| pt(p)).map(|p| format!("{},{}", n(p[0] * em), n(base + p[1] * em))).collect();
+                let pts: Vec<String> = arr(&it["points"]).iter().map(pt).map(|p| format!("{},{}", n(p[0] * em), n(base + p[1] * em))).collect();
                 let _ = write!(
                     body,
                     "<polyline points=\"{}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{}\" stroke-linejoin=\"round\"/>",

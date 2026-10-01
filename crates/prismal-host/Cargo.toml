@@ -13,3 +13,6 @@ prismal-syntax = { path = "../prismal-syntax" }
 prismal-present = { path = "../prismal-present" }
 serde.workspace = true
 serde_json.workspace = true
+
+[lints]
+workspace = true

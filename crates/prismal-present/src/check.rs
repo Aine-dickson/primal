@@ -132,7 +132,7 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     if let Err(d) = compile_rep(cm, &ctx, r) {
                         out.extend(d);
                     }
-                    with_members(&r, reps);
+                    with_members(r, reps);
                 }
             }
             Action::Camera { view, center, zoom, duration: d } => {
@@ -167,7 +167,7 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     if let Err(d) = compile_rep(cm, &ctx, r) {
                         out.extend(d);
                     }
-                    with_members(&r, reps);
+                    with_members(r, reps);
                 }
             }
             Action::Highlight { target } | Action::Hide { target, .. } => {
@@ -224,7 +224,7 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     if let Err(d) = compile_rep(cm, &ViewCtx::Panel, r) {
                         out.extend(d);
                     }
-                    with_members(&r, reps);
+                    with_members(r, reps);
                 }
                 check_actions(cm, pr, fallback, beat, reps, out, time, duration);
             }

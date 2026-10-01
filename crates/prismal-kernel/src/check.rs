@@ -889,9 +889,7 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
             tc.err("MK-E00", format!("event `{}` is repeated per member in a model that was not elaborated (D-057)", e.name));
         }
         let handler = check_ops(&mut tc, model, &index, &e.handler, false);
-        let zeno = match &e.zeno {
-            None => None,
-            Some(z) => Some(CZeno {
+        let zeno = e.zeno.as_ref().map(|z| CZeno {
                 settle: match &z.policy {
                     ZenoPolicy::Stop => None,
                     ZenoPolicy::Settle { ops } => Some(check_ops(&mut tc, model, &index, ops, false)),
@@ -899,8 +897,7 @@ pub fn check_model(spaces: &[Space], model: &Model) -> Result<CModel, Vec<Diagno
                 eps: z.eps,
                 n: z.n,
                 window: z.window,
-            }),
-        };
+            });
         cevents.push(CEvent { id: e.id.clone(), name: e.name.clone(), trigger, enable, handler, zeno });
     }
     // MK-15.11, MK-15.12 with D-038: self-retriggering crossing events need a Zeno policy.

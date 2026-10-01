@@ -1,0 +1,111 @@
+# Continuous integration: the tests on Linux and Windows (with video encoding on Linux),
+# clippy, the web player built from a clean machine and driven in a headless browser, and
+# the workspace's writing rules.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.94.0"
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+      # With an encoder on the path, the media tests also encode MP4, WebM and GIF.
+      - name: Install ffmpeg
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Test
+        run: cargo test --workspace
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  web:
+    name: Web player
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      # The version pinned by crates/prismal-web/Cargo.toml (web/README.md).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.126
+      - name: Build the player
+        run: sh web/build.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Ubuntu runners forbid the user namespaces Chrome's sandbox needs.
+      - name: Browser for the checks
+        run: |
+          echo "BROWSER=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          echo "BROWSER_ARGS=--no-sandbox" >> "$GITHUB_ENV"
+      - name: Input in a browser
+        run: node web/check-input.mjs
+      - name: Narration sound in a browser
+        run: node web/check-voice.mjs
+      - name: SVG renderer against the player
+        run: node crates/prismal-svg/compare.mjs
+
+  style:
+    name: Writing rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # CLAUDE.md: no em dashes or curly quotes in any tracked text.
+      - name: No em dashes or curly quotes
+        shell: python
+        run: |
+          import subprocess, sys
+          banned = {0x2014: "em dash", 0x201C: "curly quote", 0x201D: "curly quote", 0x2018: "curly quote", 0x2019: "curly quote"}
+          found = 0
+          for path in subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout.splitlines():
+              try:
+                  text = open(path, encoding="utf-8").read()
+              except (OSError, UnicodeDecodeError):
+                  continue
+              for n, line in enumerate(text.splitlines(), 1):
+                  for ch in line:
+                      if ord(ch) in banned:
+                          print(f"{path}:{n}: {banned[ord(ch)]}: {line.strip()}")
+                          found += 1
+                          break
+          if found:
+              print("Use a comma, colon, parentheses or a hyphen for a dash, and straight quotes.")
+              sys.exit(1)

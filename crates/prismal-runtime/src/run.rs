@@ -641,7 +641,7 @@ impl<'a> Engine<'a> {
             // RC-14.3: a snapshot at the start, where actions apply, and every few steps.
             let due = pending.front().map(|s| s.t <= self.t).unwrap_or(false);
             let fresh = self.run.snapshots.last().map(|s| s.committed != self.run.committed.len() || s.t != self.t).unwrap_or(true);
-            if fresh && (steps == 0 || due || steps % SNAPSHOT_STEPS == 0) {
+            if fresh && (steps == 0 || due || steps.is_multiple_of(SNAPSHOT_STEPS)) {
                 self.h = h;
                 self.snapshot();
             }

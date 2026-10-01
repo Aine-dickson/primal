@@ -13,3 +13,6 @@ prismal-svg = { path = "../prismal-svg" }
 prismal-web = { path = "../prismal-web" }
 serde_json.workspace = true
 resvg = "0.48"
+
+[lints]
+workspace = true

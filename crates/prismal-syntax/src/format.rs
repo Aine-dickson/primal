@@ -452,7 +452,7 @@ impl<'a> Printer<'a> {
             Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } | Expr::Other { .. } => self.member(e, params),
             Expr::Has { has, rel } => format!("{}.has({})", self.member(rel, params), self.member(has, params)),
             // Made by elaboration only (D-058).
-            Expr::Pick { pick, from } => format!("pick({}, {})", p(pick), from.iter().map(|x| p(x)).collect::<Vec<_>>().join(", ")),
+            Expr::Pick { pick, from } => format!("pick({}, {})", p(pick), from.iter().map(&p).collect::<Vec<_>>().join(", ")),
             Expr::Aggregate { aggregate, var, over, body, filter } => {
                 let coll = self.part_name(over);
                 let filter = filter.as_ref().map(|f| format!(" if {}", p(f))).unwrap_or_default();
