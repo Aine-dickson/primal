@@ -16,6 +16,7 @@
 //! and is not drawn; `create` makes the next member alive and `destroy` ends one. Identities
 //! are never reused within a run (MK-7.7).
 
+use std::collections::BTreeMap;
 use crate::present::{Action, Arg, Check, Inverse, Item, LearnerInput, Observation, Operand, Presentation, Prop, Rep, RunCase, Schedule, Source, Subject, Tolerance, ViewKind};
 use crate::{Agg, BinOp, Binding, Builtin, Constraint, Display, Document, Each, Event, Expr, Flow, Guarded, Id, Model, Op, Policy, Role, Target, Trigger, Type, Zeno, ZenoPolicy};
 
@@ -125,6 +126,10 @@ impl<'a> Scope<'a> {
     fn outer(inst: &Inst<'a>) -> Scope<'a> {
         Scope { ty: inst.outer_ty, path: inst.outer_path.clone(), vars: vec![], index: None, live: None, payload: None, me: None }
     }
+    /// The scope inside a member: its type and path.
+    fn inside(inst: Inst<'a>) -> Scope<'a> {
+        Scope { ty: inst.ty, path: inst.path, vars: vec![], index: None, live: None, payload: None, me: None }
+    }
     fn with_var(&self, var: &str, inst: Inst<'a>) -> Scope<'a> {
         let mut s = self.clone();
         s.vars.push((var.to_string(), Sel::One(inst)));
@@ -139,6 +144,9 @@ struct Cx<'a> {
     root: &'a Model,
     diags: Vec<Diag>,
     element: Id,
+    /// Elaborating a presentation, which may read the endpoints of an undirected relation by
+    /// role to draw it (D-064).
+    drawing: bool,
 }
 
 impl<'a> Cx<'a> {
@@ -160,6 +168,15 @@ impl<'a> Cx<'a> {
     /// The members of the part `id` of the object type in `s`: one for a contained object,
     /// `count` for a collection, `capacity` for a collection whose membership changes.
     fn members(&mut self, s: &Scope<'a>, id: &str) -> Option<(Vec<Inst<'a>>, bool)> {
+        // A part path: the contained object, then the rest of the path inside it (D-065).
+        if let Some((first, rest)) = id.split_once(crate::PART_PATH) {
+            let (ms, many) = self.members(s, first)?;
+            if many {
+                self.err("MK-E26", format!("`{}` is a collection: a path goes through contained objects only", part_name(s.ty, first)));
+                return None;
+            }
+            return self.members(&Scope::inside(ms.into_iter().next()?), rest);
+        }
         let Some(p) = s.ty.part(id) else {
             self.err("MK-E26", format!("unknown part `{id}`"));
             return None;
@@ -194,7 +211,38 @@ impl<'a> Cx<'a> {
         if !many {
             return members.into_iter().next().map(Sel::One);
         }
-        Some(Sel::Chosen { members, index: Expr::Ref { r#ref: flat(end, &rel.path) }, coll: coll_key(&outer.path, &e.over) })
+        let coll = members[0].coll.clone();
+        Some(Sel::Chosen { members, index: Expr::Ref { r#ref: flat(end, &rel.path) }, coll })
+    }
+
+    /// The key of the collection a part (or part path, D-065) names in scope `s`.
+    fn coll_of(&mut self, s: &Scope<'a>, id: &str) -> Option<String> {
+        match id.split_once(crate::PART_PATH) {
+            Some((first, rest)) => {
+                let (ms, _) = self.members(s, first)?;
+                self.coll_of(&Scope::inside(ms.into_iter().next()?), rest)
+            }
+            None => Some(coll_key(&s.path, id)),
+        }
+    }
+
+    /// Every relation set of the model, in the scope that holds it: the parts of the root
+    /// and of every member of its parts, nested (D-065).
+    fn relation_sets(&mut self, s: &Scope<'a>) -> Vec<(Scope<'a>, &'a crate::Part)> {
+        let mut out = vec![];
+        for p in &s.ty.parts {
+            let Some(ty) = self.root.objects.iter().find(|o| o.id == p.object) else { continue };
+            if !ty.ends.is_empty() {
+                out.push((s.clone(), p));
+                continue;
+            }
+            if let Some((ms, _)) = self.members(s, &p.id) {
+                for m in ms {
+                    out.extend(self.relation_sets(&Scope::inside(m)));
+                }
+            }
+        }
+        out
     }
 
     /// The member an expression selects, known now or chosen during the run.
@@ -202,20 +250,16 @@ impl<'a> Cx<'a> {
         match e {
             Expr::End { end, of } => {
                 let rel = match of {
-                    // The endpoint of a relation chosen during the run: its number is picked
-                    // among the relations' endpoint bindings (D-059).
-                    Some(x) => match self.select(s, x)? {
-                        Sel::One(r) => r,
-                        Sel::Chosen { members, index, .. } => {
-                            return match self.end(&members[0], end)? {
-                                Sel::Chosen { members: ends, coll, .. } => {
-                                    let from = members.iter().map(|r| Expr::Ref { r#ref: flat(end, &r.path) }).collect();
-                                    Some(Sel::Chosen { members: ends, index: Expr::Pick { pick: Box::new(index), from }, coll })
-                                }
-                                one => Some(one),
-                            };
+                    Some(x) => {
+                        let r = self.select(s, x)?;
+                        // D-064: outside its body, an undirected relation's endpoints have
+                        // no order; a presentation may still draw them by role.
+                        if Self::rel_type(&r).undirected && !self.drawing {
+                            self.err("MK-E26", format!("the endpoints of the undirected relation `{}` have no order: read them with `s.has(o)` and `s.other(o)`", Self::rel_type(&r).name));
+                            return None;
                         }
-                    },
+                        return self.end_of(r, end);
+                    }
                     None => match &s.me {
                         Some(m) => m.clone(),
                         None => {
@@ -226,12 +270,62 @@ impl<'a> Cx<'a> {
                 };
                 self.end(&rel, end)
             }
+            // The endpoint that is not `other` (D-064): picked by comparing numbers.
+            Expr::Other { other, rel } => {
+                let r = self.select(s, rel)?;
+                let (a, b) = self.pair(&r)?;
+                let o = self.select(s, other)?;
+                let ((ko, io), (ka, ia), (_, ib)) = (Self::key(&o), Self::key(&a), Self::key(&b));
+                if ko != ka {
+                    self.err("MK-E26", format!("`other` is given a member of another collection than the endpoints of `{}`", Self::rel_type(&r).name));
+                    return None;
+                }
+                Some(match a {
+                    Sel::One(i) => Sel::One(i),
+                    Sel::Chosen { members, coll, .. } => Sel::Chosen { members, index: build_if(Expr::bin(BinOp::Eq, ia.clone(), io), ib, ia), coll },
+                })
+            }
             Expr::Var { var } => match s.vars.iter().rev().find(|(v, _)| v == var) {
                 Some((_, sel)) => Some(sel.clone()),
                 None => self.member(s, e).map(Sel::One),
             },
             _ => self.member(s, e).map(Sel::One),
         }
+    }
+
+    /// The type of a selected member.
+    fn rel_type(sel: &Sel<'a>) -> &'a Model {
+        match sel {
+            Sel::One(i) => i.ty,
+            Sel::Chosen { members, .. } => members[0].ty,
+        }
+    }
+
+    /// The member at the endpoint `end` of a selected relation; for a relation chosen during
+    /// the run, its number is picked among the relations' endpoint bindings (D-059).
+    fn end_of(&mut self, rel: Sel<'a>, end: &str) -> Option<Sel<'a>> {
+        match rel {
+            Sel::One(r) => self.end(&r, end),
+            Sel::Chosen { members, index, .. } => match self.end(&members[0], end)? {
+                Sel::Chosen { members: ends, coll, .. } => {
+                    let from = members.iter().map(|r| Expr::Ref { r#ref: flat(end, &r.path) }).collect();
+                    Some(Sel::Chosen { members: ends, index: Expr::Pick { pick: Box::new(index), from }, coll })
+                }
+                one => Some(one),
+            },
+        }
+    }
+
+    /// Both endpoints of a selected relation with two endpoints in one collection, for
+    /// `has` and `other` (D-064).
+    fn pair(&mut self, rel: &Sel<'a>) -> Option<(Sel<'a>, Sel<'a>)> {
+        let ty = Self::rel_type(rel);
+        if ty.ends.len() != 2 || ty.ends[0].over != ty.ends[1].over {
+            self.err("MK-E26", format!("`has` and `other` take a relation with two endpoints in one collection; `{}` is not one", ty.name));
+            return None;
+        }
+        let (a, b) = (ty.ends[0].id.clone(), ty.ends[1].id.clone());
+        Some((self.end_of(rel.clone(), &a)?, self.end_of(rel.clone(), &b)?))
     }
 
     /// The collection and the number of a selected member.
@@ -326,7 +420,7 @@ impl<'a> Cx<'a> {
     }
 
     fn is_member(e: &Expr) -> bool {
-        matches!(e, Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. })
+        matches!(e, Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. } | Expr::Other { .. })
     }
 
     /// An expression with members and aggregates replaced, and identities declared in the
@@ -349,9 +443,19 @@ impl<'a> Cx<'a> {
                 Some(sel) => self.field_of(&sel, field),
                 None => num(0.0),
             },
-            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } => {
+            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } | Expr::Other { .. } => {
                 self.err("MK-E26", "a member is not a value: read one of its bindings, `b.pos`".into());
                 num(0.0)
+            }
+            // Whether a member is at either endpoint (D-064).
+            Expr::Has { has, rel } => {
+                let (Some(r), Some(o)) = (self.select(s, rel), self.select(s, has)) else { return Expr::Bool { bool: false } };
+                let Some((a, b)) = self.pair(&r) else { return Expr::Bool { bool: false } };
+                let ((ko, io), (ka, ia), (_, ib)) = (Self::key(&o), Self::key(&a), Self::key(&b));
+                if ko != ka {
+                    return Expr::Bool { bool: false };
+                }
+                Expr::bin(BinOp::Or, Expr::bin(BinOp::Eq, ia, io.clone()), Expr::bin(BinOp::Eq, ib, io))
             }
             Expr::Pick { pick, from } => Expr::Pick { pick: b(self, pick), from: from.iter().map(|x| self.expr(s, x)).collect() },
             // Members compare by identity. Members known now compare to a constant (`o != b`);
@@ -493,7 +597,7 @@ impl<'a> Cx<'a> {
     fn chosen_targets(&mut self, s: &Scope<'a>, t: &Target) -> Option<Vec<(Expr, Target)>> {
         let m = t.member.as_ref()?;
         let chosen = match m {
-            Expr::End { .. } => true,
+            Expr::End { .. } | Expr::Other { .. } => true,
             Expr::Var { var } => matches!(s.vars.iter().rev().find(|(v, _)| v == var), Some((_, Sel::Chosen { .. }))),
             _ => false,
         };
@@ -640,7 +744,7 @@ impl<'a> Cx<'a> {
     fn end_value(&mut self, s: &Scope<'a>, e: &crate::End, x: &Expr) -> Option<Expr> {
         let sel = self.select(s, x)?;
         let (k, idx) = Self::key(&sel);
-        if k != coll_key(&s.path, &e.over) {
+        if Some(k) != self.coll_of(s, &e.over) {
             self.err("MK-E26", format!("the endpoint `{}` is a member of `{}`", e.name, part_name(s.ty, &e.over)));
             return None;
         }
@@ -694,10 +798,13 @@ impl<'a> Cx<'a> {
             }
         }
         let (coll, idx) = Self::key(sel);
-        let outer = Scope::outer(&members[0]);
-        for p in &outer.ty.parts {
+        // Relation sets anywhere in the model may have endpoints in the collection (D-065).
+        for (outer, p) in self.relation_sets(&Scope::root(self.root)) {
             let Some(rty) = self.root.objects.iter().find(|o| o.id == p.object) else { continue };
-            for e in rty.ends.iter().filter(|e| coll_key(&outer.path, &e.over) == coll) {
+            for e in &rty.ends {
+                if self.coll_of(&outer, &e.over) != Some(coll.clone()) {
+                    continue;
+                }
                 let Some((rels, _)) = self.members(&outer, &p.id) else { continue };
                 for r in rels {
                     let Some(live) = r.live.clone() else {
@@ -1031,12 +1138,18 @@ pub fn model(m: &Model) -> Result<Model, Vec<Diag>> {
     if !m.has_parts() && m.objects.is_empty() {
         return Ok(m.clone());
     }
-    let mut cx = Cx { root: m, diags: vec![], element: m.id.clone() };
+    let mut cx = Cx { root: m, diags: vec![], element: m.id.clone(), drawing: false };
     let mut out = Model { bindings: vec![], processes: vec![], flows: vec![], events: vec![], equations: vec![], constraints: vec![], functions: vec![], objects: vec![], parts: vec![], ..m.clone() };
     // Enumerations are types: one declaration serves every member (MK-2.2).
     for o in &m.objects {
         out.enums.extend(o.enums.iter().cloned());
+        // D-064: an undirected relation joins two members of one collection.
+        if o.undirected && (o.ends.len() != 2 || o.ends[0].over != o.ends[1].over) {
+            cx.element = o.id.clone();
+            cx.err("MK-E26", format!("the undirected relation `{}` has two endpoints in one collection", o.name));
+        }
     }
+    cx.element = m.id.clone();
     cx.body(&Scope::root(m), &[], &mut out, 0);
     if cx.diags.is_empty() {
         Ok(out)
@@ -1293,6 +1406,40 @@ pub fn needed(d: &Document) -> bool {
 /// The document with every model elaborated, and the presentations and runs of models with
 /// parts elaborated against them. A document without parts is returned unchanged.
 pub fn document(d: &Document) -> Result<Document, Vec<Diag>> {
+    document_with(d, &BTreeMap::new())
+}
+
+/// The working capacity of each collection declared without a limit (D-066), by part
+/// identity; a part not listed has [`default_capacity`].
+pub type Capacities = BTreeMap<Id, u32>;
+
+/// The capacity a collection without a limit starts with: room for its starting members and
+/// as many again, at least 8.
+pub fn default_capacity(p: &crate::Part) -> u32 {
+    (2 * p.count.unwrap_or(0)).max(8)
+}
+
+/// The most members a collection without a limit grows to in one run: beyond it the run
+/// stops at the capacity constraint, as for a declared limit.
+pub const MAX_CAPACITY: u32 = 1 << 14;
+
+/// The part whose capacity constraint has the identity `constraint` (D-057), when it is a
+/// collection declared without a limit in `d` (D-066).
+pub fn overflowed(d: &Document, constraint: &str) -> Option<Id> {
+    let part = constraint.split('@').next()?.strip_suffix(".capacity")?;
+    let unbounded = d.models.iter().flat_map(|m| std::iter::once(m).chain(&m.objects)).flat_map(|m| &m.parts).any(|p| p.id == part && p.unbounded);
+    unbounded.then(|| part.to_string())
+}
+
+/// [`document`], with the working capacities of collections declared without a limit.
+pub fn document_with(d: &Document, caps: &Capacities) -> Result<Document, Vec<Diag>> {
+    let sized;
+    let d = if caps_needed(d) {
+        sized = with_capacities(d, caps);
+        &sized
+    } else {
+        d
+    };
     if !needed(d) {
         return Ok(d.clone());
     }
@@ -1310,14 +1457,14 @@ pub fn document(d: &Document) -> Result<Document, Vec<Diag>> {
     }
     for (i, p) in d.presentations.iter().enumerate() {
         if let Some(m) = d.model(&p.model).filter(|m| m.has_parts() || !m.objects.is_empty()) {
-            let mut cx = Cx { root: m, diags: vec![], element: p.id.clone() };
+            let mut cx = Cx { root: m, diags: vec![], element: p.id.clone(), drawing: true };
             out.presentations[i] = presentation(&mut cx, m, p);
             diags.extend(cx.diags);
         }
     }
     for (i, r) in d.runs.iter().enumerate() {
         if let Some(m) = d.model(&r.model).filter(|m| m.has_parts() || !m.objects.is_empty()) {
-            let mut cx = Cx { root: m, diags: vec![], element: r.id.clone() };
+            let mut cx = Cx { root: m, diags: vec![], element: r.id.clone(), drawing: false };
             out.runs[i] = run(&mut cx, m, r);
             diags.extend(cx.diags);
         }
@@ -1327,4 +1474,60 @@ pub fn document(d: &Document) -> Result<Document, Vec<Diag>> {
     } else {
         Err(diags)
     }
+}
+
+/// `if c then a else b`.
+fn build_if(c: Expr, a: Expr, b: Expr) -> Expr {
+    Expr::If { r#if: Box::new(c), then: Box::new(a), r#else: Box::new(b) }
+}
+
+/// Whether a document declares a collection without a limit.
+fn caps_needed(d: &Document) -> bool {
+    d.models.iter().flat_map(|m| std::iter::once(m).chain(&m.objects)).flat_map(|m| &m.parts).any(|p| p.unbounded)
+}
+
+/// The highest number by which `d` names a member of each collection (`drops[100]`).
+fn named_members(d: &Document) -> BTreeMap<String, u32> {
+    fn walk(v: &serde_json::Value, named: &mut BTreeMap<String, u32>) {
+        match v {
+            serde_json::Value::Object(o) => {
+                if let (Some(item), Some(k)) = (o.get("item").and_then(|x| x.as_str()), o.get("index").and_then(|x| x.get("num")).and_then(|x| x.as_f64())) {
+                    let e = named.entry(item.to_string()).or_default();
+                    *e = (*e).max(k.max(0.0) as u32);
+                }
+                o.values().for_each(|x| walk(x, named));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, named)),
+            _ => {}
+        }
+    }
+    let mut named = BTreeMap::new();
+    walk(&serde_json::to_value(d).unwrap_or_default(), &mut named);
+    named
+}
+
+/// The working capacity a collection declared without a limit starts with in `d`: the
+/// default, or room for every member `d` names by number.
+pub fn starting_capacity(d: &Document, p: &crate::Part) -> u32 {
+    default_capacity(p).max(named_members(d).get(&p.id).copied().unwrap_or(0))
+}
+
+/// `d` with each collection declared without a limit given its working capacity (D-066):
+/// at least room for every member the document names by number.
+fn with_capacities(d: &Document, caps: &Capacities) -> Document {
+    let named = named_members(d);
+    let mut out = d.clone();
+    let size = |parts: &mut Vec<crate::Part>| {
+        for p in parts.iter_mut().filter(|p| p.unbounded) {
+            let least = named.get(&p.id).copied().unwrap_or(0);
+            p.capacity = Some(caps.get(&p.id).copied().unwrap_or_else(|| default_capacity(p)).max(least));
+        }
+    };
+    for m in &mut out.models {
+        size(&mut m.parts);
+        for o in &mut m.objects {
+            size(&mut o.parts);
+        }
+    }
+    out
 }

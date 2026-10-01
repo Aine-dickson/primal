@@ -83,7 +83,7 @@ The expected values come from outside the program: `sin(1) = 0.841470984807897`.
 
 ## Running it
 
-Paste the three blocks into the player's Source tab and compile. The graph appears with the two sliders; the Cases tab runs the two cases. From the command line, save the blocks in `wave.prismal` and run `cargo run -p prismal-present --example cases -- wave.prismal`.
+Paste the three blocks into the player's Source tab and compile. The graph appears with the two sliders; the Cases tab runs the two cases. From the command line, save the blocks in `wave.prismal` and run `cargo run -p prismal-web --bin prismal -- cases wave.prismal`.
 
 ## What can go wrong
 

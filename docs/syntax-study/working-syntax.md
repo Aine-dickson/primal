@@ -41,7 +41,7 @@ Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit de
 
 Expressions add `match e { a => x, b => y }` (one arm per case, arms separated by commas or lines) to the shared sublanguage, and members (D-055): `a.x`, `c[k].x` with a constant `k`, `b.x` for a loop variable; aggregates `sum(e for b in c [if cond])`, likewise `min`, `max`, `any`, `all`, and `count(c)` or `count(b for b in c if cond)`. In views and representation blocks, `for b in c { reps }` repeats each representation per member. `parts` and `index` are contextual words.
 
-Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E [(p: T)]`, `on start`, `on input(i)`, `on request [(p: T)]`; `(p: T)` names the payload the occurrence receives (D-050). A payload may be a member, `(b in balls)`, and an event may declare several, `(b in balls, j: Momentum)` (D-059). `emit E(v)` and `emit E(b, j)` supply payloads. A target may go through an endpoint: `set s.a.vel = e`. `input { x: T [= default] }` declares an input with an optional default (D-051). Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`. `create c { x = e ... }` makes a member of `c` with starting values; `destroy b` ends the member `b`; `set b.x = e` writes a member's binding from its container (D-057). `max` in `[n, max m]` is a contextual word. `connect rs(x, y) { k = e }` makes a relation, `disconnect s` ends one; `s.a` is the member at an endpoint (D-058); `relation` is a contextual word.
+Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E [(p: T)]`, `on start`, `on input(i)`, `on request [(p: T)]`; `(p: T)` names the payload the occurrence receives (D-050). A payload may be a member, `(b in balls)`, and an event may declare several, `(b in balls, j: Momentum)` (D-059). `emit E(v)` and `emit E(b, j)` supply payloads. A target may go through an endpoint: `set s.a.vel = e`. `input { x: T [= default] }` declares an input with an optional default (D-051). Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`. `create c { x = e ... }` makes a member of `c` with starting values; `destroy b` ends the member `b`; `set b.x = e` writes a member's binding from its container (D-057). `max` in `[n, max m]` is a contextual word; `[max inf]` declares no limit (D-066). `connect rs(x, y) { k = e }` makes a relation, `disconnect s` ends one; `s.a` is the member at an endpoint (D-058); `relation` is a contextual word. `undirected relation R(a in c, b in c)` has no order outside its body; `s.has(o)` and `s.other(o)` read endpoints without one (D-064). A collection of a contained object is named by its path, `left.atoms`, in endpoints, members, loops and aggregates (D-065).
 
 ### 1.2 Presentation
 
@@ -59,6 +59,7 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 | `trace(pos every 0.02 s)`, `series_plot(y every 0.01 s)` | a sampled source: `expr every Δ`, only as a representation's argument (PK-6.3a) |
 | `plot(x: [0 s, 6 s], y: [0 m, 1.1 m])` | plot axes with dimensions; a plot marker is at a pair in those dimensions, `marker(at: (0, y))` (PK-7.3a) |
 | `permit learner { ... }` | permissions |
+| `layout row(scene, column(plot, controls))` | page layout: views side by side in a row, one below the other in a column, nested (D-063) |
 | `timeline { scene S { beat B { actions } } }` | timeline; run-directing actions apply in written order at the beat's start, then the others start together (D-033); `sequence { }` orders actions that take time |
 | `run rate r until E` | shorthand for `run rate r` and `wait until E` in the same beat |
 | `reveal fade\|draw [for d] [in view] { reps }`, `hide name [for d]`, `camera view [to P] [zoom z] [for d]` | animations of the presentation (D-042) |
@@ -542,3 +543,6 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-30 `object` declarations, `parts`, member expressions, aggregates, `for` in flows and representation blocks (D-055).
 - 2026-09-30 `relation` declarations, `connect`, `disconnect`, endpoints `s.a` (D-058).
 - 2026-09-30 capacities `[max m]` and `[n, max m]`, `create`, `destroy`, member targets `set b.x`, `for` blocks of events (D-057).
+- 2026-10-01 `layout`, `row`, `column`: page layout of views (D-063); added to the contextual keywords.
+- 2026-10-01 `undirected relation`, `s.has(o)`, `s.other(o)` (D-064); part paths `left.atoms` (D-065).
+- 2026-10-01 `[max inf]`: collections without a declared limit (D-066).

@@ -16,7 +16,7 @@ use crate::{number, PDiag, Program};
 use prismal_ir::present::{Action as TAction, LearnerInput, Presentation, RevealStyle};
 use prismal_ir::{Id, Op};
 use prismal_kernel::{CModel, Value};
-use prismal_runtime::{run, Action, Config, Run, Scheduled};
+use prismal_runtime::{resume, run, Action, Config, Run, Scheduled};
 use crate::frame::{each_rep_mut, retain_reps, Shape};
 use serde::Serialize;
 
@@ -178,10 +178,6 @@ struct Player {
 }
 
 impl Player {
-    fn cm(&self) -> &CModel {
-        &self.pb.cm
-    }
-
     fn num(&mut self, e: &prismal_ir::Expr) -> f64 {
         match number(&self.pb.cm, e) {
             Ok(x) => x,
@@ -231,7 +227,7 @@ impl Player {
         let old = &self.pb.runs[self.cur()];
         let mut cfg = old.config.clone();
         cfg.log.push(Scheduled { t: s, action });
-        let new = run(self.cm(), cfg.clone());
+        let new = resume(&old.run, cfg.clone());
         if new.rejected.len() > old.run.rejected.len() {
             let d = new.rejected.last().unwrap();
             self.pb.diagnostics.push(format!("at {p} s: rejected: {}", d.message));
@@ -492,7 +488,21 @@ fn describe(i: &LearnerInput) -> String {
 }
 
 /// Plays a presentation's timeline over a lesson run configured by `base` (PK-9.5).
-pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Medium, inputs: Vec<Input>) -> Result<Playback, Vec<PDiag>> {
+pub fn play(prog: &Program, presentation: &str, base: Config, medium: Medium, inputs: Vec<Input>) -> Result<Playback, Vec<PDiag>> {
+    // A run that fills a collection declared without a limit is played again with room for
+    // twice as many members (D-066).
+    let mut grown: Option<Program> = None;
+    loop {
+        let p = grown.as_ref().unwrap_or(prog);
+        let pb = play_once(p, presentation, base.clone(), medium, inputs.clone())?;
+        match pb.runs.iter().find_map(|v| p.overflow(&v.run)).and_then(|part| p.grown(&part)) {
+            Some(next) => grown = Some(next),
+            None => return Ok(pb),
+        }
+    }
+}
+
+fn play_once(prog: &Program, presentation: &str, base: Config, medium: Medium, inputs: Vec<Input>) -> Result<Playback, Vec<PDiag>> {
     let pres = prog.presentation(presentation);
     let cm = prog.model(&pres.model);
     let projector = Projector::new(cm, pres)?;

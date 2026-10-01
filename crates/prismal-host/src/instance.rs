@@ -230,6 +230,13 @@ impl Instance {
             .collect();
         let permits: Vec<&String> = pres.permissions.iter().flat_map(|p| p.allows.iter()).collect();
         let mut out = json!({ "presentation": pres.name, "views": views, "permits": permits });
+        // The author's page layout (PK-7.4a, D-063), with the views it leaves out after it.
+        if let Some(l) = &pres.layout {
+            let placed = l.views();
+            let rest: Vec<Json> = pres.views.iter().filter(|v| !placed.contains(&&v.id)).map(|v| json!({ "view": v.id })).collect();
+            let page = serde_json::to_value(l).unwrap_or(Json::Null);
+            out["page"] = if rest.is_empty() { page } else { json!({ "column": std::iter::once(page).chain(rest).collect::<Vec<_>>() }) };
+        }
         match &self.mode {
             Mode::Lesson(l) => {
                 out["mode"] = json!("lesson");

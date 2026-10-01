@@ -1,6 +1,6 @@
 # Learn Prismal
 
-A guide to writing Prismal programs in the working syntax (D-028), from a first formula to a narrated lesson. Each chapter introduces a few forms, shows a complete program that uses them, and ends with exercises. After the last chapter, `10-reference.md` lists every form on one page.
+A guide to writing Prismal programs in the working syntax (D-028), from a first formula to a narrated lesson. New to Prismal? Start with [the tour](00-tour.md). Each chapter introduces a few forms, shows a complete program that uses them, and ends with exercises. After the last chapter, `10-reference.md` lists every form on one page.
 
 - **Status:** living. Written 2026-09-30 against the prototype (`crates/`). The syntax is the working syntax: usable and implemented, not yet frozen.
 - **Checked:** every program in the guide is compiled and every case in it is run by `cargo test` (`crates/prismal-web/tests/guide.rs`). A program that fails, or an example error that is not reported as stated, fails the test suite.
@@ -9,6 +9,7 @@ A guide to writing Prismal programs in the working syntax (D-028), from a first 
 
 | Chapter | Introduces |
 |---|---|
+| [0. A tour](00-tour.md) | one program in four steps: a model, a test, a lab and a narrated lesson, with its video |
 | [1. A first program](01-first-program.md) | models, parameters, derived values, functions, a plot, a slider, a formula, a test case |
 | [2. Quantities and units](02-quantities-and-units.md) | dimensions, units, named types, ranges, how unit errors are reported |
 | [3. Space, points and vectors](03-space-and-vectors.md) | spaces, points, vectors, components, the spatial view, dragging |
@@ -20,6 +21,8 @@ A guide to writing Prismal programs in the working syntax (D-028), from a first 
 | [9. Systems of objects](09-objects.md) | object types, parts, collections, members, aggregates, forces between members |
 | [10. Reference](10-reference.md) | every form, reserved words, diagnostic codes |
 | [11. Solutions](11-solutions.md) | worked answers to the chapters' exercises, each checked by the tests |
+| [12. Recipes](12-recipes.md) | short programs for common tasks, and how to test, export and embed |
+| [13. Common mistakes](13-common-mistakes.md) | the errors met first, what they mean and how to fix them |
 
 ## Running a program
 
@@ -28,7 +31,7 @@ A guide to writing Prismal programs in the working syntax (D-028), from a first 
 **From the command line.** A program saved in a file (or a Markdown file whose `text` and `cases` blocks form the program) runs its cases headless:
 
 ```sh
-cargo run -p prismal-present --example cases -- my-program.prismal
+cargo run -p prismal-web --bin prismal -- cases my-program.prismal
 ```
 
 Each expectation is printed as `pass` or `FAIL` with the reason. `cargo run -p prismal-syntax --example prismalc -- FILE` prints the IR, or the diagnostics.

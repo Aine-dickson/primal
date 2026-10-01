@@ -82,6 +82,10 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-060 | Clicks on an empty point of a view: `on click as q request E(q)` in the view, the point as payload | Accepted |
 | D-062 | Drags on members of a group: the gesture's value is the pointer in the group's frame | Accepted |
 | D-061 | Author styles: `color:` from a named palette each medium maps to its theme; `line:` solid, dashed or dotted | Accepted |
+| D-063 | Page layout: `layout` places views in nested rows and columns; views left out follow it; media adapt it to their size | Accepted |
+| D-064 | Undirected relations: `undirected relation`, endpoints in one collection read with `s.has(o)` and `s.other(o)` | Accepted |
+| D-065 | Relations across containers: endpoints, members and loops named by part paths through contained objects (`left.atoms`) | Accepted |
+| D-066 | Collections without a declared limit: `[max inf]`, a working capacity that doubles and recomputes the run when filled | Accepted |
 
 ---
 
@@ -1168,5 +1172,73 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. Nested groups compose; the transform is evaluated on the committed state at the instant shown, so a drag that moves the group does not move the frame under the pointer while it is in progress. Hit testing, the focus order and keyboard steps include members of groups.
 - **Reason:** a member's geometry and its inverse are then written in one frame, which is the point of a group; option 2 would make every inverse in a group restate the group's transform, and break when the group changes.
 - **Consequences:** PK-6.3b amended; `Tf::of_groups`, `Tf::unapply`, `ViewCtx::pointer_in`; `Interactive` finds representations inside groups with their enclosing groups (drags, keys); the host's `hit` and `focus_order` recurse into groups; guide chapter 7 (a dial in a turned group); tests `prismal-present/tests/group_drags.rs`, the raw input test `drags_on_members_of_groups`, and `web/check-input.mjs` in a browser.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-063: Page layout of views
+
+- **Status:** Accepted
+- **Original position:** PK-7.4 says layout "places views in the presentation and adapts them to the output's size and orientation", and PK-2.1 lists "a layout of views" among a presentation's contents, but no form for it existed: the web player filled a grid in declaration order, putting a wide scene on a row of its own, and the SVG renderer and video export stacked views one below the other. An author could not put a plot beside a scene or a panel beside a plot. D-052 listed it as not done.
+- **Raised by:** PROJECT-STATE next steps, item 2 (media follow-ups); the owner's list of 2026-10-01.
+- **Builds on:** PK-2.1, PK-2.4, PK-7.4, PK-12.2, D-040, D-052.
+- **Question:** How does an author say where views go, and how much of the arrangement belongs to the program rather than to the medium?
+- **Options considered:**
+  1. **Nested rows and columns of view names.** `layout row(scene, column(plot, controls))`: a tree that says which views are side by side and which are one below the other. Sizes stay the views' own (a spatial view's extent and scale, a plot's size), and each medium adapts the tree to its page: a browser turns a row into a column on a narrow screen.
+  2. **A grid with areas.** Named cells in rows and columns, spans, and fractions of the width, as CSS grid areas. Precise for one page size, but sizes and spans are a medium's business (PK-7.4: layout never changes what a view shows), and a grid written for a wide screen has no meaning on a phone or in a video frame of another shape.
+  3. **Positions and sizes per view.** Absolute placement in pixels: ties the program to one output size, against PK-12.2.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. A presentation has at most one `layout` item, a view name, `row(...)` or `column(...)` with at least one item each, nested freely. Every name is a view or panel of the presentation, placed at most once (SX-E03 for an unknown name, SX-E09 for a view placed twice or a second layout; PK-E01 for a layout written in the IR). Views the layout leaves out follow it, one below the other, in declaration order. `layout`, `row` and `column` are contextual keywords (D-040). The IR carries the tree with view identities (`{"row": [{"view": id}, {"column": [...]}]}`), so renames keep it; the host's layout gives it as `page`, with the views left out appended. Without a layout, each medium arranges views as before.
+- **Reason:** the author decides relations (this plot belongs beside this scene; the readout under the controls), which hold on every page; sizes and breakpoints depend on the medium, which knows its page. A tree of rows and columns is the smallest form that says this, and it reads as the page looks.
+- **Consequences:** PK-7.4a; 04-ir section 7.1; working syntax 1.2; IR `present::Layout` and `Presentation::layout`; parser, lowering, formatter; presentation checks; the host's `page`; `prismal-svg` places views in rows (top aligned) and columns, so still images and videos follow the layout; the web player builds rows and columns and turns rows into columns below 700 px; guide chapter 7, Laying out views; `prismal-svg/tests/layout.rs`. Not yet: weights or sizes per view, alignment choices, and layouts that change during a lesson.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-064: Undirected relations
+
+- **Status:** Accepted
+- **Original position:** MK-8.5 declares "whether it is directed" as part of a relation type. D-058 made every relation directed, with named roles, and left undirected relations to be "written by testing both roles": guide chapter 9's springs sum the pulls at the `a` ends and subtract those at the `b` ends, so a spring declared with its endpoints swapped changes the model's text but must not change its motion.
+- **Raised by:** PROJECT-STATE, "Not implemented" (undirected relations as a declared property); the owner's list of 2026-10-01.
+- **Builds on:** MK-8.5, MK-8.5a, MK-8.6a, D-055, D-058, D-059.
+- **Question:** What does declaring a relation undirected change, and how does a model read an undirected relation's endpoints?
+- **Options considered:**
+  1. **A declared property with order-free readings.** `undirected relation Link(a in balls, b in balls)`: its two endpoints are in one collection; two expressions read any relation's endpoints without an order, `s.has(o)` (is `o` an endpoint) and `s.other(o)` (the endpoint that is not `o`); outside the relation's body, the model reads an undirected relation's endpoints only through them. Its body still names `a` and `b` to define its values.
+  2. **Only the two expressions**, with no declared property. Convenient, but the model can still read `s.a` and make its motion depend on an order the relation does not have; nothing records the author's intent.
+  3. **Unordered pairs throughout**, with a relation set holding at most one relation per pair and `connect` of a joined pair refused. A stronger statement (a simple graph), which some content wants (bonds) and some does not (two springs in parallel); it can be added later as its own property.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. `undirected` is a word only before `relation`. `has` and `other` apply to any relation with two endpoints in one collection; `s.other(o)` is a member (its bindings are read, `s.other(o).pos`, and it compares with `==`); when both endpoints are `o`, it is `o`; a member of another collection is never an endpoint (`has` is false, `other` is an error). An undirected relation over two collections, or reading `s.a` of one in the model outside its body, is MK-E26. Presentations may read `s.a` and `s.b` to draw it. Several relations between the same members stay allowed. The IR marks the relation type `"undirected": true` and has the expressions `{"other": member, "rel": relation}` and `{"has": member, "rel": relation}`, elaborated to comparisons and picks of endpoint numbers.
+- **Reason:** the property records what the author means and lets the language hold the model to it: forces summed over `s.has(o)` with `s.other(o)` are the same whichever end was written first. The body keeps role names because a relation's values are often written from one end to the other (`b.pos - a.pos`); what must not depend on the order is how the model uses them.
+- **Consequences:** MK-8.5b; 04-ir; working syntax; the parser, lowering, formatter and elaboration; guide chapter 9, Relations without a direction; `prismal-present/tests/undirected.rs`. Not yet: relation sets with at most one relation per pair (option 3), and enforcing order independence inside the body.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-065: Relations across containers
+
+- **Status:** Accepted
+- **Original position:** MK-8.6 has relation instances held "in a relation set owned by an object", with endpoints typed by object types anywhere. D-058 restricted endpoints to collections of the model that declares the relation and left out "relations between members of different containers": a bond between atoms of two cells, each cell holding its atoms, could not be written. Nor could the model name `left.atoms` at all: member expressions and loops took collections of the scope only.
+- **Raised by:** PROJECT-STATE, "Not implemented"; the owner's list of 2026-10-01.
+- **Builds on:** MK-7.10, MK-8.5a, MK-8.6, MK-8.6a, D-055, D-057, D-058.
+- **Question:** How does a relation reach members held by contained objects, and how are such collections named elsewhere?
+- **Options considered:**
+  1. **Part paths through contained objects.** A collection is named by a path, `left.atoms`, through parts that are one object each; the same path names its members (`left.atoms[1]`), loops (`for o in left.atoms`) and aggregates (`count(left.atoms)`). In the IR, a part reference may be a path of part identities joined by `/`. The relation set lives in the container that contains both cells.
+  2. **Relations declared inside an object type with endpoints in its container's collections.** Turns scope inside out (an object reaching outward), against MK-7.10's rule that a container reads its parts and not the reverse.
+  3. **Endpoints in any collection of a type anywhere.** D-058 option 1: every collection of the type becomes a candidate for every endpoint, which elaboration cannot bound and readers cannot follow.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. A path goes through contained objects only; a collection inside it (`cells[1].atoms`) is SX-E08 (MK-E26 in the IR). Destroying a member disconnects every relation with that member at an endpoint, in any relation set of the model, not only in its own container (MK-8.6 as written; MK-8.6a narrowed it to the container while endpoints could only be there). Creating members of a collection inside a contained object from outside it is not included: a cell makes its own atoms.
+- **Reason:** paths are how the language already reads a contained object's bindings (`ball.pos`); extending them to collections keeps one way of naming things, and part identities joined by `/` keep identities stable under renames (D-036) without a new IR form for every place a collection is named.
+- **Consequences:** MK-8.5c, MK-8.6a amended; 04-ir (part paths, `PART_PATH`); working syntax; parser (`part_path`), lowering (`part_ref`), formatter, elaboration (`members` and `coll_of` walk paths; `relation_sets` finds relation sets anywhere); guide chapter 9, Relations across containers; `prismal-present/tests/across.rs`. Not yet: `create` and `connect` written outside the container of the collection they change, paths through collections chosen by number.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-066: Collections without a declared limit
+
+- **Status:** Accepted
+- **Original position:** D-057 bounded every collection whose membership changes by a declared capacity and kept "option 1" (objects held natively by the runtime, state that grows and shrinks) as the route to unbounded populations, noting that its syntax and semantics would carry over with the capacity becoming "a limit of the runtime rather than of the language". A lab left running (a fountain, a particle source) stopped when its capacity was reached.
+- **Raised by:** PROJECT-STATE, "Not implemented" (unbounded populations); the owner's list of 2026-10-01.
+- **Builds on:** MK-7.7a, MK-8.2a, RC-14.2, D-015, D-055, D-057, D-059.
+- **Question:** How does a model declare a collection with no limit, and how does the prototype run it without changing the solver, the frame format or the renderers?
+- **Options considered:**
+  1. **Native growable state** (D-057 option 1): the runtime adds state to the solver when a member is made. Unbounded, but it changes the compiled model, the state layout, dense output, snapshots, the checker and every consumer of frames at once.
+  2. **A working capacity that grows by elaborating again.** `Drop[max inf]` is elaborated with a working capacity; a run that fills it is computed again from its start with the working capacity doubled. Everything D-057 built applies unchanged; identities stay `drops[k]`, so a session's logged actions, member payloads and drawings keep their meaning across growth.
+  3. **A large fixed default** (say 10000 places). No regrowth, but every model with such a collection pays for all places in every step from the start.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30. The working capacity starts at the largest of 8, twice the starting members, and every number by which the program names a member (so `drops[12]` is valid); it doubles up to 16384, beyond which the run stops at the capacity constraint as for a declared limit. Growth happens wherever runs are made: cases (`run_case`), lessons (`play`) and sessions (`Interactive`, after each committed action and on reset, recommitting the session's actions on the new run). The IR marks the part `"unbounded": true` with no `capacity`; `Program` keeps the document as written and the working capacities.
+- **Reason:** the populations content needs are bounded in practice but not by a number an author should have to choose; option 2 gives them without touching the kernel, and its results are exactly those of a declared capacity, so every guarantee of D-057 (identities never reused, deterministic replay) holds. The cost, recomputing from the start at each doubling, is logarithmic in the members made and paid only by runs that need it.
+- **Consequences:** MK-8.2b; 04-ir `unbounded`; working syntax; parser and formatter (`max inf`); `elaborate::document_with`, `Capacities`, `starting_capacity`, `overflowed`, `MAX_CAPACITY`; `Program::sized`, `overflow`, `grown`; growth in `run_case`, `play` and `Interactive`; guide chapter 9; `prismal-present/tests/unbounded.rs`. Not yet: native growable state (option 1), if content needs very large populations made over long sessions; a lesson's explore beats grow only when the lesson is opened, not when a learner's action fills the collection later.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

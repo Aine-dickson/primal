@@ -64,7 +64,11 @@ pub enum Member {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObjectDecl {
     pub name: Name,
-    pub ends: Vec<(Name, Name)>,
+    /// A relation type's endpoints and their collections, a path through contained objects
+    /// (`a in left.atoms`, D-065).
+    pub ends: Vec<(Name, Vec<Name>)>,
+    /// `undirected relation ...` (D-064).
+    pub undirected: bool,
     pub members: Vec<Member>,
     pub notes: Vec<String>,
     pub span: Span,
@@ -79,6 +83,8 @@ pub struct PartDecl {
     pub object: Name,
     pub count: Option<u32>,
     pub capacity: Option<u32>,
+    /// `[max inf]`: membership changes without a declared limit (D-066).
+    pub unbounded: bool,
     pub overrides: Vec<(Name, Expr)>,
     pub notes: Vec<String>,
     pub span: Span,
@@ -380,6 +386,16 @@ pub enum PresItem {
     View(ViewDecl),
     Permit { who: Name, items: Vec<Name> },
     Timeline(Vec<SceneDecl>),
+    /// `layout row(scene, column(energy, controls))` (PK-7.4a, D-063).
+    Layout(LayoutNode),
+}
+
+/// A view, or views in a row or a column; the name of a row or column is its keyword.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LayoutNode {
+    View(Name),
+    Row(Name, Vec<LayoutNode>),
+    Column(Name, Vec<LayoutNode>),
 }
 
 #[derive(Clone, Debug, PartialEq)]

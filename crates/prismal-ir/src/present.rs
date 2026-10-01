@@ -21,8 +21,31 @@ pub struct Presentation {
     pub permissions: Vec<Permission>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeline: Option<Timeline>,
+    /// Where the views go on the page (PK-7.4, D-063); `None` leaves it to the renderer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<Layout>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+}
+
+/// A page layout (PK-7.4a, D-063): views side by side in a row or one below the other in a
+/// column, nested. Views it does not place follow it, in the order they are declared.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Layout {
+    View(Id),
+    Row(Vec<Layout>),
+    Column(Vec<Layout>),
+}
+
+impl Layout {
+    /// The views placed, in reading order.
+    pub fn views(&self) -> Vec<&Id> {
+        match self {
+            Layout::View(v) => vec![v],
+            Layout::Row(xs) | Layout::Column(xs) => xs.iter().flat_map(|x| x.views()).collect(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------- observation (PK section 3)

@@ -328,3 +328,11 @@ fn encodes_a_voiced_video() {
     assert!(loudness(2.0, 4.0) < -60.0, "sound between the cues");
     assert!(loudness(7.0, 0.8) > -20.0, "b3 is silent");
 }
+
+#[test]
+fn work_on_every_core_keeps_the_order() {
+    let items: Vec<usize> = (0..1000).collect();
+    assert_eq!(parallel(items.clone(), |k| k * 2), items.iter().map(|k| k * 2).collect::<Vec<_>>());
+    assert_eq!(parallel(Vec::<usize>::new(), |k| k), Vec::<usize>::new());
+    assert_eq!(parallel(vec![7], |k| k + 1), vec![8]);
+}

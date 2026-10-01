@@ -5,5 +5,5 @@ pub mod run;
 pub mod session;
 pub mod solver;
 
-pub use run::{run, Action, Category, Committed, Config, LogEntry, Run, RunDiag, RunStatus, Scheduled, SolverConfig};
+pub use run::{resume, run, Action, Category, Committed, Config, LogEntry, Run, RunDiag, RunStatus, Scheduled, Snapshot, SolverConfig};
 pub use session::Session;

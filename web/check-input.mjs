@@ -2,7 +2,7 @@
 // wheel and key events, which the player forwards to the engine as raw input (D-047,
 // HI-4.5): hover, drags in a spatial view and in a plot, focus after a drag, a keyboard step,
 // clicks on members of a collection and their keyboard activation (D-059), wheel zoom, pan
-// and reset.
+// and reset, and an author's page layout (D-063).
 //
 // Needs Node 22 or later, the player built (`./web/build.sh`) and Microsoft Edge or Chrome
 // (path in the BROWSER environment variable, or the default Edge path on Windows).
@@ -176,6 +176,14 @@ await cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 await sleep(200);
 const pinched = await vb();
 check('two touches spreading apart zoom in', +pinched.split(' ')[2] < +before.split(' ')[2] * 0.6, `${before} to ${pinched}`);
+
+// The guide's cannon page (D-063): the plot on the left, the controls above the readout on
+// its right.
+await open('g7-cannon/CannonPage');
+const box = (name) => ev(`(() => { const r = document.querySelector('figure[aria-label="view ${name}"]').getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; })()`);
+const [fl, ctl, rd] = [await box('flight'), await box('controls'), await box('readout')];
+check('a layout row puts the plot left of the panels', fl[2] <= ctl[0] && fl[2] <= rd[0], `${fl} | ${ctl} | ${rd}`);
+check('a layout column puts the controls above the readout', ctl[3] <= rd[1] && Math.abs(ctl[0] - rd[0]) < 1, `${ctl} / ${rd}`);
 
 ws.close();
 edge.kill();

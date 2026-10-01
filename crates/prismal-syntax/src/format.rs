@@ -181,6 +181,10 @@ impl<'a> Printer<'a> {
     }
 
     fn part_name(&self, id: &str) -> String {
+        // A part path names each part in turn: `left.atoms` (D-065).
+        if id.contains(prismal_ir::PART_PATH) {
+            return id.split(prismal_ir::PART_PATH).map(|p| self.part_name(p)).collect::<Vec<_>>().join(".");
+        }
         std::iter::once(self.root)
             .chain(&self.root.objects)
             .flat_map(|m| &m.parts)
@@ -200,7 +204,7 @@ impl<'a> Printer<'a> {
                 format!("{INDENT}object {} {{", o.name)
             } else {
                 let ends: Vec<String> = o.ends.iter().map(|e| format!("{} in {}", e.name, self.part_name(&e.over))).collect();
-                format!("{INDENT}relation {}({}) {{", o.name, ends.join(", "))
+                format!("{INDENT}{}relation {}({}) {{", if o.undirected { "undirected " } else { "" }, o.name, ends.join(", "))
             };
         }
         lines.join("\n")
@@ -212,7 +216,11 @@ impl<'a> Printer<'a> {
         for p in ps {
             notes(&mut s, &INDENT.repeat(2), &p.notes);
             let ty = self.root.object(&p.object).map(|o| o.name.clone()).unwrap_or_else(|| p.object.rsplit('.').next().unwrap_or(&p.object).to_string());
-            let count = match (p.count, p.capacity) {
+            let limit = match p.capacity {
+                Some(c) => Some(c.to_string()),
+                None => p.unbounded.then(|| "inf".to_string()),
+            };
+            let count = match (p.count, limit) {
                 (Some(n), Some(c)) => format!("[{n}, max {c}]"),
                 (None, Some(c)) => format!("[max {c}]"),
                 (Some(n), None) => format!("[{n}]"),
@@ -253,6 +261,7 @@ impl<'a> Printer<'a> {
                     None => name,
                 }
             }
+            Expr::Other { other, rel } => format!("{}.other({})", self.member(rel, params), self.member(other, params)),
             other => self.expr_p(other, params),
         }
     }
@@ -440,7 +449,8 @@ impl<'a> Printer<'a> {
                 format!("match {} {{ {} }}", p(r#match), arms.iter().map(|a| format!("{} => {}", a.case, p(&a.value))).collect::<Vec<_>>().join(", "))
             }
             Expr::Field { field, of } => format!("{}.{}", self.member(of, params), self.field_name(field)),
-            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } => self.member(e, params),
+            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } | Expr::Other { .. } => self.member(e, params),
+            Expr::Has { has, rel } => format!("{}.has({})", self.member(rel, params), self.member(has, params)),
             // Made by elaboration only (D-058).
             Expr::Pick { pick, from } => format!("pick({}, {})", p(pick), from.iter().map(|x| p(x)).collect::<Vec<_>>().join(", ")),
             Expr::Aggregate { aggregate, var, over, body, filter } => {
@@ -924,6 +934,17 @@ impl<'a> Printer<'a> {
 {}", &block[2..]);
             }
             sections.push(format!("{INDENT}{head} {block}"));
+        }
+        // The layout follows the views it places (D-063).
+        if let Some(l) = &p.layout {
+            fn node(p: &Presentation, l: &Layout) -> String {
+                match l {
+                    Layout::View(id) => p.views.iter().find(|v| &v.id == id).map(|v| v.name.clone()).unwrap_or_else(|| id.clone()),
+                    Layout::Row(xs) => format!("row({})", xs.iter().map(|x| node(p, x)).collect::<Vec<_>>().join(", ")),
+                    Layout::Column(xs) => format!("column({})", xs.iter().map(|x| node(p, x)).collect::<Vec<_>>().join(", ")),
+                }
+            }
+            sections.push(format!("{INDENT}layout {}", node(p, l)));
         }
         for perm in &p.permissions {
             sections.push(format!("{INDENT}permit {} {{ {} }}", perm.role, perm.allows.join("; ")));

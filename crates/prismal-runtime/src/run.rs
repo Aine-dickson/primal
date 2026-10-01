@@ -6,7 +6,7 @@ use prismal_ir::{Expr, Id, Op, Policy, Role, Type};
 use prismal_kernel::{check_intervention, compile_expr, distance, CExpr, CModel, COp, CTrigger, Ctx, Dir, Status, Value};
 use std::collections::VecDeque;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SolverConfig {
     Dopri5 { rtol: f64, atol: f64, h_max: f64 },
     /// `h` MUST be set for a fixed-step solver (RC section 16); `None` is rejected.
@@ -14,7 +14,7 @@ pub enum SolverConfig {
 }
 
 /// A logged action from outside the model (RC section 11).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     /// `set` operations on intervenable bindings (MK-17.2).
     Intervene(Vec<Op>),
@@ -29,14 +29,14 @@ pub enum Action {
     Input(Id, Expr),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Scheduled {
     pub t: f64,
     pub action: Action,
 }
 
 /// Run configuration (RC-3.1, RC section 16).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     pub t0: f64,
     pub t_end: f64,
@@ -160,8 +160,44 @@ pub struct Run {
     /// Interventions rejected by validation (RC-10.5); not run failures.
     pub rejected: Vec<RunDiag>,
     pub status: RunStatus,
+    /// Snapshots taken during the run (RC section 14.1), in time order: at its start, at
+    /// every instant where logged actions apply, and every `SNAPSHOT_STEPS` steps between.
+    pub snapshots: Vec<Snapshot>,
 }
 
+/// Steps between snapshots taken for resuming (RC-14.3: their instants do not affect
+/// results).
+pub const SNAPSHOT_STEPS: usize = 8;
+
+/// Everything needed to continue a run exactly from the top of its evolution loop at a
+/// committed instant (RC-14.1): the state, the event machinery, the solver's proposed next
+/// step, and how much of the trajectory, logs and action list lies before it.
+#[derive(Clone, Debug)]
+pub struct Snapshot {
+    pub t: f64,
+    n: u32,
+    vals: Vec<Value>,
+    refs: Vec<Option<bool>>,
+    zeno: Vec<ZenoMonitor>,
+    time_next: Vec<Option<f64>>,
+    every_k: Vec<u64>,
+    payloads: Vec<Option<Value>>,
+    h: Option<f64>,
+    /// Lengths of the run's records at the snapshot.
+    committed: usize,
+    segments: usize,
+    log: usize,
+    diagnostics: usize,
+    rejected: usize,
+    /// Logged actions, in time order, applied before the snapshot.
+    consumed: usize,
+    /// No step before the snapshot depended on a stop later than this instant: an action
+    /// logged after `theta` (and after `t`) leaves the trajectory before the snapshot as it
+    /// is (RC-14.2).
+    pub theta: f64,
+}
+
+#[derive(Clone, Debug)]
 struct ZenoMonitor {
     last: Option<f64>,
     recent: VecDeque<f64>,
@@ -181,6 +217,12 @@ struct Engine<'a> {
     /// Payloads of the occurrences handled at the current microstep, by event (D-050).
     payloads: Vec<Option<Value>>,
     run: Run,
+    /// The solver's proposed next step (`None` after an event or an action, RC-8.6).
+    h: Option<f64>,
+    /// Logged actions applied so far, in time order.
+    consumed: usize,
+    /// The latest stop any step so far depended on (see `Snapshot::theta`).
+    theta: f64,
 }
 
 /// The right-hand side over one segment: discrete state and parameters fixed.
@@ -216,6 +258,19 @@ fn matches_dir(dir: Dir, from: bool, to: bool) -> bool {
     }
 }
 
+/// A conservative bound past the end of a step of size `h` from `t`: a stop beyond it is
+/// not reached by the step, whatever rounding the landing test meets.
+fn reach(t: f64, h: f64) -> f64 {
+    t + h * (1.0 + 1e-9) + 1e-12 * t.abs().max(1.0)
+}
+
+/// The action log in the order a run applies it: by instant, in log order at one instant.
+fn sorted_log(log: &[Scheduled]) -> Vec<Scheduled> {
+    let mut l = log.to_vec();
+    l.sort_by(|a, b| a.t.total_cmp(&b.t));
+    l
+}
+
 /// Runs a checked model headless with failure policy `stop` (RC-10.4).
 pub fn run(cm: &CModel, cfg: Config) -> Run {
     let mut run = Run {
@@ -227,6 +282,7 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
         diagnostics: vec![],
         rejected: vec![],
         status: RunStatus::Completed,
+        snapshots: vec![],
     };
     let fail = |category, message: String| RunDiag { category, message, element: None, t: cfg.t0, n: 0 };
     if let SolverConfig::Rk4 { h: None } = cfg.solver {
@@ -270,6 +326,9 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
         every_k: vec![0; cm.events.len()],
         payloads: vec![None; cm.events.len()],
         run,
+        h: None,
+        consumed: 0,
+        theta: f64::NEG_INFINITY,
     };
     if let Err(d) = e.schedule_time_events() {
         e.run.status = RunStatus::NotStarted(RunDiag { category: Category::Initialization, ..d });
@@ -292,6 +351,63 @@ pub fn run(cm: &CModel, cfg: Config) -> Run {
         return e.run;
     }
     e.retake_refs();
+    if let Err(d) = e.advance() {
+        e.run.status = RunStatus::Stopped(d);
+    }
+    e.run
+}
+
+/// Runs `cfg` on the model of `prev`, a run whose configuration differs from `cfg` at most
+/// in its action log, continuing from the latest of `prev`'s snapshots that the change of
+/// log leaves as it was (RC-14.2, RC-14.3). The result is the run `run` would compute, bit
+/// for bit; only the work before the first changed action is saved. Interventions, drag
+/// previews, undo and redo in a session resume this way instead of recomputing from `t0`.
+pub fn resume(prev: &Run, cfg: Config) -> Run {
+    let mut same = prev.config.clone();
+    same.log = cfg.log.clone();
+    if same != cfg || prev.model.is_static || matches!(prev.status, RunStatus::NotStarted(_)) {
+        return run(&prev.model, cfg);
+    }
+    // The first action at which the two logs, in the order runs apply them, differ.
+    let (old, new) = (sorted_log(&prev.config.log), sorted_log(&cfg.log));
+    let p = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+    let t_d = old.get(p).into_iter().chain(new.get(p)).map(|s| s.t).fold(f64::INFINITY, f64::min);
+    if t_d == f64::INFINITY {
+        let mut r = prev.clone();
+        r.config = cfg;
+        return r;
+    }
+    let Some(k) = prev.snapshots.iter().rposition(|s| s.t < t_d && s.theta < t_d && s.consumed <= p) else {
+        return run(&prev.model, cfg);
+    };
+    let snap = &prev.snapshots[k];
+    let r = Run {
+        model: prev.model.clone(),
+        config: cfg.clone(),
+        committed: prev.committed[..snap.committed].to_vec(),
+        segments: prev.segments[..snap.segments].to_vec(),
+        log: prev.log[..snap.log].to_vec(),
+        diagnostics: prev.diagnostics[..snap.diagnostics].to_vec(),
+        rejected: prev.rejected[..snap.rejected].to_vec(),
+        status: RunStatus::Completed,
+        snapshots: prev.snapshots[..=k].to_vec(),
+    };
+    let mut e = Engine {
+        cm: &prev.model,
+        cfg: &cfg,
+        vals: snap.vals.clone(),
+        t: snap.t,
+        n: snap.n,
+        refs: snap.refs.clone(),
+        zeno: snap.zeno.clone(),
+        time_next: snap.time_next.clone(),
+        every_k: snap.every_k.clone(),
+        payloads: snap.payloads.clone(),
+        run: r,
+        h: snap.h,
+        consumed: snap.consumed,
+        theta: snap.theta,
+    };
     if let Err(d) = e.advance() {
         e.run.status = RunStatus::Stopped(d);
     }
@@ -358,6 +474,29 @@ impl<'a> Engine<'a> {
 
     fn ctx<'v>(&'v self, vals: &'v [Value]) -> Ctx<'v> {
         Ctx { vals, der: None, t: self.t, t0: self.cfg.t0, args: &[], payloads: &self.payloads }
+    }
+
+    fn snapshot(&mut self) {
+        let r = &self.run;
+        let s = Snapshot {
+            t: self.t,
+            n: self.n,
+            vals: self.vals.clone(),
+            refs: self.refs.clone(),
+            zeno: self.zeno.clone(),
+            time_next: self.time_next.clone(),
+            every_k: self.every_k.clone(),
+            payloads: self.payloads.clone(),
+            h: self.h,
+            committed: r.committed.len(),
+            segments: r.segments.len(),
+            log: r.log.len(),
+            diagnostics: r.diagnostics.len(),
+            rejected: r.rejected.len(),
+            consumed: self.consumed,
+            theta: self.theta,
+        };
+        self.run.snapshots.push(s);
     }
 
     fn commit(&mut self) {
@@ -495,11 +634,18 @@ impl<'a> Engine<'a> {
         let eps_t = self.cfg.eps_t();
         let n_y = cm.n_y();
         let mut y = vec![0.0; n_y];
-        let mut h: Option<f64> = None;
-        let mut pending: Vec<Scheduled> = self.cfg.log.clone();
-        pending.sort_by(|a, b| a.t.total_cmp(&b.t));
-        let mut pending: VecDeque<Scheduled> = pending.into();
+        let mut h: Option<f64> = self.h;
+        let mut pending: VecDeque<Scheduled> = sorted_log(&self.cfg.log).into_iter().skip(self.consumed).collect();
+        let mut steps = 0usize;
         loop {
+            // RC-14.3: a snapshot at the start, where actions apply, and every few steps.
+            let due = pending.front().map(|s| s.t <= self.t).unwrap_or(false);
+            let fresh = self.run.snapshots.last().map(|s| s.committed != self.run.committed.len() || s.t != self.t).unwrap_or(true);
+            if fresh && (steps == 0 || due || steps % SNAPSHOT_STEPS == 0) {
+                self.h = h;
+                self.snapshot();
+            }
+            steps += 1;
             // Logged actions due now apply after the model's own iteration (RC-8.7, RC-11.1).
             let mut acted = false;
             while pending.front().map(|s| s.t <= self.t).unwrap_or(false) {
@@ -508,6 +654,7 @@ impl<'a> Engine<'a> {
                     self.commit();
                 }
                 let s = pending.pop_front().unwrap();
+                self.consumed += 1;
                 self.intervene(&s.action)?;
                 acted = true;
             }
@@ -529,7 +676,9 @@ impl<'a> Engine<'a> {
             // One accepted step (RC-6.7: never past the next stop).
             let (y1, step, h_next) = match &self.cfg.solver {
                 SolverConfig::Rk4 { h: Some(hf) } => {
-                    let hs = if self.t + hf >= next_stop - 1e-12 * hf { span } else { *hf };
+                    let land = self.t + hf >= next_stop - 1e-12 * hf;
+                    let hs = if land { span } else { *hf };
+                    self.theta = self.theta.max(if land { next_stop } else { reach(self.t, *hf) });
                     let (y1, step) = Rk4::step(&mut rhs, self.t, &y, hs).map_err(|s| self.diag(Category::Model, s.cause, None))?;
                     (y1, step, None)
                 }
@@ -538,11 +687,18 @@ impl<'a> Engine<'a> {
                     let solver = Dopri5 { rtol: *rtol, atol: *atol, h_max: *h_max };
                     let mut hh = match h {
                         Some(x) => x,
-                        None => solver.initial_step(&mut rhs, self.t, &y, span).map_err(|s| self.diag(Category::Model, s.cause, None))?,
+                        None => {
+                            let (h0, free) = solver.initial_step(&mut rhs, self.t, &y, span).map_err(|s| self.diag(Category::Model, s.cause, None))?;
+                            self.theta = self.theta.max(reach(self.t, free));
+                            h0
+                        }
                     };
                     loop {
                         let land = self.t + hh >= next_stop - 1e-12 * hh.max(1e-300);
                         let hs = if land { span } else { hh };
+                        // A step that lands depends on where the stop is; one that does not,
+                        // only on the stop lying beyond it.
+                        self.theta = self.theta.max(if land { next_stop } else { reach(self.t, hh) });
                         let h_min = 1e-14 * self.t.abs().max(1.0);
                         if hs < h_min {
                             return Err(self.diag(Category::Computational, format!("step size {hs} below the minimum at t = {}", self.t), None));

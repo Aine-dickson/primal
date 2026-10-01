@@ -174,6 +174,7 @@ The presentation kernel has these concepts:
 - **PK-7.3** A **plot view** has axes, each bound to a dimension and a display unit, with a range that is fixed, follows the data, or is controlled by the camera.
 - **PK-7.3a** In v0 a plot axis range is fixed: two numbers or two quantities of one dimension (`x: [0 s, 5 s]`, `y: [0 m, 1.1 m]`), which gives the axis its dimension; it is shown in coherent SI units. A marker in a plot view is at a pair whose components have the axes' dimensions (`(0, y)` with `y` a length on a length axis), and a drag in a plot view gives a pair of quantities in those dimensions (PK-5.6).
 - **PK-7.4** **Layout** places views in the presentation and adapts them to the output's size and orientation. Layout never changes what a view shows, only where and how large.
+- **PK-7.4a** (D-063) A presentation's **page layout** is a tree: a view, `row(...)` (its items side by side) or `column(...)` (one below the other), each with at least one item, nested freely. Every name is a view or panel of the presentation, placed at most once; views the layout leaves out follow it, one below the other, in the order they are declared. Sizes remain the views' own; a medium adapts the tree to its page (a browser MAY turn a row into a column on a narrow screen) but keeps its order. Without a layout, a medium arranges the views in declaration order as it sees fit.
 - **PK-7.5** **Consistency across views**: every view in one presented frame shows the same simulation instant (and the same microstep when one is selected), and the same committed state or dense-output value. A view never shows a newer state than another view of the same frame (07 section 96).
 
 ---
@@ -238,7 +239,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 ### 9.2 The lesson's run
 
 - **PK-9.5** A timeline directs one **lesson run** of its model. Timeline actions act on that run. The lesson run's configuration is part of the presentation.
-- **PK-9.5a** A lesson run whose configuration gives no end is computed to `t0 + 60 s`. An intervention or request makes a new version of the run, recomputed from its start with the action in its log (RC-11.1); the time mapping keeps referring to the version it showed, so earlier frames never change.
+- **PK-9.5a** A lesson run whose configuration gives no end is computed to `t0 + 60 s`. An intervention or request makes a new version of the run, computed with the action in its log (RC-11.1), continuing the previous version from a snapshot where RC-14.3a allows; the time mapping keeps referring to the version it showed, so earlier frames never change.
 - **PK-9.6** The timeline reads the model only through observation and events (MK-17.1) and changes it only through interventions (MK-17.2). The model runs unchanged with the timeline removed (D-009, MK-17.5).
 
 ### 9.3 Learner control
@@ -505,3 +506,4 @@ A presentation is checked against its model before it is used (PK-2.3). Each dia
 - 2026-10-01 descriptions track in linear media: PK-11.3a.
 - 2026-09-30 narration sound supplied by hosts: PK-9.2d (D-053).
 - 2026-09-30 round geometry: PK-6.3c `circle`, `ellipse`, `arc` (D-054).
+- 2026-10-01 page layout of views: PK-7.4a (D-063).

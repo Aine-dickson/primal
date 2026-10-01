@@ -120,11 +120,18 @@ pub fn render(layout: &Json, frame: &Json, opts: &Options) -> String {
     // In a lesson, controls act only in explore beats (PK-9.8, D-025).
     let explore = !lesson || arr(&layout["lesson"]["explore"]).iter().any(|x| f(&frame["time"]) >= f(&x["start"]) && f(&frame["time"]) < f(&x["end"]));
     let mut clip = 0;
+    let mut drawn: Vec<(String, Block)> = vec![];
     for vf in arr(&frame["views"]) {
         let Some(vl) = arr(&layout["views"]).iter().find(|v| v["id"] == vf["id"]) else { continue };
         clip += 1;
-        blocks.push(view_block(vl, vf, clip, opts));
+        drawn.push((s(&vf["id"]).to_string(), view_block(vl, vf, clip, opts)));
     }
+    // The author's page layout places views in rows and columns (PK-7.4a, D-063); without
+    // one, views are stacked in order.
+    if let Some(b) = page(&layout["page"], &mut drawn) {
+        blocks.push(b);
+    }
+    blocks.extend(drawn.into_iter().map(|(_, b)| b));
     let overlay = arr(&frame["overlay"]);
     if !overlay.is_empty() {
         let items: Vec<Block> = overlay.iter().map(|r| item(r, !explore, opts)).collect();
@@ -203,6 +210,41 @@ fn stack(blocks: Vec<Block>, gap: f64) -> Block {
         w = w.max(b.w);
     }
     Block { w, h: y, body }
+}
+
+/// Blocks side by side, `gap` apart, aligned at the top.
+fn row(blocks: Vec<Block>, gap: f64) -> Block {
+    let mut x = 0.0;
+    let mut h: f64 = 0.0;
+    let mut body = String::new();
+    for (i, b) in blocks.into_iter().enumerate() {
+        if i > 0 {
+            x += gap;
+        }
+        let _ = write!(body, "<g transform=\"translate({} 0)\">{}</g>", n(x), b.body);
+        x += b.w;
+        h = h.max(b.h);
+    }
+    Block { w: x, h, body }
+}
+
+/// The views of a page layout node, taken from `drawn` as they are placed; `None` for an
+/// absent node or one that places nothing drawn.
+fn page(node: &Json, drawn: &mut Vec<(String, Block)>) -> Option<Block> {
+    let gap = 12.0;
+    let parts = |xs: &Json, drawn: &mut Vec<(String, Block)>| arr(xs).iter().filter_map(|x| page(x, drawn)).collect::<Vec<_>>();
+    if let Some(id) = node["view"].as_str() {
+        let k = drawn.iter().position(|(v, _)| v == id)?;
+        return Some(drawn.remove(k).1);
+    }
+    let blocks = if node["row"].is_array() {
+        row(parts(&node["row"], drawn), gap)
+    } else if node["column"].is_array() {
+        stack(parts(&node["column"], drawn), gap)
+    } else {
+        return None;
+    };
+    (!blocks.body.is_empty()).then_some(blocks)
 }
 
 /// A block inside a surface with a border, `pad` around it.

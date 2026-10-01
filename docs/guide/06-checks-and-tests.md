@@ -127,7 +127,7 @@ A tolerance should reflect what is being checked. `within rel 1e-5` matches the 
 
 ## Reading a failure
 
-`cargo run -p prismal-present --example cases -- skydiver.prismal` prints each case and expectation:
+`cargo run -p prismal-web --bin prismal -- cases skydiver.prismal` prints each case and expectation:
 
 ```sh
 run fall

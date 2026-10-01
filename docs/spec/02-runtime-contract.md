@@ -307,6 +307,7 @@ The stochastic modes (D-013) are specified with the stochastic slice. v0 fixes o
 - **RC-14.1** A **snapshot** captures a committed superdense instant: every stored binding's value, collection and relation membership, identity counters (MK-7.7), guard sign references, Zeno monitors, time-event schedules, random stream counters, and the computational state needed to continue exactly (for example an adaptive solver's proposed next step).
 - **RC-14.2** Restoring a snapshot and continuing MUST produce the same trajectory as never having stopped, under the determinism level in force (RC-14.5).
 - **RC-14.3** A runtime takes snapshots at least at every intervention instant and at run start. Other snapshot instants (for fast backward seek) are its choice and MUST NOT affect results (RC-6.6).
+- **RC-14.3a** When a run's action log changes (an action added, removed or replaced), the new run MAY continue from a snapshot of the previous run instead of starting again, provided every computation before the snapshot is unaffected by the change: the snapshot lies before the first instant `t_d` at which the two logs, in the order runs apply them, differ, and no solver step before it depended on a stop at or after `t_d`. An adaptive step depends on the next stop when it lands on it, or when the stop limits its size (including the initial step after an event); a runtime records, with each snapshot, the latest stop any earlier step depended on. The continued run is bit-identical to the run computed from the start (RC-14.2).
 
 ### 14.2 Reproducibility record
 

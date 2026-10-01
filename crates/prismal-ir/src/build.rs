@@ -151,6 +151,7 @@ impl ModelBuilder {
                 objects: vec![],
                 parts: vec![],
                 ends: vec![],
+                undirected: false,
                 constraints: vec![],
                 enums: vec![],
                 functions: vec![],

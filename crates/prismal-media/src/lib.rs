@@ -115,7 +115,9 @@ pub fn clip(inst: &mut Instance, presentation: &str, s: &Settings) -> Result<Cli
     let layout = inst.open(presentation, true).map_err(|d| d.to_string())?;
     let lesson = layout["mode"] == "lesson";
     let end = s.until.unwrap_or_else(|| if lesson { &layout["lesson"]["end"] } else { &layout["session"]["end"] }.as_f64().unwrap_or(0.0));
-    let mut frames = vec![];
+    // Frame descriptions follow one another (a lesson's state at an instant depends on the
+    // frames before it); drawing them as SVG does not, and is done on every core.
+    let mut described = vec![];
     let mut said: Vec<(f64, String)> = vec![];
     for t in times(end, s.fps) {
         let frame = frame_at(inst, &layout, t, 1.0 / s.fps);
@@ -123,8 +125,9 @@ pub fn clip(inst: &mut Instance, presentation: &str, s: &Settings) -> Result<Cli
         if !events.is_empty() {
             said.push((t, events.join(", ")));
         }
-        frames.push(render(&layout, frame, s));
+        described.push(frame);
     }
+    let frames = parallel(described, |f| render(&layout, f, s));
     // Each description shows until the next, for at most `DESCRIPTION_SECONDS`.
     let descriptions = said
         .iter()
@@ -144,6 +147,37 @@ pub fn clip(inst: &mut Instance, presentation: &str, s: &Settings) -> Result<Cli
     let mut reports: Vec<String> = list(&l["unsupported"]).iter().chain(&list(&l["diagnostics"])).map(|r| r.as_str().map(str::to_string).unwrap_or_else(|| r.to_string())).collect();
     reports.extend(list(&l["refusals"]).iter().map(|r| format!("refused at {} s: {} ({})", r["at"], r["input"].as_str().unwrap_or(""), r["reason"].as_str().unwrap_or(""))));
     Ok(Clip { presentation: layout["presentation"].as_str().unwrap_or(presentation).to_string(), fps: s.fps, frames, captions, descriptions, reports, background: s.svg.theme.bg.to_string() })
+}
+
+/// `f` applied to every item on all available cores, results in the items' order.
+pub fn parallel<T: Send, R: Send>(items: Vec<T>, f: impl Fn(T) -> R + Sync) -> Vec<R> {
+    let n = items.len();
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(n.max(1));
+    if workers <= 1 {
+        return items.into_iter().map(f).collect();
+    }
+    // Contiguous chunks, one per worker, joined in order.
+    let size = n.div_ceil(workers);
+    let mut chunks: Vec<Vec<T>> = vec![];
+    let mut rest = items.into_iter();
+    loop {
+        let c: Vec<T> = rest.by_ref().take(size).collect();
+        if c.is_empty() {
+            break;
+        }
+        chunks.push(c);
+    }
+    let f = &f;
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = chunks.into_iter().map(|c| scope.spawn(move || c.into_iter().map(f).collect::<Vec<R>>())).collect();
+        handles.into_iter().flat_map(|h| h.join().expect("a worker panicked")).collect()
+    })
+}
+
+/// How many frames are rasterized at once before they are written: enough to keep every
+/// core busy, few enough to bound memory.
+fn batch() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get()) * 4
 }
 
 /// How long a description of events stays at most, in seconds.
@@ -225,6 +259,17 @@ impl Raster {
         if let Some(n) = pick(db, &["Cascadia Mono", "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Courier New"]) {
             db.set_monospace_family(n);
         }
+        // Without this, every text node opens and maps its font file again, and the search
+        // for a fallback glyph does so for every face: rasterizing would wait on the file
+        // system instead of using every core. Each face's file is mapped once and kept.
+        let ids: Vec<_> = db.faces().map(|f| f.id).collect();
+        for id in ids {
+            // SAFETY: the mapped font files are not changed while the export runs; fontdb
+            // requires that promise because a changed file would change the mapped bytes.
+            unsafe {
+                db.make_shared_face_data(id);
+            }
+        }
         Raster { opts }
     }
 
@@ -272,7 +317,7 @@ pub fn canvas(sizes: impl IntoIterator<Item = (f64, f64)>, scale: f64) -> (u32, 
 }
 
 fn clip_canvas(raster: &Raster, clip: &Clip, scale: f64) -> Result<(u32, u32), String> {
-    let sizes = clip.frames.iter().map(|f| raster.size(f)).collect::<Result<Vec<_>, _>>()?;
+    let sizes = parallel(clip.frames.iter().collect(), |f| raster.size(f)).into_iter().collect::<Result<Vec<_>, _>>()?;
     Ok(canvas(sizes, scale))
 }
 
@@ -449,10 +494,11 @@ pub fn encode(raster: &Raster, clip: &Clip, s: &Settings, encoder: &Path, out: &
         .spawn()
         .map_err(|e| format!("cannot start the encoder `{}` ({e}); install ffmpeg, set PRISMAL_FFMPEG, or export to a directory to write the frames", encoder.display()))?;
     let mut stdin = child.stdin.take().expect("piped");
-    for f in &clip.frames {
-        let pm = raster.draw(f, s.scale, size, &clip.background)?;
-        if stdin.write_all(pm.data()).is_err() {
-            break; // the encoder stopped; its status says why
+    'frames: for group in clip.frames.chunks(batch()) {
+        for pm in parallel(group.iter().collect(), |f| raster.draw(f, s.scale, size, &clip.background)) {
+            if stdin.write_all(pm?.data()).is_err() {
+                break 'frames; // the encoder stopped; its status says why
+            }
         }
     }
     drop(stdin);
@@ -471,11 +517,12 @@ pub fn encode(raster: &Raster, clip: &Clip, s: &Settings, encoder: &Path, out: &
 pub fn write_frames(raster: &Raster, clip: &Clip, s: &Settings, dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let size = clip_canvas(raster, clip, s.scale)?;
-    for (k, f) in clip.frames.iter().enumerate() {
+    let written = parallel(clip.frames.iter().enumerate().collect(), |(k, f)| {
         let path = dir.join(format!("frame-{k:05}.png"));
         let bytes = raster.draw(f, s.scale, size, &clip.background)?.encode_png().map_err(|e| e.to_string())?;
-        std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-    }
+        std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+    });
+    written.into_iter().collect::<Result<Vec<()>, String>>()?;
     let mut cmd = format!("ffmpeg -framerate {} -i frame-%05d.png", fmt(clip.fps));
     if !clip.captions.is_empty() {
         std::fs::write(dir.join("captions.vtt"), webvtt(&clip.captions)).map_err(|e| e.to_string())?;
