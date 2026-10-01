@@ -1296,3 +1296,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** PK-6.3d, PK-9.8b; 04-ir (learner step `press`, `word` argument of `button`); working syntax; HI-4.3; parser, lowering, formatter; `CKind::RunButton`, `Shape::Button { event, control }`; `Interactive::press`, `Instance::lesson_press`, the protocol's `press` in lessons; the web player; guide chapters 7, 8 and 10; `prismal-present/tests/buttons.rs`. Not yet: buttons whose event takes a payload (a button supplies none).
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-070: Plot axes that follow the data, display units on plot axes, zoom and pan of plots
+
+- **Status:** Accepted
+- **Original position:** PK-7.3 gives a plot axis "a dimension and a display unit, with a range that is fixed, follows the data, or is controlled by the camera". PK-7.3a implemented only fixed ranges in coherent SI units, and the learner's zoom and pan (D-047) applied to spatial views only: a curve that left a plot's ranges could not be followed or looked at.
+- **Raised by:** the owner (2026-10-01): an oscillation plotted beyond the visible part of an axis could not be scrolled to; PROJECT-STATE, next steps; `docs/prototype.md`, "Not implemented".
+- **Builds on:** PK-7.3, PK-7.3a, MK-3.12, D-047.
+- **Question:** How does an author ask for an axis that follows the data and for an axis display unit, and how does the learner look beyond a plot's ranges?
+- **Options considered:**
+  1. **Named arguments of `plot`, and the learner's zoom and pan for plots.** `follow: y` or `follow: (x, y)` makes those axes grow to hold what the view draws; `x_unit: ms` and `y_unit: cm` choose display units. Plots zoom and pan under the same `permit learner { zoom; pan }` as spatial views.
+  2. **Words after the range** (`y: [-1 m, 1 m] follow unit cm`), mirroring a parameter's `unit deg`. Reads well, but needs a new argument grammar in the parser for one view kind.
+  3. **A sliding window** that keeps the last span of time in view instead of growing. Suits long runs, but hides the start of the curve; it can be added later as another `follow` mode.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. A following axis is the declared range grown to hold every point, segment, polyline and polygon the frame draws, with a twentieth of the span as room on the side it grew; it never shrinks below the declared range, and it follows in every medium (sessions, lessons, video). The learner's zoom and pan act on what is shown, followed or not, and `Reset view` returns to it. A display unit must measure the axis's dimension and have no offset (PK-E04); ticks are placed and labelled in it, values in frames stay in coherent SI units.
+- **Reason:** named arguments are the form every other view setting already takes, so no new grammar is needed. Growing keeps the whole curve visible, which is what a learner checking where an oscillation ends needs; panning covers looking beyond any range.
+- **Consequences:** PK-7.3a, PK-7.3b; 04-ir (plot `follow`, `units`); parser, lowering, formatter; `ViewCtx::Plot { follow, units }`; the host's plot viewport, pan and wheel; layout `follow`, `units`, `unit_scale`; both renderers; guide chapters 7 and 10; `prismal-host/tests/plot_axes.rs`. Not yet: a sliding window (option 3); axes controlled by a timeline camera; a function graph is sampled over its declared `x` range only, so panning past it shows no curve; two-touch pinch zoom stays with spatial views.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

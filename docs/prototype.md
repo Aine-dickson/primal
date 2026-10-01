@@ -329,7 +329,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
 | Relations between relations, relation sets with at most one relation per pair, `create` and `connect` outside the container of the collection they change, creation and destruction as interventions (set aside by D-059), native growable state for very large populations (D-066 option 1); function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
 | Sampled sources `over I`; buttons whose event takes a payload | PK-6.3, PK-6.3b, D-069 |
-| Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
+| Plot axes controlled by a timeline camera, or as a sliding window; function graphs sampled beyond their declared `x` range (D-070) | PK-7.3 |
 | Animated color, line and scale, shape morphs and chosen easing functions (D-068 option 2); narration speed as a learner control separate from playback speed (the web player offers pause, seek, replay, speed, zoom and pan) | PK-8.4, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
 | `contribute` operations on discrete state | MK section 16 |
@@ -363,3 +363,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-09-30 collections whose membership changes (D-057): capacity, `create`, `destroy`, events per member, member targets; aggregates folded as balanced trees.
 - 2026-10-01 members as payloads and several payloads per event (D-059); requests refused with a reason; the protocol's `request`.
 - 2026-10-01 drags and clicks on members (D-059); guide chapter 9, Labs with members.
+- 2026-10-01 plot axes that follow the data, axis display units, zoom and pan of plots (D-070); solver rounding near 0 shown as 0 in point descriptions.

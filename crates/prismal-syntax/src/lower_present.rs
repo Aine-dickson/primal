@@ -228,7 +228,32 @@ impl PresCx<'_, '_> {
                         return None;
                     }
                 };
-                ViewKind::Plot { x: [x.0, x.1], y: [y.0, y.1] }
+                // `follow: y` or `follow: (x, y)`: those axes grow to keep the data in view;
+                // `x_unit: ms`, `y_unit: cm`: the axes' display units (D-070).
+                let mut follow = [false, false];
+                if let Some(f) = named("follow") {
+                    let axes: Vec<&ast::Expr> = match &f.kind {
+                        ExprKind::Tuple(items) => items.iter().collect(),
+                        _ => vec![f],
+                    };
+                    for a in axes {
+                        match &a.kind {
+                            ExprKind::Name(w) if w == "x" => follow[0] = true,
+                            ExprKind::Name(w) if w == "y" => follow[1] = true,
+                            _ => self.err("SX-E02", "a plot follows its data on `x`, `y` or both: `follow: y`, `follow: (x, y)`", a.span),
+                        }
+                    }
+                }
+                let mut units = [None, None];
+                for (i, key) in ["x_unit", "y_unit"].iter().enumerate() {
+                    if let Some(u) = named(key) {
+                        match &u.kind {
+                            ExprKind::Name(w) => units[i] = Some(w.clone()),
+                            _ => self.err("SX-E02", format!("an axis display unit is a unit symbol: `{key}: cm`"), u.span),
+                        }
+                    }
+                }
+                ViewKind::Plot { x: [x.0, x.1], y: [y.0, y.1], follow, units }
             }
             "panel" => ViewKind::Panel,
             other => {

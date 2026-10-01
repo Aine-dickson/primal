@@ -279,8 +279,9 @@ pub struct Symbol {
 #[derive(Clone, Debug)]
 pub enum ViewCtx {
     Spatial { space: Id, px_per_m: f64, y_up: bool },
-    /// Ranges in coherent SI units, and the dimension of each axis (PK-7.3).
-    Plot { x: (f64, f64), y: (f64, f64), dims: (Dim, Dim) },
+    /// Ranges in coherent SI units, and the dimension of each axis (PK-7.3); the axes that
+    /// follow the data and each axis's display unit (D-070).
+    Plot { x: (f64, f64), y: (f64, f64), dims: (Dim, Dim), follow: [bool; 2], units: [Option<prismal_ir::Unit>; 2] },
     Panel,
 }
 
@@ -298,7 +299,7 @@ impl ViewCtx {
                 };
                 Ok(ViewCtx::Spatial { space: space.clone(), px_per_m: scale.px / q, y_up: *y_up })
             }
-            ViewKind::Plot { x, y } => {
+            ViewKind::Plot { x, y, follow, units } => {
                 let n = |e: &Expr| number(cm, e).map_err(|m| err("PK-E02", m));
                 let dim = |e: &Expr| match compile_expr(cm, e, None) {
                     Ok((_, Type::Quantity { dim })) => Ok(dim),
@@ -308,7 +309,16 @@ impl ViewCtx {
                 if dim(&x[1])? != dx || dim(&y[1])? != dy {
                     return Err(err("PK-E04", "both ends of a plot axis range have the same dimension (PK-7.3)".into()));
                 }
-                Ok(ViewCtx::Plot { x: (n(&x[0])?, n(&x[1])?), y: (n(&y[0])?, n(&y[1])?), dims: (dx, dy) })
+                let unit = |u: &Option<String>, d: &Dim| -> Result<Option<prismal_ir::Unit>, PDiag> {
+                    let Some(u) = u else { return Ok(None) };
+                    match prismal_ir::Unit::parse(u) {
+                        Ok(unit) if unit.dim == *d && unit.offset == 0.0 => Ok(Some(unit)),
+                        Ok(_) => Err(err("PK-E04", format!("the display unit `{u}` does not measure the axis's dimension (D-070)"))),
+                        Err(m) => Err(err("PK-E02", m)),
+                    }
+                };
+                let units = [unit(&units[0], &dx)?, unit(&units[1], &dy)?];
+                Ok(ViewCtx::Plot { x: (n(&x[0])?, n(&x[1])?), y: (n(&y[0])?, n(&y[1])?), dims: (dx, dy), follow: *follow, units })
             }
             ViewKind::Panel => Ok(ViewCtx::Panel),
         }
@@ -1306,7 +1316,7 @@ mod tests {
         // Atoms drawn at 1e11 px/m keep a length of 1e-10 m.
         let atoms = ViewCtx::Spatial { space: "S".into(), px_per_m: 1e11, y_up: true };
         assert_eq!(atoms.shown(&[1e-10, 0.0]), vec![1e-10, 0.0]);
-        let plot = ViewCtx::Plot { x: (0.0, 10.0), y: (-1.0, 1.0), dims: (Dim::default(), Dim::default()) };
+        let plot = ViewCtx::Plot { x: (0.0, 10.0), y: (-1.0, 1.0), dims: (Dim::default(), Dim::default()), follow: [false; 2], units: [None, None] };
         assert_eq!(plot.shown(&[1e-12, 0.25]), vec![0.0, 0.25]);
     }
 }
