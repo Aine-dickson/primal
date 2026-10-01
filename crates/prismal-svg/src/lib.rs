@@ -533,7 +533,22 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
     let drawn = r["drawn"].as_f64();
     // `reveal draw`: every stroke drawn up to the fraction reached (D-042).
     // The author's color and line style (D-061).
-    let custom = r["color"].as_str().and_then(|c| th.color(c));
+    // During a color animation (D-075), the color blended from the author's, or the kind's
+    // own, to the color being reached.
+    let own = match shape {
+        "point" => th.reps[1],
+        "arrow" => th.reps[ci % 4],
+        "segment" => th.reps[0],
+        "polyline" if r["kind"] == "trace" => th.muted,
+        _ => th.accent,
+    };
+    let author = r["color"].as_str().and_then(|c| th.color(c));
+    let custom: Option<String> = match (r["color_to"].as_str().and_then(|c| th.color(c)), r["color_mix"].as_f64()) {
+        (Some(to), Some(k)) => Some(mix_hex(author.unwrap_or(own), to, k)),
+        _ => author.map(String::from),
+    };
+    // An animated size (D-075): a marker's dot and an arrow's head grow with it.
+    let grow = r["scale"].as_f64().unwrap_or(1.0);
     let style = match r["line"].as_str() {
         Some("dashed") => format!(" stroke-dasharray=\"{} {}\"", n(6.0 * u), n(4.0 * u)),
         Some("dotted") => format!(" stroke-dasharray=\"{} {}\" stroke-linecap=\"round\"", n(0.01 * u), n(4.0 * u)),
@@ -578,8 +593,8 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
         "point" => {
             let p = map.to(pt(&r["at"]));
             ring(out, p);
-            let rad = if r["drag"].is_string() { 8.0 } else { 6.0 } * u;
-            let (fill, stroke, sd) = if invalid { ("none", th.bad, " stroke-dasharray=\"4 3\"") } else { (custom.unwrap_or(th.reps[1]), th.surface, "") };
+            let rad = if r["drag"].is_string() { 8.0 } else { 6.0 } * u * grow;
+            let (fill, stroke, sd) = if invalid { ("none", th.bad, " stroke-dasharray=\"4 3\"") } else { (custom.as_deref().unwrap_or(th.reps[1]), th.surface, "") };
             let _ = write!(
                 out,
                 "<circle class=\"marker\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"{}\"{sd}/>",
@@ -592,7 +607,7 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
         }
         "arrow" => {
             let (a, b) = (map.to(pt(&r["from"])), map.to(pt(&r["to"])));
-            let color = if invalid { th.bad } else { custom.unwrap_or(th.reps[ci % 4]) };
+            let color = if invalid { th.bad } else { custom.as_deref().unwrap_or(th.reps[ci % 4]) };
             let _ = write!(
                 out,
                 "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{color}\" stroke-width=\"{}\"{dash}/>",
@@ -602,13 +617,13 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
                 n(b[1]),
                 n(2.0 * u)
             );
-            if let Some(head) = arrow_head(a, b, 11.0 * u) {
+            if let Some(head) = arrow_head(a, b, 11.0 * u * grow) {
                 // Under `reveal draw` the head appears once the shaft is nearly drawn.
                 let op = match drawn {
                     Some(d) if d <= 0.95 => " opacity=\"0\"",
                     _ => "",
                 };
-                let _ = write!(out, "<polygon points=\"{head}\" fill=\"{}\"{op}/>", custom.unwrap_or(th.reps[ci % 4]));
+                let _ = write!(out, "<polygon points=\"{head}\" fill=\"{}\"{op}/>", custom.as_deref().unwrap_or(th.reps[ci % 4]));
             }
             ring(out, b);
             let len = (b[0] - a[0]).hypot(b[1] - a[1]);
@@ -632,7 +647,7 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
         }
         "segment" => {
             let (a, b) = (map.to(pt(&r["from"])), map.to(pt(&r["to"])));
-            let color = if invalid { th.bad } else { custom.unwrap_or(th.reps[0]) };
+            let color = if invalid { th.bad } else { custom.as_deref().unwrap_or(th.reps[0]) };
             let _ = write!(
                 out,
                 "<line class=\"segment\" x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{color}\" stroke-width=\"{}\"{dash}/>",
@@ -646,7 +661,7 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
         "polyline" => {
             let trace = r["kind"] == "trace";
             let (cls, color, width, extra) = if trace { ("trace", th.muted, 1.5, " stroke-dasharray=\"3 3\"") } else { ("graph", th.accent, 2.0, "") };
-            let color = custom.unwrap_or(color);
+            let color = custom.as_deref().unwrap_or(color);
             // A drawn fraction, or the author's line, replaces the trace's own dashes, as in
             // the browser.
             let extra = if drawn.is_some() || !style.is_empty() { dash.as_str() } else { extra };
@@ -658,13 +673,13 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
                 "<polygon class=\"shape\" points=\"{}\" fill=\"{accent}\" fill-opacity=\"0.12\" stroke=\"{accent}\" stroke-width=\"{}\"{dash}/>",
                 pts("points"),
                 n(2.0 * u),
-                accent = custom.unwrap_or(th.accent)
+                accent = custom.as_deref().unwrap_or(th.accent)
             );
         }
         "ellipse" => {
             // A circle, ellipse or arc (PK-6.3c): a whole one filled as a polygon is, an
             // arc stroked only.
-            let accent = custom.unwrap_or(th.accent);
+            let accent = custom.as_deref().unwrap_or(th.accent);
             let fill = if r["closed"] == true { format!("fill=\"{accent}\" fill-opacity=\"0.12\"") } else { "fill=\"none\"".to_string() };
             let cls = if r["closed"] == true { "shape" } else { "curve" };
             let _ = write!(out, "<path class=\"{cls}\" d=\"{}\" {fill} stroke=\"{}\" stroke-width=\"{}\"{dash}/>", curve_path(r), accent, n(2.0 * u));
@@ -1053,3 +1068,15 @@ mod tests {
         assert_eq!(nice_step(1.5), 2.0);
     }
 }
+
+/// `#rrggbb` colors mixed: `k` of the way from `a` to `b`.
+fn mix_hex(a: &str, b: &str, k: f64) -> String {
+    let rgb = |h: &str| -> [f64; 3] {
+        let v = u32::from_str_radix(h.trim_start_matches('#'), 16).unwrap_or(0);
+        [((v >> 16) & 255) as f64, ((v >> 8) & 255) as f64, (v & 255) as f64]
+    };
+    let (x, y) = (rgb(a), rgb(b));
+    let c: Vec<u32> = (0..3).map(|i| (x[i] + (y[i] - x[i]) * k.clamp(0.0, 1.0)).round() as u32).collect();
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
+}
+

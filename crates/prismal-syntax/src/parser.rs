@@ -25,7 +25,7 @@ pub const CONTEXTUAL: &[&str] = &[
     "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "click", "propose", "permit",
     "timeline", "layout", "row", "column", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
     "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "reveal", "zoom", "animate", "camera", "bind", "release", "config",
-    "expect", "exactly", "rel", "of", "with", "learner", "continue", "press", "undo", "redo", "combine",
+    "expect", "exactly", "rel", "of", "with", "learner", "continue", "press", "undo", "redo", "combine", "ease",
 ];
 
 pub fn is_reserved(w: &str) -> bool {
@@ -1632,11 +1632,13 @@ impl<'a> Parser<'a> {
         }
         if self.eat_word("animate") {
             let target = self.name("a representation name")?;
-            let property = self.any_name("`opacity` or `offset`")?;
+            let property = self.any_name("`opacity`, `offset`, `color`, `line`, `scale` or `morph`")?;
             self.expect_word("to")?;
             let to = self.expr()?;
             let duration = if self.eat_word("for") { Some(self.expr()?) } else { None };
-            return Ok(Action::Animate { target, property, to, duration });
+            // `ease linear`: the easing function (D-075).
+            let ease = if self.eat_word("ease") { Some(self.any_name("an easing function (`linear`, `smooth`, `in`, `out`)")?) } else { None };
+            return Ok(Action::Animate { target, property, to, duration, ease });
         }
         if self.eat_word("release") {
             return Ok(Action::Release(self.name("a representation name")?));

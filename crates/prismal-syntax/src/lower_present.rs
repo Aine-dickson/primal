@@ -471,20 +471,59 @@ impl PresCx<'_, '_> {
                     let fallback = self.actions(fallback, beat, counts, span);
                     out.push(Action::WaitLearner { limit, fallback });
                 }
-                ast::Action::Animate { target, property, to, duration } => {
+                ast::Action::Animate { target, property, to, duration, ease } => {
                     let property = match property.text.as_str() {
                         "opacity" => Animated::Opacity,
                         "offset" => Animated::Offset,
+                        "color" => Animated::Color,
+                        "line" => Animated::Line,
+                        "scale" => Animated::Scale,
+                        "morph" => Animated::Morph,
                         other => {
-                            self.err("SX-E02", format!("`animate` drives `opacity` or `offset`, not `{other}` (D-068)"), property.span);
+                            self.err("SX-E02", format!("`animate` drives `opacity`, `offset`, `color`, `line`, `scale` or `morph`, not `{other}` (D-068, D-075)"), property.span);
                             Animated::Opacity
+                        }
+                    };
+                    let ease = match ease.as_ref().map(|e| (e.text.as_str(), e.span)) {
+                        None => None,
+                        Some(("linear", _)) => Some(prismal_ir::present::Ease::Linear),
+                        Some(("smooth", _)) => Some(prismal_ir::present::Ease::Smooth),
+                        Some(("in", _)) => Some(prismal_ir::present::Ease::In),
+                        Some(("out", _)) => Some(prismal_ir::present::Ease::Out),
+                        Some((other, span)) => {
+                            self.err("SX-E02", format!("unknown easing `{other}`: `linear`, `smooth`, `in` or `out` (D-075)"), span);
+                            None
                         }
                     };
                     match self.aliases.get(&target.text).cloned() {
                         Some(id) => {
-                            let to = self.expr(to);
+                            // A palette word, a line style or a representation's name is a word;
+                            // the other properties take an expression.
+                            let (to, word) = match property {
+                                Animated::Color | Animated::Line => match &to.kind {
+                                    ExprKind::Name(w) => (None, Some(w.clone())),
+                                    _ => {
+                                        self.err("SX-E02", "a color or line style is a word: `to red`, `to dashed`", to.span);
+                                        (None, None)
+                                    }
+                                },
+                                Animated::Morph => match &to.kind {
+                                    ExprKind::Name(w) => match self.aliases.get(w).cloned() {
+                                        Some(other) => (None, Some(other)),
+                                        None => {
+                                            self.err("SX-E03", format!("no representation named `{w}` before this beat"), to.span);
+                                            (None, None)
+                                        }
+                                    },
+                                    _ => {
+                                        self.err("SX-E02", "a morph takes the shape of a named representation: `morph to square`", to.span);
+                                        (None, None)
+                                    }
+                                },
+                                _ => (Some(self.expr(to)), None),
+                            };
                             let duration = duration.as_ref().map(|d| self.expr(d));
-                            out.push(Action::Animate { target: id, property, to, duration });
+                            out.push(Action::Animate { target: id, property, to, word, duration, ease });
                         }
                         None => self.err("SX-E03", format!("no representation named `{}` before this beat", target.text), target.span),
                     }

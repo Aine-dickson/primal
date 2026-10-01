@@ -300,7 +300,7 @@ Three actions animate the presentation itself, never the model (D-042):
 | `reveal fade [for d] [in view] { reps }` | shows representations, their opacity rising from 0 to 1 | `d`, 1 s by default |
 | `reveal draw [for d] [in view] { reps }` | shows lines and paths drawn from start to end (points fade) | `d`, 1 s by default |
 | `hide name for d` | fades a representation out | `d` |
-| `camera view [to P] [zoom z] [for d]` | moves a spatial view's camera to centre on the point `P` and magnify `z` times | `d`, 1 s by default |
+| `camera view [to P] [zoom z] [for d]` | moves a view's camera to centre on `P` and magnify `z` times: a point in a spatial view, a pair of axis values in a plot (`camera graph to (5 s, 0 m) zoom 2`, D-075) | `d`, 1 s by default |
 
 The camera's point is evaluated at every frame: `camera scene to pos` keeps following the ball after the move. `zoom 1` returns to the view's own scale. Animations are functions of presentation time, so a lesson looks the same every time it plays and in a video export.
 
@@ -557,6 +557,59 @@ run bigger of Circle with Unwrap {
 ```
 
 The end of `roll` is found by locating the event `done`, so it is checked within a tolerance.
+
+## Color, size and shape
+
+**Goal.** A lesson draws attention to parts of a figure: a side turns red, a point grows, a square becomes a circle, and a graph is looked at more closely.
+**How it is built.** Each change is an `animate` action on a named representation, with the property to change: `color`, `line`, `scale` or `morph`. `ease` chooses how the change speeds up and slows down; `camera` on a plot zooms its axes (D-075).
+
+| Action | Effect |
+|---|---|
+| `animate name color to red [for d]` | blends to a color of the palette (chapter 7) |
+| `animate name line to dashed [for d]` | changes the line style, halfway through `d` (a style has no values between) |
+| `animate name scale to 2 [for d]` | draws the shape twice as large about its centre (an arrow about its base); a marker's dot and an arrow's head grow too |
+| `animate name morph to other [for d]` | changes the drawn shape into the shape of the representation `other`, point by point |
+| `... ease linear`, `ease in`, `ease out`, `ease smooth` | at a constant rate; starting slowly; ending slowly; both (the default) |
+
+A morph's target is usually hidden: it is there to give a shape, and `hide` it in the first beat. The morph ends with exactly the target's shape, so a square that becomes a circle is a circle afterwards, drawn with the square's own style.
+
+```text
+space Plane = euclidean(2)
+
+model Figure in Plane {
+  param { a: Real = 0.5 }
+  derived { y(x: Real): Real = a * x * x }
+}
+
+presentation Shapes for Figure {
+  view scene: spatial(Plane, scale: 1 m -> 40 px, y: up) {
+    polygon(origin, origin + (2 m, 0 m), origin + (2 m, 2 m), origin + (0 m, 2 m)) as square
+    circle(origin + (1 m, 1 m), 1 m) as round
+    segment(origin, origin + (2 m, 0 m)) as base
+    marker(origin + (1 m, 1 m)) as centre
+  }
+  view graph: plot(x: [-4, 4], y: [0, 8]) { function_graph(y) }
+  timeline {
+    scene look {
+      beat intro  { hide round; narrate "A square." for 2 s }
+      beat side   { animate base color to red for 1 s; animate base line to dashed for 1 s }
+      beat point  { animate centre scale to 2 for 1 s ease out }
+      beat change { animate square morph to round for 2 s ease linear }
+      beat closer { camera graph to (2, 2) zoom 2 for 1 s }
+    }
+  }
+}
+```
+
+```cases
+run shapes of Figure with Shapes {
+  expect {
+    end of side   == 3 s exactly
+    end of change == 6 s exactly
+    end of closer == 7 s exactly
+  }
+}
+```
 
 ## Mistakes
 

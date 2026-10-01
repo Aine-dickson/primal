@@ -350,9 +350,18 @@ pub enum Action {
     Animate {
         target: Id,
         property: Animated,
-        to: Expr,
+        /// The value of `opacity`, `offset` and `scale`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<Expr>,
+        /// The value of `color` and `line` (a palette word), or the representation `morph`
+        /// takes the shape of (D-075).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        word: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         duration: Option<Expr>,
+        /// The easing function; absent is `smooth` (D-075).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ease: Option<Ease>,
     },
     /// Holds a representation's bound geometry at the instant shown (PK-8.5, D-068).
     Release { target: Id },
@@ -372,6 +381,49 @@ pub enum Animated {
     Opacity,
     /// A displacement of the representation in its view, a vector of the view's space.
     Offset,
+    /// A color of the palette, blended from the color the representation has (D-075).
+    Color,
+    /// A line style, switched halfway through the animation (D-075).
+    Line,
+    /// A factor on the drawn size, about the shape's center (D-075).
+    Scale,
+    /// The shape of another representation, reached by moving the points (D-075).
+    Morph,
+}
+
+/// How an animation moves from its start to its end over its duration (PK-8.4, D-075).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Ease {
+    /// At a constant rate.
+    Linear,
+    /// Starting and ending slowly: `3k^2 - 2k^3` (D-042's).
+    Smooth,
+    /// Starting slowly: `k^2`.
+    In,
+    /// Ending slowly: `1 - (1 - k)^2`.
+    Out,
+}
+
+impl Ease {
+    pub fn apply(self, k: f64) -> f64 {
+        let k = k.clamp(0.0, 1.0);
+        match self {
+            Ease::Linear => k,
+            Ease::Smooth => k * k * (3.0 - 2.0 * k),
+            Ease::In => k * k,
+            Ease::Out => 1.0 - (1.0 - k) * (1.0 - k),
+        }
+    }
+
+    pub fn word(self) -> &'static str {
+        match self {
+            Ease::Linear => "linear",
+            Ease::Smooth => "smooth",
+            Ease::In => "in",
+            Ease::Out => "out",
+        }
+    }
 }
 
 /// How `reveal` shows a representation (D-042).

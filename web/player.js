@@ -445,16 +445,35 @@ function curvePath(r) {
   return r.closed ? `${d} Z` : d;
 }
 
+/// The color a representation of this kind is drawn with when the author gives none.
+function ownColor(r, colorIndex) {
+  switch (r.shape) {
+    case 'point': return 'var(--rep-2)';
+    case 'arrow': return ['var(--rep)', 'var(--rep-2)', 'var(--rep-3)', 'var(--rep-4)'][colorIndex % 4];
+    case 'segment': return 'var(--rep)';
+    case 'polyline': return r.kind === 'trace' ? 'var(--muted)' : 'var(--accent)';
+    default: return 'var(--accent)';
+  }
+}
+
 function drawRep(v, g, r, u, colorIndex) {
   const m = mapFor(v);
   const cls = ['rep'];
   if (r.drag) cls.push('draggable');
   else if (r.click) cls.push('clickable');
   if (r.valid === false) cls.push('invalid');
-  // The author's color (D-061); an invalid preview keeps its own.
-  if (r.color && r.valid !== false) cls.push('styled');
+  // The author's color (D-061); an invalid preview keeps its own. During a color
+  // animation (D-075), a mix from the author's color, or the kind's own, to the next.
+  const colored = (r.color || r.color_to) && r.valid !== false;
+  if (colored) cls.push('styled');
   const grp = svg('g', { class: cls.join(' '), 'data-rep': r.id }, g);
-  if (r.color && r.valid !== false) grp.style.setProperty('--c', `var(--color-${r.color})`);
+  if (colored) {
+    const from = r.color ? `var(--color-${r.color})` : ownColor(r, colorIndex);
+    const c = r.color_to ? `color-mix(in srgb, ${from} ${Math.round((1 - r.color_mix) * 1000) / 10}%, var(--color-${r.color_to}))` : from;
+    grp.style.setProperty('--c', c);
+  }
+  // An animated size (D-075): the dot and the arrow head grow with it.
+  const grow = r.scale ?? 1;
   if (r.opacity != null) grp.setAttribute('opacity', r.opacity);
   const title = svg('title', {}, grp);
   title.textContent = r.text;
@@ -463,7 +482,7 @@ function drawRep(v, g, r, u, colorIndex) {
     case 'point': {
       const [X, Y] = m.to(r.at);
       if (r.highlighted) svg('circle', { class: 'ring', cx: X, cy: Y, r: 13 * u, 'stroke-width': 3 * u }, grp);
-      const c = svg('circle', { class: 'marker', cx: X, cy: Y, r: (r.drag || r.click ? 8 : 6) * u, 'stroke-width': 1.5 * u }, grp);
+      const c = svg('circle', { class: 'marker', cx: X, cy: Y, r: (r.drag || r.click ? 8 : 6) * u * grow, 'stroke-width': 1.5 * u }, grp);
       if (r.label) {
         const t = svg('text', { class: 'rep-label', x: X + 10 * u, y: Y - 10 * u, 'font-size': 12 * u }, grp);
         t.textContent = r.label;
@@ -475,7 +494,7 @@ function drawRep(v, g, r, u, colorIndex) {
       const a = m.to(r.from), b = m.to(r.to);
       grp.classList.add('arrow', `c${colorIndex % 4}`);
       svg('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], 'stroke-width': 2 * u }, grp);
-      const head = arrowHead(a, b, 11 * u);
+      const head = arrowHead(a, b, 11 * u * grow);
       if (head) svg('polygon', { points: head }, grp);
       if (r.highlighted) svg('circle', { class: 'ring', cx: b[0], cy: b[1], r: 13 * u, 'stroke-width': 3 * u }, grp);
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);

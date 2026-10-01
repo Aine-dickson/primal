@@ -502,7 +502,7 @@ pub enum Action {
     /// `wait learner [limit d] [fallback { ... }]` (D-067)
     WaitLearner { limit: Option<Expr>, fallback: Vec<Action> },
     /// `animate R opacity|offset to v [for d]` (D-068)
-    Animate { target: Name, property: Name, to: Expr, duration: Option<Expr> },
+    Animate { target: Name, property: Name, to: Expr, duration: Option<Expr>, ease: Option<Name> },
     /// `release R` (D-068)
     Release(Name),
     /// `bind R [for d]` (D-068)

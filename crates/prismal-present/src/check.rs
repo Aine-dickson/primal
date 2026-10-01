@@ -156,7 +156,14 @@ fn check_actions(cm: &CModel, p: &Presentation, pr: &Projector, acts: &[Action],
                             expr(cm, c, Some(&Type::Point { space: space.clone() }), beat, out);
                         }
                     }
-                    Some(_) => out.push(PDiag { code: "PK-E05", message: "a camera moves a spatial view (D-042)".into(), element: beat.into() }),
+                    // A plot's camera centers on a pair in the axes' dimensions (D-075).
+                    Some((_, ViewCtx::Plot { dims, .. }, _)) => {
+                        if let Some(c) = center {
+                            let q = |d: &prismal_ir::Dim| Type::Quantity { dim: *d };
+                            expr(cm, c, Some(&Type::Tuple { items: vec![q(&dims.0), q(&dims.1)] }), beat, out);
+                        }
+                    }
+                    Some(_) => out.push(PDiag { code: "PK-E05", message: "a camera moves a spatial or plot view (D-042, D-075)".into(), element: beat.into() }),
                     None => out.push(PDiag { code: "PK-E01", message: format!("unknown view `{view}`"), element: beat.into() }),
                 }
                 if let Some(z) = zoom {
@@ -249,14 +256,38 @@ fn check_actions(cm: &CModel, p: &Presentation, pr: &Projector, acts: &[Action],
                 }
                 check_actions(cm, p, pr, fallback, beat, reps, out, time, duration);
             }
-            Action::Animate { target, property, to, duration: d } => {
+            Action::Animate { target, property, to, word, duration: d, .. } => {
                 if !known(reps, target, beat, out) {
                     continue;
                 }
                 if let Some(d) = d {
                     expr(cm, d, Some(duration), beat, out);
                 }
+                let diag = |out: &mut Vec<PDiag>, code: &'static str, message: String| out.push(PDiag { code, message, element: beat.into() });
+                // Words: a palette color, a line style, a representation to morph into (D-075).
+                match (property, word.as_deref()) {
+                    (Animated::Color, Some(w)) if !crate::frame::COLORS.contains(&w) => {
+                        diag(out, "PK-E02", format!("unknown color `{w}`: {} (D-061)", crate::frame::COLORS.join(", ")));
+                    }
+                    (Animated::Line, Some(w)) if !crate::frame::LINES.contains(&w) => {
+                        diag(out, "PK-E02", format!("unknown line style `{w}`: {} (D-061)", crate::frame::LINES.join(", ")));
+                    }
+                    (Animated::Morph, Some(w)) => {
+                        if known(reps, w, beat, out) && (rep_view(p, w).flatten().is_none() || rep_view(p, target).flatten().is_none()) {
+                            diag(out, "PK-E05", "a morph changes a drawn shape into another drawn shape (D-075)".into());
+                        }
+                    }
+                    _ => {}
+                }
+                let Some(to) = to else { continue };
                 match property {
+                    Animated::Color | Animated::Line | Animated::Morph => {}
+                    Animated::Scale => {
+                        expr(cm, to, Some(&Type::real()), beat, out);
+                        if number(cm, to).is_ok_and(|x| x <= 0.0) {
+                            diag(out, "PK-E02", "a scale is positive (D-075)".into());
+                        }
+                    }
                     Animated::Opacity => {
                         expr(cm, to, Some(&Type::real()), beat, out);
                         if number(cm, to).is_ok_and(|x| !(0.0..=1.0).contains(&x)) {
