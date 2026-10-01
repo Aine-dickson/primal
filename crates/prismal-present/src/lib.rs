@@ -46,13 +46,22 @@ impl std::fmt::Display for PDiag {
 pub struct Program {
     pub doc: Document,
     pub models: Vec<CModel>,
+    /// The document as written, before elaboration, and the working capacities of its
+    /// collections declared without a limit (D-066).
+    pub source: Document,
+    pub capacities: prismal_ir::elaborate::Capacities,
 }
 
 impl Program {
     /// Checks every model with the kernel and every presentation against its model.
     pub fn new(doc: Document) -> Result<Program, Vec<PDiag>> {
+        Program::sized(doc, Default::default())
+    }
+
+    /// [`Program::new`] with working capacities for collections declared without a limit.
+    pub fn sized(source: Document, capacities: prismal_ir::elaborate::Capacities) -> Result<Program, Vec<PDiag>> {
         // Objects and collections become a flat model first (D-055).
-        let doc = prismal_ir::elaborate::document(&doc).map_err(|ds| ds.into_iter().map(|d| PDiag { code: d.code, message: d.message, element: d.element }).collect::<Vec<_>>())?;
+        let doc = prismal_ir::elaborate::document_with(&source, &capacities).map_err(|ds| ds.into_iter().map(|d| PDiag { code: d.code, message: d.message, element: d.element }).collect::<Vec<_>>())?;
         let mut diags = vec![];
         let mut models = vec![];
         for m in &doc.models {
@@ -64,7 +73,7 @@ impl Program {
         if !diags.is_empty() {
             return Err(diags);
         }
-        let prog = Program { doc, models };
+        let prog = Program { doc, models, source, capacities };
         for p in &prog.doc.presentations {
             diags.extend(check::check_presentation(prog.model(&p.model), p));
         }
@@ -73,6 +82,18 @@ impl Program {
         } else {
             Err(diags)
         }
+    }
+
+    /// The collection declared without a limit whose working capacity `run` ran out of
+    /// (D-066): the run stopped at its capacity constraint.
+    pub fn overflow(&self, run: &prismal_runtime::Run) -> Option<prismal_ir::Id> {
+        overflow(&self.source, run)
+    }
+
+    /// The program with the working capacity of `part` doubled (D-066); `None` past
+    /// [`prismal_ir::elaborate::MAX_CAPACITY`] or when it does not check.
+    pub fn grown(&self, part: &str) -> Option<Program> {
+        Program::sized(self.source.clone(), grown_capacities(&self.source, &self.capacities, part)?).ok()
     }
 
     pub fn model(&self, id: &str) -> &CModel {
@@ -86,6 +107,28 @@ impl Program {
     pub fn case(&self, name: &str) -> &RunCase {
         self.doc.runs.iter().find(|r| r.name == name || r.id == name).unwrap_or_else(|| panic!("unknown run {name}"))
     }
+}
+
+/// The collection declared without a limit in `source` whose working capacity `run` ran out
+/// of (D-066).
+pub fn overflow(source: &Document, run: &prismal_runtime::Run) -> Option<prismal_ir::Id> {
+    match &run.status {
+        prismal_runtime::RunStatus::Stopped(d) if d.category == prismal_runtime::Category::Constraint => prismal_ir::elaborate::overflowed(source, d.element.as_deref()?),
+        _ => None,
+    }
+}
+
+/// `caps` with the working capacity of `part` doubled; `None` past
+/// [`prismal_ir::elaborate::MAX_CAPACITY`] or for a part not declared without a limit.
+pub fn grown_capacities(source: &Document, caps: &prismal_ir::elaborate::Capacities, part: &str) -> Option<prismal_ir::elaborate::Capacities> {
+    let declared = source.models.iter().flat_map(|m| std::iter::once(m).chain(&m.objects)).flat_map(|m| &m.parts).find(|p| p.id == part && p.unbounded)?;
+    let now = caps.get(part).copied().unwrap_or_else(|| prismal_ir::elaborate::starting_capacity(source, declared));
+    if now >= prismal_ir::elaborate::MAX_CAPACITY {
+        return None;
+    }
+    let mut out = caps.clone();
+    out.insert(part.to_string(), (2 * now).min(prismal_ir::elaborate::MAX_CAPACITY));
+    Some(out)
 }
 
 /// Evaluates an expression that reads no state (a literal, a time such as `t0 + 5 s`).

@@ -555,8 +555,8 @@ impl<'a> Parser<'a> {
         let name = self.name("a part name")?;
         self.expect_punct(":")?;
         let object = self.name("an object type")?;
-        // `[3]`, `[max 50]` or `[3, max 50]` (D-057).
-        let (mut count, mut capacity) = (None, None);
+        // `[3]`, `[max 50]` or `[3, max 50]` (D-057); `max inf` sets no limit (D-066).
+        let (mut count, mut capacity, mut unbounded) = (None, None, false);
         if self.eat_punct("[") {
             if !self.is_word("max") {
                 count = Some(self.int()? as u32);
@@ -565,7 +565,11 @@ impl<'a> Parser<'a> {
                 }
             }
             if self.eat_word("max") {
-                capacity = Some(self.int()? as u32);
+                if self.eat_word("inf") {
+                    unbounded = true;
+                } else {
+                    capacity = Some(self.int()? as u32);
+                }
             }
             self.expect_punct("]")?;
         }
@@ -578,7 +582,7 @@ impl<'a> Parser<'a> {
         } else {
             vec![]
         };
-        Ok(PartDecl { name, object, count, capacity, overrides, notes, span: self.since(start) })
+        Ok(PartDecl { name, object, count, capacity, unbounded, overrides, notes, span: self.since(start) })
     }
 
     fn flow_stmt(&mut self) -> P<FlowStmt> {

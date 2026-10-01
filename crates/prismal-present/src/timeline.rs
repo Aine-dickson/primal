@@ -488,7 +488,21 @@ fn describe(i: &LearnerInput) -> String {
 }
 
 /// Plays a presentation's timeline over a lesson run configured by `base` (PK-9.5).
-pub fn play<'a>(prog: &'a Program, presentation: &str, base: Config, medium: Medium, inputs: Vec<Input>) -> Result<Playback, Vec<PDiag>> {
+pub fn play(prog: &Program, presentation: &str, base: Config, medium: Medium, inputs: Vec<Input>) -> Result<Playback, Vec<PDiag>> {
+    // A run that fills a collection declared without a limit is played again with room for
+    // twice as many members (D-066).
+    let mut grown: Option<Program> = None;
+    loop {
+        let p = grown.as_ref().unwrap_or(prog);
+        let pb = play_once(p, presentation, base.clone(), medium, inputs.clone())?;
+        match pb.runs.iter().find_map(|v| p.overflow(&v.run)).and_then(|part| p.grown(&part)) {
+            Some(next) => grown = Some(next),
+            None => return Ok(pb),
+        }
+    }
+}
+
+fn play_once(prog: &Program, presentation: &str, base: Config, medium: Medium, inputs: Vec<Input>) -> Result<Playback, Vec<PDiag>> {
     let pres = prog.presentation(presentation);
     let cm = prog.model(&pres.model);
     let projector = Projector::new(cm, pres)?;

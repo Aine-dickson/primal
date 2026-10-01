@@ -143,7 +143,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `layout`, `row`, `column` | a presentation's page layout: views side by side or one below the other | 7 |
 | `learner` | a run's scripted learner inputs | 8 |
 | `live`, `over`, `microstep` | observation schedules: current value, over an interval, at a microstep | 6 |
-| `max` | the capacity of a collection whose members come and go (`Drop[max 40]`); also the aggregate `max(...)` | 9 |
+| `max` | the capacity of a collection whose members come and go (`Drop[max 40]`, or `Drop[max inf]` for no limit); also the aggregate `max(...)` | 9 |
 | `model` | what exists and how it behaves | 1 |
 | `narrate`, `scene`, `sequence`, `timeline` | a lesson's narration, scenes, ordered actions and timeline | 8 |
 | `object`, `parts` | an object type, and the objects and collections a model holds | 9 |

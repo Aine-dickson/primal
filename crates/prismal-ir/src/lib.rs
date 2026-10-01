@@ -234,6 +234,10 @@ pub struct Part {
     pub count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<u32>,
+    /// A collection whose membership changes without a declared limit, `Drop[max inf]`
+    /// (D-066): `capacity` is absent and the runtime chooses one, growing it as runs need.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unbounded: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overrides: Vec<present::Override>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

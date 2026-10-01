@@ -216,7 +216,11 @@ impl<'a> Printer<'a> {
         for p in ps {
             notes(&mut s, &INDENT.repeat(2), &p.notes);
             let ty = self.root.object(&p.object).map(|o| o.name.clone()).unwrap_or_else(|| p.object.rsplit('.').next().unwrap_or(&p.object).to_string());
-            let count = match (p.count, p.capacity) {
+            let limit = match p.capacity {
+                Some(c) => Some(c.to_string()),
+                None => p.unbounded.then(|| "inf".to_string()),
+            };
+            let count = match (p.count, limit) {
                 (Some(n), Some(c)) => format!("[{n}, max {c}]"),
                 (None, Some(c)) => format!("[max {c}]"),
                 (Some(n), None) => format!("[{n}]"),

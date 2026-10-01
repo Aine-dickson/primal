@@ -251,6 +251,7 @@ model Fountain in Plane {
 | Form | Does |
 |---|---|
 | `c: T[max m]`, `c: T[n, max m]` | a collection that starts with none or `n` members and makes at most `m` in a run |
+| `c: T[max inf]`, `c: T[n, max inf]` | a collection whose members come and go without a limit |
 | `create c { x = e ... }` | makes the next member, with starting values; several `create` in one handler make several members |
 | `destroy b` | removes the member `b`: a loop variable, a contained member, or `c[k]` |
 | `for b in c { event ... }` | an event of the model for each member |
@@ -290,6 +291,8 @@ run early of Fountain with Spray {
 ```
 
 The capacity is part of the model: it says how long the fountain can run. 40 drops, one every half second, last until 19.5 s; a run past 20 s stops there with the diagnostic that `drops.capacity` is exceeded. Choose a capacity that covers the longest run the presentation shows.
+
+When no limit belongs in the model, say so: `drops: Drop[max inf]` (D-066). Prismal then chooses room for the members itself and makes more whenever a run needs it, in tests, sessions and lessons alike, so a fountain left running in a lab never stops. A run is the same as with the room it ended up with written as the capacity, and runs again identically. The room grows by elaborating the model again, so a lab with thousands of members made over a long session pays for it with a pause each time the room doubles; a capacity written in the model costs nothing at run time.
 
 ## Relations between members
 

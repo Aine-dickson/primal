@@ -83,6 +83,8 @@ pub struct PartDecl {
     pub object: Name,
     pub count: Option<u32>,
     pub capacity: Option<u32>,
+    /// `[max inf]`: membership changes without a declared limit (D-066).
+    pub unbounded: bool,
     pub overrides: Vec<(Name, Expr)>,
     pub notes: Vec<String>,
     pub span: Span,

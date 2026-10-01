@@ -16,6 +16,7 @@
 //! and is not drawn; `create` makes the next member alive and `destroy` ends one. Identities
 //! are never reused within a run (MK-7.7).
 
+use std::collections::BTreeMap;
 use crate::present::{Action, Arg, Check, Inverse, Item, LearnerInput, Observation, Operand, Presentation, Prop, Rep, RunCase, Schedule, Source, Subject, Tolerance, ViewKind};
 use crate::{Agg, BinOp, Binding, Builtin, Constraint, Display, Document, Each, Event, Expr, Flow, Guarded, Id, Model, Op, Policy, Role, Target, Trigger, Type, Zeno, ZenoPolicy};
 
@@ -1405,6 +1406,40 @@ pub fn needed(d: &Document) -> bool {
 /// The document with every model elaborated, and the presentations and runs of models with
 /// parts elaborated against them. A document without parts is returned unchanged.
 pub fn document(d: &Document) -> Result<Document, Vec<Diag>> {
+    document_with(d, &BTreeMap::new())
+}
+
+/// The working capacity of each collection declared without a limit (D-066), by part
+/// identity; a part not listed has [`default_capacity`].
+pub type Capacities = BTreeMap<Id, u32>;
+
+/// The capacity a collection without a limit starts with: room for its starting members and
+/// as many again, at least 8.
+pub fn default_capacity(p: &crate::Part) -> u32 {
+    (2 * p.count.unwrap_or(0)).max(8)
+}
+
+/// The most members a collection without a limit grows to in one run: beyond it the run
+/// stops at the capacity constraint, as for a declared limit.
+pub const MAX_CAPACITY: u32 = 1 << 14;
+
+/// The part whose capacity constraint has the identity `constraint` (D-057), when it is a
+/// collection declared without a limit in `d` (D-066).
+pub fn overflowed(d: &Document, constraint: &str) -> Option<Id> {
+    let part = constraint.split('@').next()?.strip_suffix(".capacity")?;
+    let unbounded = d.models.iter().flat_map(|m| std::iter::once(m).chain(&m.objects)).flat_map(|m| &m.parts).any(|p| p.id == part && p.unbounded);
+    unbounded.then(|| part.to_string())
+}
+
+/// [`document`], with the working capacities of collections declared without a limit.
+pub fn document_with(d: &Document, caps: &Capacities) -> Result<Document, Vec<Diag>> {
+    let sized;
+    let d = if caps_needed(d) {
+        sized = with_capacities(d, caps);
+        &sized
+    } else {
+        d
+    };
     if !needed(d) {
         return Ok(d.clone());
     }
@@ -1444,4 +1479,55 @@ pub fn document(d: &Document) -> Result<Document, Vec<Diag>> {
 /// `if c then a else b`.
 fn build_if(c: Expr, a: Expr, b: Expr) -> Expr {
     Expr::If { r#if: Box::new(c), then: Box::new(a), r#else: Box::new(b) }
+}
+
+/// Whether a document declares a collection without a limit.
+fn caps_needed(d: &Document) -> bool {
+    d.models.iter().flat_map(|m| std::iter::once(m).chain(&m.objects)).flat_map(|m| &m.parts).any(|p| p.unbounded)
+}
+
+/// The highest number by which `d` names a member of each collection (`drops[100]`).
+fn named_members(d: &Document) -> BTreeMap<String, u32> {
+    fn walk(v: &serde_json::Value, named: &mut BTreeMap<String, u32>) {
+        match v {
+            serde_json::Value::Object(o) => {
+                if let (Some(item), Some(k)) = (o.get("item").and_then(|x| x.as_str()), o.get("index").and_then(|x| x.get("num")).and_then(|x| x.as_f64())) {
+                    let e = named.entry(item.to_string()).or_default();
+                    *e = (*e).max(k.max(0.0) as u32);
+                }
+                o.values().for_each(|x| walk(x, named));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, named)),
+            _ => {}
+        }
+    }
+    let mut named = BTreeMap::new();
+    walk(&serde_json::to_value(d).unwrap_or_default(), &mut named);
+    named
+}
+
+/// The working capacity a collection declared without a limit starts with in `d`: the
+/// default, or room for every member `d` names by number.
+pub fn starting_capacity(d: &Document, p: &crate::Part) -> u32 {
+    default_capacity(p).max(named_members(d).get(&p.id).copied().unwrap_or(0))
+}
+
+/// `d` with each collection declared without a limit given its working capacity (D-066):
+/// at least room for every member the document names by number.
+fn with_capacities(d: &Document, caps: &Capacities) -> Document {
+    let named = named_members(d);
+    let mut out = d.clone();
+    let size = |parts: &mut Vec<crate::Part>| {
+        for p in parts.iter_mut().filter(|p| p.unbounded) {
+            let least = named.get(&p.id).copied().unwrap_or(0);
+            p.capacity = Some(caps.get(&p.id).copied().unwrap_or_else(|| default_capacity(p)).max(least));
+        }
+    };
+    for m in &mut out.models {
+        size(&mut m.parts);
+        for o in &mut m.objects {
+            size(&mut o.parts);
+        }
+    }
+    out
 }

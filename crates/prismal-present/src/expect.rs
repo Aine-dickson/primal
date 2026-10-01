@@ -205,7 +205,21 @@ fn compare(cm: &CModel, g: &[f64], w: &[f64], tol: &Tolerance) -> Result<(), Str
 }
 
 /// Runs a case and evaluates its expectations.
-pub fn run_case<'a>(prog: &'a Program, case: &RunCase) -> Result<CaseReport, String> {
+pub fn run_case(prog: &Program, case: &RunCase) -> Result<CaseReport, String> {
+    // A run that fills a collection declared without a limit runs again with room for twice
+    // as many members (D-066); lessons grow in `play`.
+    let mut grown: Option<Program> = None;
+    loop {
+        let p = grown.as_ref().unwrap_or(prog);
+        let report = run_case_once(p, case)?;
+        match report.run.as_ref().and_then(|r| p.overflow(r)).and_then(|part| p.grown(&part)) {
+            Some(next) if report.playback.is_none() => grown = Some(next),
+            _ => return Ok(report),
+        }
+    }
+}
+
+fn run_case_once(prog: &Program, case: &RunCase) -> Result<CaseReport, String> {
     let cm = prog.model(&case.model);
     let pres = case.presentation.as_ref().map(|p| prog.presentation(p));
     let lesson = pres.is_some_and(|p| p.timeline.is_some());

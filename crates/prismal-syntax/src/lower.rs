@@ -283,7 +283,7 @@ impl<'a> ModelCx<'a> {
                 }
                 Member::Parts(ps) => {
                     for p in ps {
-                        let pi = PartInfo { id: format!("{id}.part.{}", p.name.text), object: p.object.text.clone(), many: p.count.is_some() || p.capacity.is_some() };
+                        let pi = PartInfo { id: format!("{id}.part.{}", p.name.text), object: p.object.text.clone(), many: p.count.is_some() || p.capacity.is_some() || p.unbounded };
                         if info.parts.insert(p.name.text.clone(), pi).is_some() {
                             self.err("SX-E09", format!("part `{}` declared twice", p.name.text), p.name.span);
                         }
@@ -382,10 +382,10 @@ impl<'a> ModelCx<'a> {
                 // Kept, so that its uses are known and not reported again.
                 self.err("SX-E03", format!("unknown object type `{}`", p.object.text), p.object.span);
                 let object = format!("{}.{}", self.name, p.object.text);
-                self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object, count: p.count, capacity: p.capacity, overrides: vec![], notes: p.notes.clone() });
+                self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object, count: p.count, capacity: p.capacity, unbounded: p.unbounded, overrides: vec![], notes: p.notes.clone() });
                 continue;
             };
-            if p.count == Some(0) && p.capacity.is_none() {
+            if p.count == Some(0) && p.capacity.is_none() && !p.unbounded {
                 self.err("SX-E08", "a collection has at least one member", p.span);
             }
             if p.capacity == Some(0) {
@@ -416,7 +416,7 @@ impl<'a> ModelCx<'a> {
                 self.index_ok = false;
                 overrides.push(prismal_ir::present::Override { binding: b, value });
             }
-            self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object: obj.id, count: p.count, capacity: p.capacity, overrides, notes: p.notes.clone() });
+            self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object: obj.id, count: p.count, capacity: p.capacity, unbounded: p.unbounded, overrides, notes: p.notes.clone() });
         }
     }
 
@@ -1497,7 +1497,7 @@ fn obj_info(m: &Model) -> ObjInfo {
             .iter()
             .map(|p| {
                 let object = p.object.rsplit('.').next().unwrap_or(&p.object).to_string();
-                (p.name.clone(), PartInfo { id: p.id.clone(), object, many: p.count.is_some() || p.capacity.is_some() })
+                (p.name.clone(), PartInfo { id: p.id.clone(), object, many: p.count.is_some() || p.capacity.is_some() || p.unbounded })
             })
             .collect(),
         ends: HashMap::new(),

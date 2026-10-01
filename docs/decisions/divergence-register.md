@@ -85,6 +85,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-063 | Page layout: `layout` places views in nested rows and columns; views left out follow it; media adapt it to their size | Accepted |
 | D-064 | Undirected relations: `undirected relation`, endpoints in one collection read with `s.has(o)` and `s.other(o)` | Accepted |
 | D-065 | Relations across containers: endpoints, members and loops named by part paths through contained objects (`left.atoms`) | Accepted |
+| D-066 | Collections without a declared limit: `[max inf]`, a working capacity that doubles and recomputes the run when filled | Accepted |
 
 ---
 
@@ -1222,5 +1223,22 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. A path goes through contained objects only; a collection inside it (`cells[1].atoms`) is SX-E08 (MK-E26 in the IR). Destroying a member disconnects every relation with that member at an endpoint, in any relation set of the model, not only in its own container (MK-8.6 as written; MK-8.6a narrowed it to the container while endpoints could only be there). Creating members of a collection inside a contained object from outside it is not included: a cell makes its own atoms.
 - **Reason:** paths are how the language already reads a contained object's bindings (`ball.pos`); extending them to collections keeps one way of naming things, and part identities joined by `/` keep identities stable under renames (D-036) without a new IR form for every place a collection is named.
 - **Consequences:** MK-8.5c, MK-8.6a amended; 04-ir (part paths, `PART_PATH`); working syntax; parser (`part_path`), lowering (`part_ref`), formatter, elaboration (`members` and `coll_of` walk paths; `relation_sets` finds relation sets anywhere); guide chapter 9, Relations across containers; `prismal-present/tests/across.rs`. Not yet: `create` and `connect` written outside the container of the collection they change, paths through collections chosen by number.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-066: Collections without a declared limit
+
+- **Status:** Accepted
+- **Original position:** D-057 bounded every collection whose membership changes by a declared capacity and kept "option 1" (objects held natively by the runtime, state that grows and shrinks) as the route to unbounded populations, noting that its syntax and semantics would carry over with the capacity becoming "a limit of the runtime rather than of the language". A lab left running (a fountain, a particle source) stopped when its capacity was reached.
+- **Raised by:** PROJECT-STATE, "Not implemented" (unbounded populations); the owner's list of 2026-10-01.
+- **Builds on:** MK-7.7a, MK-8.2a, RC-14.2, D-015, D-055, D-057, D-059.
+- **Question:** How does a model declare a collection with no limit, and how does the prototype run it without changing the solver, the frame format or the renderers?
+- **Options considered:**
+  1. **Native growable state** (D-057 option 1): the runtime adds state to the solver when a member is made. Unbounded, but it changes the compiled model, the state layout, dense output, snapshots, the checker and every consumer of frames at once.
+  2. **A working capacity that grows by elaborating again.** `Drop[max inf]` is elaborated with a working capacity; a run that fills it is computed again from its start with the working capacity doubled. Everything D-057 built applies unchanged; identities stay `drops[k]`, so a session's logged actions, member payloads and drawings keep their meaning across growth.
+  3. **A large fixed default** (say 10000 places). No regrowth, but every model with such a collection pays for all places in every step from the start.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30. The working capacity starts at the largest of 8, twice the starting members, and every number by which the program names a member (so `drops[12]` is valid); it doubles up to 16384, beyond which the run stops at the capacity constraint as for a declared limit. Growth happens wherever runs are made: cases (`run_case`), lessons (`play`) and sessions (`Interactive`, after each committed action and on reset, recommitting the session's actions on the new run). The IR marks the part `"unbounded": true` with no `capacity`; `Program` keeps the document as written and the working capacities.
+- **Reason:** the populations content needs are bounded in practice but not by a number an author should have to choose; option 2 gives them without touching the kernel, and its results are exactly those of a declared capacity, so every guarantee of D-057 (identities never reused, deterministic replay) holds. The cost, recomputing from the start at each doubling, is logarithmic in the members made and paid only by runs that need it.
+- **Consequences:** MK-8.2b; 04-ir `unbounded`; working syntax; parser and formatter (`max inf`); `elaborate::document_with`, `Capacities`, `starting_capacity`, `overflowed`, `MAX_CAPACITY`; `Program::sized`, `overflow`, `grown`; growth in `run_case`, `play` and `Interactive`; guide chapter 9; `prismal-present/tests/unbounded.rs`. Not yet: native growable state (option 1), if content needs very large populations made over long sessions; a lesson's explore beats grow only when the lesson is opened, not when a learner's action fills the collection later.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

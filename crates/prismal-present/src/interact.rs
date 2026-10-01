@@ -83,6 +83,10 @@ pub struct Interactive {
     pub reports: Vec<Report>,
     /// Previews of the last drag, kept after it ends for inspection.
     pub last_previews: Vec<Preview>,
+    /// The document as written and the working capacities of its collections declared
+    /// without a limit, to grow them when the run fills one (D-066).
+    source: prismal_ir::Document,
+    capacities: prismal_ir::elaborate::Capacities,
 }
 
 impl Interactive {
@@ -92,7 +96,31 @@ impl Interactive {
         let projector = Projector::new(&cm, &pres)?;
         let session = Session::new(cm.clone(), cfg.clone());
         let t = cfg.t0;
-        Ok(Interactive { cm, pres, projector, session, t, cfg, drag: None, reports: vec![], last_previews: vec![] })
+        let mut i = Interactive { cm, pres, projector, session, t, cfg, drag: None, reports: vec![], last_previews: vec![], source: prog.source.clone(), capacities: prog.capacities.clone() };
+        i.grow();
+        Ok(i)
+    }
+
+    /// When the run has filled a collection declared without a limit (D-066), the program
+    /// is elaborated again with room for twice as many members and the session's actions
+    /// are committed again, in order, on its new run. Identities of members are kept, so
+    /// actions naming members still name them.
+    fn grow(&mut self) {
+        loop {
+            let Some(part) = crate::overflow(&self.source, &self.session.current) else { return };
+            let Some(caps) = crate::grown_capacities(&self.source, &self.capacities, &part) else { return };
+            let Ok(next) = Program::sized(self.source.clone(), caps) else { return };
+            let Some(cm) = next.models.iter().find(|m| m.ir.id == self.cm.ir.id).cloned() else { return };
+            let pres = next.presentation(&self.pres.id).clone();
+            let Ok(projector) = Projector::new(&cm, &pres) else { return };
+            let log = self.session.log().to_vec();
+            let mut session = Session::new(cm.clone(), self.cfg.clone());
+            for s in log {
+                let _ = session.commit(s.t, s.action);
+            }
+            self.capacities = next.capacities.clone();
+            (self.cm, self.pres, self.projector, self.session) = (cm, pres, projector, session);
+        }
     }
 
     /// The end of the current run: the last instant that can be shown.
@@ -112,6 +140,7 @@ impl Interactive {
         self.drag = None;
         self.session = Session::new(self.cm.clone(), self.cfg.clone());
         self.t = self.cfg.t0;
+        self.grow();
     }
 
     /// Names of the event occurrences in `(a, b]`, in order (announcements, PK-11.3a).
@@ -165,7 +194,10 @@ impl Interactive {
     fn commit(&mut self, action: Action) -> Result<(), Report> {
         let t = self.t;
         match self.session.commit(t, action) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.grow();
+                Ok(())
+            }
             Err(d) => self.report(Why::Rejected, d.message),
         }
     }
