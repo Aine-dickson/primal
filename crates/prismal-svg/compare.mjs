@@ -7,13 +7,13 @@
 // Sizes that depend on the screen (stroke widths, radii, arrow heads, label positions) are
 // not compared: the web player keeps them constant in screen pixels.
 //
-// Needs Node 18 or later, the player built (`./web/build.sh`) and Microsoft Edge or Chrome
-// (path in the BROWSER environment variable, or the default Edge path on Windows).
+// Needs Node 22 or later, the player built (`./web/build.sh`) and Microsoft Edge or Chrome
+// (path in the BROWSER environment variable, or the default Edge path on Windows; extra flags
+// in BROWSER_ARGS).
 //
 //   node crates/prismal-svg/compare.mjs
 
-import { execFile, execFileSync } from 'node:child_process';
-import { promisify } from 'node:util';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -63,13 +63,53 @@ function serve() {
   return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok(server)));
 }
 
-// The browser runs asynchronously, so that this process keeps serving the player to it. It
-// uses its own profile, so that it never hands the page to a browser already open.
-async function webDom(port, profile, [key, pres, t]) {
-  const url = `http://127.0.0.1:${port}/#${key}/${pres}@${t}`;
-  const args = ['--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${profile}`, '--window-size=1400,1000', '--virtual-time-budget=15000', '--dump-dom', url];
-  const { stdout } = await promisify(execFile)(browser, args, { encoding: 'utf8', maxBuffer: 64 << 20 });
-  return stdout;
+// One browser, driven through the DevTools protocol, with its own profile so that it never
+// hands the page to a browser already open. (`--dump-dom` is not used: some versions print
+// nothing.) BROWSER_ARGS adds flags, such as `--no-sandbox` where the system forbids
+// Chrome's sandbox.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function launch(profile) {
+  const devtools = 9338;
+  const args = [...(process.env.BROWSER_ARGS || '').split(' ').filter(Boolean), '--headless=new', '--disable-gpu', '--no-first-run', `--remote-debugging-port=${devtools}`, `--user-data-dir=${profile}`, 'about:blank'];
+  const proc = spawn(browser, args);
+  let target;
+  for (let i = 0; i < 50 && !target; i++) {
+    await sleep(200);
+    try {
+      target = (await (await fetch(`http://127.0.0.1:${devtools}/json`)).json()).find((t) => t.type === 'page');
+    } catch {}
+  }
+  if (!target) {
+    console.error(`the browser at ${browser} did not open its DevTools port; on Linux CI, BROWSER_ARGS=--no-sandbox may be needed`);
+    proc.kill();
+    process.exit(1);
+  }
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((r) => ws.addEventListener('open', r));
+  let id = 0;
+  const pending = new Map();
+  ws.addEventListener('message', (m) => {
+    const d = JSON.parse(m.data);
+    if (pending.has(d.id)) {
+      pending.get(d.id)(d);
+      pending.delete(d.id);
+    }
+  });
+  const cdp = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 1, mobile: false });
+  const ev = async (expr) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })).result.result.value;
+  return { cdp, ev, close: () => { ws.close(); proc.kill(); } };
+}
+
+/// The player's document once it has drawn `key`'s presentation at instant `t`.
+async function webDom(b, port, [key, pres, t]) {
+  await b.cdp('Page.navigate', { url: `http://127.0.0.1:${port}/?${Math.random()}#${key}/${pres}@${t}` });
+  for (let i = 0; i < 75; i++) {
+    await sleep(200);
+    if (await b.ev(`!!document.querySelector('#views svg g')`)) break;
+  }
+  await sleep(500);
+  return (await b.ev('document.documentElement.outerHTML')) || '';
 }
 
 function svgDoc(out, [key, pres, t]) {
@@ -194,9 +234,10 @@ execFileSync('cargo', ['build', '-q', '-p', 'prismal-svg', '--example', 'render'
 const out = mkdtempSync(join(tmpdir(), 'prismal-svg-'));
 const server = await serve();
 const port = server.address().port;
+const b = await launch(join(out, 'profile'));
 let failed = 0;
 for (const c of CASES) {
-  const web = geometry(await webDom(port, join(out, 'profile'), c));
+  const web = geometry(await webDom(b, port, c));
   const svg = geometry(svgDoc(out, c));
   const { errs, marks } = compare(web, svg);
   const reps = Object.values(svg).reduce((n, v) => n + Object.keys(v.reps).length, 0);
@@ -212,6 +253,7 @@ for (const c of CASES) {
     console.log(`ok   ${label}: ${Object.keys(svg).length} views, ${reps} representations, ${marks} marks`);
   }
 }
+b.close();
 server.close();
 console.log(failed ? `${failed} of ${CASES.length} cases differ` : `all ${CASES.length} cases agree`);
 process.exit(failed ? 1 : 0);

@@ -71,12 +71,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Ubuntu runners forbid the user namespaces Chrome's sandbox needs.
+      - name: Browser for the checks
+        run: |
+          echo "BROWSER=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          echo "BROWSER_ARGS=--no-sandbox" >> "$GITHUB_ENV"
       - name: Input in a browser
-        run: BROWSER="$(command -v google-chrome)" node web/check-input.mjs
+        run: node web/check-input.mjs
       - name: Narration sound in a browser
-        run: BROWSER="$(command -v google-chrome)" node web/check-voice.mjs
+        run: node web/check-voice.mjs
       - name: SVG renderer against the player
-        run: BROWSER="$(command -v google-chrome)" node crates/prismal-svg/compare.mjs
+        run: node crates/prismal-svg/compare.mjs
 
   style:
     name: Writing rules

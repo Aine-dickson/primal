@@ -5,7 +5,8 @@
 // and reset, and an author's page layout (D-063).
 //
 // Needs Node 22 or later, the player built (`./web/build.sh`) and Microsoft Edge or Chrome
-// (path in the BROWSER environment variable, or the default Edge path on Windows).
+// (path in the BROWSER environment variable, or the default Edge path on Windows; extra flags
+// in BROWSER_ARGS).
 //
 //   node web/check-input.mjs
 
@@ -33,7 +34,8 @@ const server = createServer((req, res) => {
 await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
 const port = server.address().port;
 const devtools = 9337;
-const edge = spawn(browser, ['--headless=new', '--disable-gpu', `--remote-debugging-port=${devtools}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'prismal-input-'))}`, '--window-size=1300,900', 'about:blank']);
+// BROWSER_ARGS adds flags, such as `--no-sandbox` where the system forbids Chrome's sandbox.
+const edge = spawn(browser, [...(process.env.BROWSER_ARGS || '').split(' ').filter(Boolean), '--headless=new', '--disable-gpu', `--remote-debugging-port=${devtools}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'prismal-input-'))}`, '--window-size=1300,900', 'about:blank']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let target;
@@ -42,6 +44,11 @@ for (let i = 0; i < 50 && !target; i++) {
   try {
     target = (await (await fetch(`http://127.0.0.1:${devtools}/json`)).json()).find((t) => t.type === 'page');
   } catch {}
+}
+if (!target) {
+  console.error(`the browser at ${browser} did not open its DevTools port; on Linux CI, BROWSER_ARGS=--no-sandbox may be needed`);
+  edge.kill();
+  process.exit(1);
 }
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener('open', r));
@@ -55,6 +62,8 @@ ws.addEventListener('message', (m) => {
   }
 });
 const cdp = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+// The page's size is set here: some headless browsers ignore `--window-size`.
+await cdp('Emulation.setDeviceMetricsOverride', { width: 1300, height: 900, deviceScaleFactor: 1, mobile: false });
 const ev = async (expr) => (await cdp('Runtime.evaluate', { expression: expr, returnByValue: true })).result.result.value;
 const open = async (hash) => {
   await cdp('Page.navigate', { url: `http://127.0.0.1:${port}/?${Math.random()}#${hash}` });
