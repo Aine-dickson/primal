@@ -16,7 +16,7 @@ use crate::{number, PDiag, Program};
 use prismal_ir::present::{Action as TAction, LearnerInput, Presentation, RevealStyle};
 use prismal_ir::{Id, Op};
 use prismal_kernel::{CModel, Value};
-use prismal_runtime::{run, Action, Config, Run, Scheduled};
+use prismal_runtime::{resume, run, Action, Config, Run, Scheduled};
 use crate::frame::{each_rep_mut, retain_reps, Shape};
 use serde::Serialize;
 
@@ -231,7 +231,7 @@ impl Player {
         let old = &self.pb.runs[self.cur()];
         let mut cfg = old.config.clone();
         cfg.log.push(Scheduled { t: s, action });
-        let new = run(self.cm(), cfg.clone());
+        let new = resume(&old.run, cfg.clone());
         if new.rejected.len() > old.run.rejected.len() {
             let d = new.rejected.last().unwrap();
             self.pb.diagnostics.push(format!("at {p} s: rejected: {}", d.message));

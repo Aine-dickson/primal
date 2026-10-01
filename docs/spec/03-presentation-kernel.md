@@ -238,7 +238,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 ### 9.2 The lesson's run
 
 - **PK-9.5** A timeline directs one **lesson run** of its model. Timeline actions act on that run. The lesson run's configuration is part of the presentation.
-- **PK-9.5a** A lesson run whose configuration gives no end is computed to `t0 + 60 s`. An intervention or request makes a new version of the run, recomputed from its start with the action in its log (RC-11.1); the time mapping keeps referring to the version it showed, so earlier frames never change.
+- **PK-9.5a** A lesson run whose configuration gives no end is computed to `t0 + 60 s`. An intervention or request makes a new version of the run, computed with the action in its log (RC-11.1), continuing the previous version from a snapshot where RC-14.3a allows; the time mapping keeps referring to the version it showed, so earlier frames never change.
 - **PK-9.6** The timeline reads the model only through observation and events (MK-17.1) and changes it only through interventions (MK-17.2). The model runs unchanged with the timeline removed (D-009, MK-17.5).
 
 ### 9.3 Learner control

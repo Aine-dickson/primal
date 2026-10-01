@@ -1,7 +1,9 @@
 //! An interactive session over one run: proposals, commits, undo and redo (PK-10.5 to
 //! PK-10.10). Undo is a recomputation with the intervention removed from the log (RC-11.2).
+//! Every recomputation resumes the current run from its latest snapshot before the changed
+//! action (RC section 14.1), so its cost follows the trajectory after that action.
 
-use crate::run::{run, Action, Config, Run, RunDiag, Scheduled};
+use crate::run::{resume, run, Action, Config, Run, RunDiag, Scheduled};
 use prismal_ir::Expr;
 use prismal_kernel::{CModel, Value};
 
@@ -22,7 +24,7 @@ impl Session {
     fn with_log(&self, log: Vec<Scheduled>) -> Run {
         let mut cfg = self.base.clone();
         cfg.log = log;
-        run(&self.model, cfg)
+        resume(&self.current, cfg)
     }
 
     /// Validates an action without committing it (SEM-08: proposed state is not committed).

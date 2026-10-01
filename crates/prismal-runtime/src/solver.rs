@@ -157,10 +157,13 @@ impl Dopri5 {
 
     /// Initial step size from the state alone (Hairer's algorithm), so that the step after an
     /// event depends only on the post-event state (RC-8.6).
-    pub fn initial_step(&self, rhs: &mut dyn Rhs, t: f64, y: &[f64], h_limit: f64) -> Result<f64, Status> {
+    ///
+    /// Also returns the step limit below which the result depends on `h_limit`: with any
+    /// limit above it, the same step is chosen (snapshots rely on this, RC-14.2).
+    pub fn initial_step(&self, rhs: &mut dyn Rhs, t: f64, y: &[f64], h_limit: f64) -> Result<(f64, f64), Status> {
         let n = y.len();
         if n == 0 {
-            return Ok(h_limit.min(self.h_max));
+            return Ok((h_limit.min(self.h_max), self.h_max));
         }
         let mut f0 = vec![0.0; n];
         rhs.f(t, y, &mut f0)?;
@@ -169,7 +172,9 @@ impl Dopri5 {
         let d0 = rms(y);
         let d1 = rms(&f0);
         let mut h0 = if d0 < 1e-5 || d1 < 1e-5 { 1e-6 } else { 0.01 * d0 / d1 };
-        h0 = h0.min(self.h_max).min(h_limit);
+        h0 = h0.min(self.h_max);
+        let free0 = h0;
+        h0 = h0.min(h_limit);
         let y1: Vec<f64> = (0..n).map(|i| y[i] + h0 * f0[i]).collect();
         let mut f1 = vec![0.0; n];
         rhs.f(t + h0, &y1, &mut f1)?;
@@ -177,7 +182,8 @@ impl Dopri5 {
         let d2 = rms(&diff) / h0;
         let m = d1.max(d2);
         let h1 = if m <= 1e-15 { (h0 * 1e-3).max(1e-6) } else { (0.01 / m).powf(0.2) };
-        Ok((100.0 * h0).min(h1).min(self.h_max).min(h_limit))
+        let free = (100.0 * h0).min(h1).min(self.h_max);
+        Ok((free.min(h_limit), free.max(free0)))
     }
 
     /// Attempts one step of size `h`.
