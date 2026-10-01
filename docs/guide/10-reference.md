@@ -79,7 +79,7 @@ Operators: `+ - * / ^`, `== != < <= > >=`, `and or not`. Units: `m cm mm km s ms
 
 **Observation schedules:** `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over [a, b]`. **Sources:** any expression, `event_log [of E] [where zeno_applied]`, `diagnostics [of element]`, `intervention_log`.
 
-**Timeline actions:** `narrate "..." [for d]`, `run rate r [until E]`, `hold`, `seek τ`, `reset`, `branch`, `highlight name`, `hide name [for d]`, `reveal fade|draw [for d] [in view] { reps }`, `camera view [to P] [zoom z] [for d]`, `in view { reps }`, `show rep`, `intervene { set p = e }`, `request E`, `request E(v)`, `request E(c[k], v)`, `wait d`, `sequence { ... }`, `explore [limit L] [keep p, ...] { controls } [fallback { actions }]` (chapter 8).
+**Timeline actions:** `narrate "..." [for d]`, `run rate r [until E]`, `hold`, `seek τ`, `reset`, `branch`, `highlight name`, `hide name [for d]`, `reveal fade|draw [for d] [in view] { reps }`, `camera view [to P] [zoom z] [for d]`, `in view { reps }`, `show rep`, `intervene { set p = e }`, `request E`, `request E(v)`, `request E(c[k], v)`, `wait d`, `wait learner [limit L] [fallback { actions }]`, `animate name opacity|offset to v [for d]`, `release name`, `bind name [for d]`, `sequence { ... }`, `explore [limit L] [keep p, ...] { controls } [fallback { actions }]` (chapter 8).
 
 ## Runs
 
@@ -105,13 +105,15 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `as` | names a representation: `marker(pos) as ball` | 7 |
 | `at` | an event at an instant (`at τ`); an observation at an instant; a learner step or input change at a time | 5, 6, 8 |
 | `beat` | a step of a scene in a timeline | 8 |
+| `animate` | a timeline animation of a drawing's opacity or offset | 8 |
+| `bind`, `release` | timeline actions: a drawing follows the model again, or stays as it is | 8 |
 | `branch` | a timeline action: the lesson continues on a new run version | 8 |
 | `camera` | a timeline animation of a view's centre and zoom | 8 |
 | `checked` | `equation N: a == b checked within tol` is checked while running | 6 |
 | `config` | a run's solver settings | 6 |
 | `const` | constants: never change | 2 |
 | `constraint` | a condition checked while running, with a policy | 6 |
-| `continue` | a learner step that ends an explore beat | 8 |
+| `continue` | a learner step that ends an explore beat or a continue point | 8 |
 | `crossing` | an event when a value crosses zero either way | 5 |
 | `derived` | values computed from others, always current | 1 |
 | `discrete` | state changed only by events | 5 |
@@ -141,7 +143,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `input` | values supplied from outside, with an optional default; an object's connections | 5, 9 |
 | `intervenable` | state the learner may change | 3 |
 | `layout`, `row`, `column` | a presentation's page layout: views side by side or one below the other | 7 |
-| `learner` | a run's scripted learner inputs | 8 |
+| `learner` | a run's scripted learner inputs; `wait learner`, a continue point | 8 |
 | `live`, `over`, `microstep` | observation schedules: current value, over an interval, at a microstep | 6 |
 | `max` | the capacity of a collection whose members come and go (`Drop[max 40]`, or `Drop[max inf]` for no limit); also the aggregate `max(...)` | 9 |
 | `model` | what exists and how it behaves | 1 |
@@ -175,7 +177,6 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `zoom` | the zoom of a `camera` action | 8 |
 | `contribute` | an operation adding to discrete state; not implemented (MK-E11) | reserved for later |
 | `enter` | reserved | reserved for later |
-| `animate`, `bind`, `release` | timeline actions, parsed and reported as not yet implemented | reserved for later |
 
 ## Words
 

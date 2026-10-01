@@ -418,6 +418,40 @@ impl PresCx<'_, '_> {
                     let payload = p.as_ref().map(|v| self.expr(v));
                     out.push(Action::Request { event: self.cx.event_id(e), payload })
                 }
+                ast::Action::WaitLearner { limit, fallback } => {
+                    let limit = limit.as_ref().map(|l| self.expr(l));
+                    let fallback = self.actions(fallback, beat, counts, span);
+                    out.push(Action::WaitLearner { limit, fallback });
+                }
+                ast::Action::Animate { target, property, to, duration } => {
+                    let property = match property.text.as_str() {
+                        "opacity" => Animated::Opacity,
+                        "offset" => Animated::Offset,
+                        other => {
+                            self.err("SX-E02", format!("`animate` drives `opacity` or `offset`, not `{other}` (D-068)"), property.span);
+                            Animated::Opacity
+                        }
+                    };
+                    match self.aliases.get(&target.text).cloned() {
+                        Some(id) => {
+                            let to = self.expr(to);
+                            let duration = duration.as_ref().map(|d| self.expr(d));
+                            out.push(Action::Animate { target: id, property, to, duration });
+                        }
+                        None => self.err("SX-E03", format!("no representation named `{}` before this beat", target.text), target.span),
+                    }
+                }
+                ast::Action::Release(n) => match self.aliases.get(&n.text) {
+                    Some(id) => out.push(Action::Release { target: id.clone() }),
+                    None => self.err("SX-E03", format!("no representation named `{}` before this beat", n.text), n.span),
+                },
+                ast::Action::Bind(n, d) => match self.aliases.get(&n.text).cloned() {
+                    Some(id) => {
+                        let duration = d.as_ref().map(|d| self.expr(d));
+                        out.push(Action::Bind { target: id, duration })
+                    }
+                    None => self.err("SX-E03", format!("no representation named `{}` before this beat", n.text), n.span),
+                },
             }
         }
         out

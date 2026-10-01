@@ -1002,7 +1002,7 @@ impl<'a> Printer<'a> {
                     self.collect_rep_names(f);
                 }
             }
-            Action::Sequence { actions } => actions.iter().for_each(|x| self.collect_rep_names(x)),
+            Action::Sequence { actions } | Action::WaitLearner { fallback: actions, .. } => actions.iter().for_each(|x| self.collect_rep_names(x)),
             _ => {}
         }
     }
@@ -1163,6 +1163,36 @@ impl<'a> Printer<'a> {
                 s
             }
             Action::Sequence { actions } => format!("sequence {}", block(self.actions(p, actions, depth + 1))),
+            Action::WaitLearner { limit, fallback } => {
+                let mut s = "wait learner".to_string();
+                if let Some(l) = limit {
+                    let _ = write!(s, " limit {}", self.expr(l));
+                }
+                if !fallback.is_empty() {
+                    let _ = write!(s, " fallback {}", block(self.actions(p, fallback, depth + 1)));
+                }
+                s
+            }
+            Action::Animate { target, property, to, duration } => {
+                let name = self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone());
+                let prop = match property {
+                    Animated::Opacity => "opacity",
+                    Animated::Offset => "offset",
+                };
+                let mut s = format!("animate {name} {prop} to {}", self.expr(to));
+                if let Some(d) = duration {
+                    let _ = write!(s, " for {}", self.expr(d));
+                }
+                s
+            }
+            Action::Release { target } => format!("release {}", self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone())),
+            Action::Bind { target, duration } => {
+                let name = self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone());
+                match duration {
+                    Some(d) => format!("bind {name} for {}", self.expr(d)),
+                    None => format!("bind {name}"),
+                }
+            }
         }
     }
 

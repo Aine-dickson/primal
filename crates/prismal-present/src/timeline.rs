@@ -13,7 +13,7 @@
 
 use crate::frame::{compile_rep, CRep, Frame, Projector, ViewCtx};
 use crate::{number, PDiag, Program};
-use prismal_ir::present::{Action as TAction, LearnerInput, Presentation, RevealStyle};
+use prismal_ir::present::{Action as TAction, Animated, LearnerInput, Presentation, RevealStyle};
 use prismal_ir::{Id, Op};
 use prismal_kernel::{CModel, Value};
 use prismal_runtime::{resume, run, Action, Config, Run, Scheduled};
@@ -113,10 +113,101 @@ fn reveal(r: &mut crate::frame::RepFrame, style: RevealStyle, k: f64) {
     }
 }
 
+/// Moves a shape by `d` in view coordinates (D-068); text, formulas and controls are not
+/// moved.
+fn translate(sh: &mut Shape, d: [f64; 2]) {
+    let mv = |q: &mut [f64; 2]| {
+        q[0] += d[0];
+        q[1] += d[1];
+    };
+    match sh {
+        Shape::Point { at } => mv(at),
+        Shape::Arrow { from, to } | Shape::Segment { from, to } => {
+            mv(from);
+            mv(to);
+        }
+        Shape::Polyline { points } | Shape::Polygon { points } => points.iter_mut().for_each(mv),
+        Shape::Ellipse { center, .. } => mv(center),
+        Shape::Group { members } => members.iter_mut().for_each(|m| translate(&mut m.shape, d)),
+        _ => {}
+    }
+}
+
+/// The shape `k` of the way from `a` to `b` (a `bind` handing back, D-068), when both have
+/// the same form; `None` otherwise.
+fn lerp_shape(a: &Shape, b: &Shape, k: f64) -> Option<Shape> {
+    let l = |x: f64, y: f64| x + (y - x) * k;
+    let lp = |x: &[f64; 2], y: &[f64; 2]| [l(x[0], y[0]), l(x[1], y[1])];
+    let pts = |x: &[[f64; 2]], y: &[[f64; 2]]| (x.len() == y.len()).then(|| x.iter().zip(y).map(|(p, q)| lp(p, q)).collect::<Vec<_>>());
+    Some(match (a, b) {
+        (Shape::Point { at: x }, Shape::Point { at: y }) => Shape::Point { at: lp(x, y) },
+        (Shape::Arrow { from: f, to: t }, Shape::Arrow { from: g, to: u }) => Shape::Arrow { from: lp(f, g), to: lp(t, u) },
+        (Shape::Segment { from: f, to: t }, Shape::Segment { from: g, to: u }) => Shape::Segment { from: lp(f, g), to: lp(t, u) },
+        (Shape::Polyline { points: x }, Shape::Polyline { points: y }) => Shape::Polyline { points: pts(x, y)? },
+        (Shape::Polygon { points: x }, Shape::Polygon { points: y }) => Shape::Polygon { points: pts(x, y)? },
+        (Shape::Ellipse { center: c, radii: r, rotation: o, start: s, sweep: w, closed }, Shape::Ellipse { center: c2, radii: r2, rotation: o2, start: s2, sweep: w2, .. }) => {
+            Shape::Ellipse { center: lp(c, c2), radii: lp(r, r2), rotation: l(*o, *o2), start: l(*s, *s2), sweep: l(*w, *w2), closed: *closed }
+        }
+        (Shape::Group { members: x }, Shape::Group { members: y }) if x.len() == y.len() => {
+            let mut out = y.clone();
+            for (m, (p, q)) in out.iter_mut().zip(x.iter().zip(y)) {
+                m.shape = lerp_shape(&p.shape, &q.shape, k)?;
+            }
+            Shape::Group { members: out }
+        }
+        _ if k <= 0.0 => a.clone(),
+        _ if k >= 1.0 => b.clone(),
+        _ => return None,
+    })
+}
+
 /// Smooth start and end of an animation (PK-8.4): `3k² - 2k³`.
 pub fn ease(k: f64) -> f64 {
     let k = k.clamp(0.0, 1.0);
     k * k * (3.0 - 2.0 * k)
+}
+
+/// A continue point of the lesson (PK-9.2, PK-9.8, D-067): a `wait learner` or an explore
+/// beat, from `at` to `end`. A pending one has had no learner input and no limit, so the
+/// lesson goes on at once; a player stops at it until the learner continues.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct WaitPoint {
+    pub beat: String,
+    pub at: f64,
+    pub end: f64,
+    pub pending: bool,
+    pub explore: bool,
+}
+
+/// The value an animation drives a property to (D-068): an opacity, or an offset in view
+/// coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AnimValue {
+    Opacity(f64),
+    Offset([f64; 2]),
+}
+
+/// An animation of a presentation property (PK-8.4, D-068): from presentation instant
+/// `from`, over `duration`, starting from the value the property has then.
+#[derive(Clone, Debug)]
+pub struct Animation {
+    pub target: Id,
+    pub from: f64,
+    pub duration: f64,
+    pub to: AnimValue,
+}
+
+/// A representation released from its projection (PK-8.5, D-068): from `from` it shows its
+/// geometry at simulation instant `t` of run version `run`; a `bind` at `bind` hands it back
+/// to its projection over `blend`.
+#[derive(Clone, Debug)]
+pub struct Released {
+    pub target: Id,
+    pub from: f64,
+    pub run: usize,
+    pub t: f64,
+    pub bind: f64,
+    pub blend: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -151,6 +242,9 @@ pub struct Playback {
     /// duration (0 for at once).
     pub hidden: Vec<(Id, f64, f64)>,
     pub cameras: Vec<CameraCue>,
+    pub waits: Vec<WaitPoint>,
+    pub animations: Vec<Animation>,
+    pub released: Vec<Released>,
     pub refusals: Vec<Refusal>,
     /// Timeline diagnostics: unsatisfiable waits (PK-9.4), rejected interventions.
     pub diagnostics: Vec<String>,
@@ -293,14 +387,21 @@ impl Player {
     }
 
     /// Actions that start together at `p` (a beat, or a fallback): run-directing ones first,
-    /// in written order (PK-9.2a, D-033). Returns when the last one ends.
+    /// in written order (PK-9.2a, D-033), and continue points last (D-067). Returns when the
+    /// last one ends.
     fn group(&mut self, acts: &[TAction], p: f64, beat: &str) -> f64 {
         for a in acts.iter().filter(|a| a.is_run_directing()) {
             self.direct(a, p);
         }
         let mut end = p;
-        for a in acts.iter().filter(|a| !a.is_run_directing()) {
+        let waits = |a: &&TAction| matches!(a, TAction::WaitLearner { .. });
+        for a in acts.iter().filter(|a| !a.is_run_directing() && !waits(a)) {
             end = end.max(self.timed(a, p, beat));
+        }
+        // A continue point opens when the beat's other actions have ended (D-067).
+        let open = end;
+        for a in acts.iter().filter(waits) {
+            end = end.max(self.timed(a, open, beat));
         }
         end
     }
@@ -409,9 +510,83 @@ impl Player {
                 }
                 Medium::Interactive => self.explore(p, limit.as_ref(), keep, controls, beat),
             },
+            // A continue point (D-067): linear media play the fallback, or omit it.
+            TAction::WaitLearner { limit, fallback } => match self.pb.medium {
+                Medium::Video => self.group(fallback, p, beat),
+                Medium::Interactive => {
+                    let limit = limit.as_ref().map(|l| self.num(l));
+                    let deadline = limit.map(|l| p + l).unwrap_or(f64::INFINITY);
+                    let next = self.inputs.iter().position(|(i, used)| !used && i.at >= p && i.at <= deadline && matches!(i.input, LearnerInput::Continue));
+                    let end = match next {
+                        Some(k) => {
+                            self.inputs[k].1 = true;
+                            self.inputs[k].0.at
+                        }
+                        None if deadline.is_finite() => deadline,
+                        None => p,
+                    };
+                    let pending = next.is_none() && limit.is_none();
+                    self.pb.waits.push(WaitPoint { beat: beat.to_string(), at: p, end, pending, explore: false });
+                    end
+                }
+            },
+            TAction::Animate { target, property, to, duration } => {
+                let d = duration.as_ref().map(|d| self.num(d)).unwrap_or(1.0);
+                let to = match property {
+                    Animated::Opacity => AnimValue::Opacity(self.num(to).clamp(0.0, 1.0)),
+                    Animated::Offset => AnimValue::Offset(self.offset(target, to, p)),
+                };
+                self.pb.animations.push(Animation { target: target.clone(), from: p, duration: d, to });
+                p + d
+            }
+            TAction::Release { target } => {
+                if self.pb.released.iter().any(|r| &r.target == target && r.bind.is_infinite()) {
+                    self.pb.diagnostics.push(format!("{beat}: `{target}` is already released (D-068)"));
+                    return p;
+                }
+                let (run, t) = (self.open.run, self.sim_at(p));
+                self.pb.released.push(Released { target: target.clone(), from: p, run, t, bind: f64::INFINITY, blend: 0.0 });
+                p
+            }
+            TAction::Bind { target, duration } => {
+                let d = duration.as_ref().map(|d| self.num(d)).unwrap_or(0.0);
+                match self.pb.released.iter_mut().rev().find(|r| &r.target == target && r.bind.is_infinite()) {
+                    Some(r) => {
+                        r.bind = p;
+                        r.blend = d;
+                        p + d
+                    }
+                    None => {
+                        self.pb.diagnostics.push(format!("{beat}: `{target}` is not released; `bind` hands back a released representation (D-068)"));
+                        p
+                    }
+                }
+            }
             other => {
                 self.direct(other, p);
                 p
+            }
+        }
+    }
+
+    /// An offset in view coordinates (D-068): the vector `to` of the space of the view the
+    /// representation is drawn in, evaluated at the instant shown at `p`.
+    fn offset(&mut self, target: &str, to: &prismal_ir::Expr, p: f64) -> [f64; 2] {
+        let view = crate::frame::rep_view(&self.pb.pres, target).flatten();
+        let ctx = self.pb.projector.ctx(view.as_deref());
+        let ViewCtx::Spatial { space, .. } = &ctx else {
+            self.pb.diagnostics.push(format!("`{target}` is not drawn in a spatial view; only those take an offset (D-068)"));
+            return [0.0, 0.0];
+        };
+        let ty = prismal_ir::Type::Vector { space: space.clone(), dim: prismal_ir::Dim::length() };
+        let s = self.sim_at(p);
+        let r = &self.pb.runs[self.open.run].run;
+        let v = prismal_kernel::compile_expr(&self.pb.cm, to, Some(&ty)).map_err(|ds| ds.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("; ")).and_then(|(ce, _)| r.eval_state(&ce, &r.state_at(s), s).map_err(|e| e.cause));
+        match v {
+            Ok(v) => ctx.to_view(&crate::flat(&v)),
+            Err(m) => {
+                self.pb.diagnostics.push(format!("`{target}`: {m}"));
+                [0.0, 0.0]
             }
         }
     }
@@ -452,14 +627,13 @@ impl Player {
                 }
             }
         }
+        let end_input = end;
         let end = match end {
             Some(e) => e,
             None if deadline.is_finite() => deadline,
-            None => {
-                self.pb.diagnostics.push(format!("{beat}: the learner never continues and the beat has no limit; it ends at once"));
-                p
-            }
+            None => p,
         };
+        self.pb.waits.push(WaitPoint { beat: beat.to_string(), at: p, end, pending: end_input.is_none() && limit.is_none(), explore: true });
         for c in controls {
             match compile_rep(&self.pb.cm, &ViewCtx::Panel, c) {
                 Ok(cr) => self.pb.shown.push(Shown { from: p, until: end, view: None, rep: cr, reveal: None }),
@@ -527,6 +701,9 @@ fn play_once(prog: &Program, presentation: &str, base: Config, medium: Medium, i
         highlights: vec![],
         hidden: vec![],
         cameras: vec![],
+        waits: vec![],
+        animations: vec![],
+        released: vec![],
         refusals: vec![],
         diagnostics: vec![],
         unsupported: vec![],
@@ -596,6 +773,27 @@ impl Playback {
         let vals: Vec<Value> = v.run.state_at(t);
         let extra: Vec<(Option<Id>, CRep)> = self.shown.iter().filter(|s| s.from <= p && p < s.until).map(|s| (s.view.clone(), s.rep.clone())).collect();
         let (mut views, mut overlay) = self.projector.frame(&self.cm, &v.run, &vals, t, &extra);
+        // Released representations (D-068) show their geometry at the instant of the release,
+        // and blend back to their projection while a `bind` hands them back.
+        for r in self.released.iter().filter(|r| r.from <= p && p < r.bind + r.blend) {
+            let Some(held) = self.held(r) else { continue };
+            let k = if p < r.bind { 0.0 } else { ease((p - r.bind) / r.blend) };
+            let mut swap = |x: &mut crate::frame::RepFrame| {
+                if x.id == r.target {
+                    match lerp_shape(&held.shape, &x.shape, k) {
+                        Some(sh) => x.shape = sh,
+                        None => x.shape = held.shape.clone(),
+                    }
+                    if k == 0.0 {
+                        x.text = held.text.clone();
+                    }
+                }
+            };
+            for v in views.iter_mut() {
+                each_rep_mut(&mut v.reps, &mut swap);
+            }
+            each_rep_mut(&mut overlay, &mut swap);
+        }
         // Hidden representations: gone after their fade, fading during it.
         // Members of groups are found by the same rules (D-043).
         let gone: Vec<&Id> = self.hidden.iter().filter(|h| h.1 + h.2 <= p).map(|h| &h.0).collect();
@@ -625,6 +823,37 @@ impl Playback {
             each_rep_mut(&mut v.reps, &mut animate);
         }
         each_rep_mut(&mut overlay, &mut animate);
+        // Animated properties (D-068): each animation starts from the value the previous one
+        // left; the last value holds after it ends.
+        let mut animated = |r: &mut crate::frame::RepFrame| {
+            let (mut opacity, mut offset) = (1.0, [0.0, 0.0]);
+            let mut any = (false, false);
+            for a in self.animations.iter().filter(|a| a.target == r.id && a.from <= p) {
+                let k = if a.duration > 0.0 { ease((p - a.from) / a.duration) } else { 1.0 };
+                match a.to {
+                    AnimValue::Opacity(x) => {
+                        opacity += (x - opacity) * k;
+                        any.0 = true;
+                    }
+                    AnimValue::Offset(d) => {
+                        offset = [offset[0] + (d[0] - offset[0]) * k, offset[1] + (d[1] - offset[1]) * k];
+                        any.1 = true;
+                    }
+                }
+            }
+            if any.0 {
+                r.opacity = Some(r.opacity.unwrap_or(1.0) * opacity);
+            }
+            if any.1 {
+                translate(&mut r.shape, offset);
+            }
+        };
+        if !self.animations.is_empty() {
+            for v in views.iter_mut() {
+                each_rep_mut(&mut v.reps, &mut animated);
+            }
+            each_rep_mut(&mut overlay, &mut animated);
+        }
         // Cameras (D-042): each move starts from where the previous one left the camera.
         for vf in views.iter_mut() {
             let ctx = self.projector.ctx(Some(&vf.id));
@@ -674,6 +903,28 @@ impl Playback {
             captions: self.captions.iter().filter(|c| c.start <= p && p < c.end).map(|c| c.text.clone()).collect(),
             announcements: self.announcements.iter().filter(|a| a.at > p - dt && a.at <= p).map(|a| a.event.clone()).collect(),
         }
+    }
+
+    /// A released representation as it was at its release (D-068).
+    fn held(&self, r: &Released) -> Option<crate::frame::RepFrame> {
+        let run = &self.runs[r.run].run;
+        let vals = run.state_at(r.t);
+        let extra: Vec<(Option<Id>, CRep)> = self.shown.iter().filter(|s| s.from <= r.from && r.from < s.until).map(|s| (s.view.clone(), s.rep.clone())).collect();
+        let (views, overlay) = self.projector.frame(&self.cm, run, &vals, r.t, &extra);
+        fn find(reps: Vec<crate::frame::RepFrame>, id: &str) -> Option<crate::frame::RepFrame> {
+            for x in reps {
+                if x.id == id {
+                    return Some(x);
+                }
+                if let Shape::Group { members } = x.shape {
+                    if let Some(m) = find(members, id) {
+                        return Some(m);
+                    }
+                }
+            }
+            None
+        }
+        views.into_iter().find_map(|v| find(v.reps, &r.target)).or_else(|| find(overlay, &r.target))
     }
 
     /// Frame descriptions at `fps` frames per presentation second, from 0 to the end.

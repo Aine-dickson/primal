@@ -325,6 +325,7 @@ impl Instance {
             "end": pb.end,
             "beats": beats,
             "explore": explore,
+            "waits": pb.waits,
             "captions": pb.captions,
             "inputs": l.inputs.iter().map(|i| json!({ "at": i.at, "input": i.input })).collect::<Vec<_>>(),
             "refusals": pb.refusals,

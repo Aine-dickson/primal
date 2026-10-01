@@ -194,6 +194,20 @@ const [fl, ctl, rd] = [await box('flight'), await box('controls'), await box('re
 check('a layout row puts the plot left of the panels', fl[2] <= ctl[0] && fl[2] <= rd[0], `${fl} | ${ctl} | ${rd}`);
 check('a layout column puts the controls above the readout', ctl[3] <= rd[1] && Math.abs(ctl[0] - rd[0]) < 1, `${ctl} / ${rd}`);
 
+// The guide's quiz lesson (D-067): playback stops at the continue point after the 3 s
+// narration, and Continue plays on.
+await open('g8-freefall/DropQuiz');
+await mouse('mousePressed', ...(await center('#play')));
+await mouse('mouseReleased', ...(await center('#play')));
+await sleep(4500);
+const stopped = await ev(`[document.querySelector('#clock').textContent, document.querySelector('#continue').hidden, document.querySelector('#play').textContent]`);
+check('a lesson stops at a continue point', stopped[0].startsWith('3 s /') && !stopped[1] && stopped[2] === 'Play', JSON.stringify(stopped));
+await mouse('mousePressed', ...(await center('#continue')));
+await mouse('mouseReleased', ...(await center('#continue')));
+await sleep(600);
+const going = await ev(`[document.querySelector('#clock').textContent, document.querySelector('#continue').hidden, document.querySelector('#play').textContent]`);
+check('Continue plays on', parseFloat(going[0]) > 3 && going[1] && going[2] === 'Pause', JSON.stringify(going));
+
 ws.close();
 edge.kill();
 server.close();

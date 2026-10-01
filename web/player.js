@@ -1003,15 +1003,7 @@ function setupTransport() {
     }
     refresh();
   });
-  $('#continue').addEventListener('click', () => {
-    try {
-      st.lesson = JSON.parse(st.player.lesson_continue(st.p));
-      afterLessonInput();
-      if (!st.playing) togglePlay();
-    } catch (e) {
-      status(String(e), true);
-    }
-  });
+  $('#continue').addEventListener('click', learnerContinues);
   $('#voice').addEventListener('change', () => {
     silence();
     if ($('#voice').value === 'files') $('#voice-files').click();
@@ -1046,6 +1038,23 @@ function afterLessonInput() {
   refresh();
 }
 
+// The learner continues at the current instant: ends an explore beat or a continue point
+// (D-067), and plays on.
+function learnerContinues() {
+  try {
+    st.lesson = JSON.parse(st.player.lesson_continue(st.p));
+    afterLessonInput();
+    if (!st.playing) togglePlay();
+  } catch (e) {
+    status(String(e), true);
+  }
+}
+
+// A continue point the learner has not passed yet, at instant p: playback stops there (D-067).
+function pendingAt(p) {
+  return (st.lesson?.waits || []).find((w) => w.pending && Math.abs(w.at - p) < 1e-9) || null;
+}
+
 function exploreAt(p) {
   return (st.lesson?.explore || []).find((x) => p >= x.start && p < x.end) || null;
 }
@@ -1078,8 +1087,10 @@ function updateTransport() {
     const beat = l.beats.find((b) => st.p >= b.start && st.p < b.end) || l.beats[l.beats.length - 1];
     for (const b of $('#beats').children) b.classList.toggle('current', beat && b.dataset.beat === beat.beat);
     const ex = exploreAt(st.p);
-    $('#continue').hidden = !ex;
+    const wait = !st.playing && pendingAt(st.p);
+    $('#continue').hidden = !ex && !wait;
     if (ex) $('#continue').textContent = `Continue (explore ends in ${Math.ceil(ex.end - st.p)} s)`;
+    else if (wait) $('#continue').textContent = 'Continue';
     if (beat) where = `, beat ${beat.beat}`;
   } else {
     $('#continue').hidden = true;
@@ -1093,6 +1104,7 @@ function updateTransport() {
 function togglePlay() {
   if (!clocked()) return;
   if (st.playing) { stop(); updateTransport(); return; }
+  if (st.lesson && pendingAt(st.p)) { learnerContinues(); return; }
   if (st.p >= clockEnd()) st.p = clockStart();
   st.playing = true;
   st.lastTick = null;
@@ -1170,11 +1182,21 @@ function tick(now) {
   const dt = st.lastTick == null ? 0 : Math.min(0.1, (now - st.lastTick) / 1000) * st.speed;
   st.lastTick = now;
   const end = clockEnd();
+  const prev = st.p;
   st.p = Math.min(end, st.p + dt);
+  // A continue point the learner has not passed: stop at it (D-067).
+  const wait = st.lesson && (st.lesson.waits || []).find((w) => w.pending && w.at > prev && w.at <= st.p);
+  if (wait) st.p = wait.at;
   if (st.sess) st.p = JSON.parse(st.player.seek(st.p)).t;
   const frame = JSON.parse(st.player.frame(st.p, dt));
   render(frame);
   voiceSync();
+  if (wait) {
+    stop();
+    updateTransport();
+    status(`${wait.beat}: Continue when ready.`);
+    return;
+  }
   updateTransport();
   if (st.p >= end) {
     stop();

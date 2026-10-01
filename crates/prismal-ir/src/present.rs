@@ -313,6 +313,41 @@ pub enum Action {
         fallback: Vec<Action>,
     },
     Sequence { actions: Vec<Action> },
+    /// A continue point (PK-9.2, D-067): the timeline waits for the learner to continue, at
+    /// most `limit`; linear media play `fallback` instead (PK-9.10).
+    WaitLearner {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<Expr>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        fallback: Vec<Action>,
+    },
+    /// An animation of a presentation property of a representation (PK-8.4, D-068): from
+    /// the value it has to `to`, over `duration`.
+    Animate {
+        target: Id,
+        property: Animated,
+        to: Expr,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration: Option<Expr>,
+    },
+    /// Holds a representation's bound geometry at the instant shown (PK-8.5, D-068).
+    Release { target: Id },
+    /// Hands a released representation back to its projection, over `duration` (D-068).
+    Bind {
+        target: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration: Option<Expr>,
+    },
+}
+
+/// Presentation properties `animate` drives (D-068).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Animated {
+    /// From 0 (invisible) to 1, multiplying any reveal or hide.
+    Opacity,
+    /// A displacement of the representation in its view, a vector of the view's space.
+    Offset,
 }
 
 /// How `reveal` shows a representation (D-042).

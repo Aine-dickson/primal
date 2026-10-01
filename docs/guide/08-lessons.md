@@ -34,6 +34,8 @@ Beats play one after another. Within a beat, the actions that direct the run (`r
 | `request E` | makes an `on request` event of the model happen now (D-027) | none |
 | `wait 2 s` | waits | the given time |
 | `explore limit L keep p { controls } fallback { actions }` | the learner's turn (below) | until the learner continues, or `L` |
+| `wait learner [limit L] [fallback { actions }]` | a continue point (below) | until the learner continues, or `L` |
+| `animate name opacity\|offset to v for d`, `release name`, `bind name for d` | animate a drawing, hold it, hand it back (below) | `d` |
 
 The simulation keeps the rate set last: a beat without `run` or `hold` continues at the previous rate.
 
@@ -191,6 +193,61 @@ run without_learner of FreeFall with DropLesson {
 
 In the player, a lesson has play, pause, a time scrubber and a bar of beats; during `choose` the slider appears and a Continue button ends the beat. Choosing the video medium plays the fallback instead.
 
+## Continue points
+
+`wait learner` waits for the learner to press Continue. It is the simplest way to let a learner think before the lesson goes on: no controls, no branch of the run.
+
+```text
+presentation DropQuiz for FreeFall {
+  view scene: spatial(Plane, scale: 1 m -> 12 px, y: up) {
+    axes
+    marker(pos) as ball
+  }
+  timeline {
+    scene quiz {
+      beat ask   { narrate "Guess: how long will the fall take?" for 3 s; wait learner }
+      beat fall  { run rate 1 until landed }
+      beat think {
+        hold
+        narrate "Was your guess close?" for 3 s
+        wait learner limit 20 s fallback { wait 2 s }
+      }
+      beat tell  { show formula("t", sqrt(2 * h / g), live: true) }
+    }
+  }
+}
+```
+
+- A continue point opens when the other actions of its beat have ended: `ask` narrates for 3 s, then waits. Inside a `sequence` it waits at its place.
+- It ends when the learner continues, or after `limit`. Without a limit it waits as long as the learner needs: the player stops there and shows Continue.
+- In a video, `fallback { ... }` plays instead; a continue point without a fallback is left out.
+- A continue the learner gives before the point opens is not taken by it.
+
+```cases
+run quick_learner of FreeFall with DropQuiz {
+  learner {
+    at 5 s: continue
+    at 10 s: continue
+  }
+  expect {
+    end of ask   == 5 s exactly
+    end of fall  == 6.42784312292706 s within 1e-8 s    // 5 s + T
+    end of think == 10 s exactly
+  }
+}
+
+run no_learner of FreeFall with DropQuiz {
+  expect {
+    end of ask   == 3 s exactly                         // the narration; no wait recorded
+    end of think == 27.4278431229271 s within 1e-8 s    // 3 s + T, 3 s of narration, the 20 s limit
+  }
+}
+```
+
+A case without a learner script shows how the lesson is laid out before the learner acts: a continue point with no limit takes no time. Continuing later only moves what follows.
+
+An explore beat without a `limit` waits for the learner in the same way.
+
 ## Animation
 
 Three actions animate the presentation itself, never the model (D-042):
@@ -231,6 +288,55 @@ run movie of FreeFall with DropMovie {
   }
 }
 ```
+
+## Moving, fading and handing back
+
+`animate` changes a presentation property of a representation over time (D-068). It never changes the model: the ball's position is the model's, so an animation moves the drawing, not the ball.
+
+| Action | Effect | Duration |
+|---|---|---|
+| `animate name opacity to x [for d]` | fades to opacity `x`, from 0 (invisible) to 1 | `d`, 1 s by default |
+| `animate name offset to v [for d]` | moves the drawing by the vector `v` of the view's space, such as `(2 m, 0 m)` | `d`, 1 s by default |
+| `release name` | the drawing stays as it is now, whatever the model does | none |
+| `bind name [for d]` | the drawing follows the model again, gliding back over `d` | `d`, none by default |
+
+Each animation starts from where the last one left the property, and the property keeps its last value: `animate ball offset to (0 m, 0 m)` moves the drawing back. Offsets and opacity apply to released drawings too.
+
+`release` and `bind` hand a drawing over from the model to the lesson and back. Here the ball stays where it landed while the lesson rewinds, then glides up to the start before the slow replay:
+
+```text
+presentation DropRewind for FreeFall {
+  view scene: spatial(Plane, scale: 1 m -> 12 px, y: up) {
+    axes
+    marker(pos) as ball
+  }
+  timeline {
+    scene replay {
+      beat fall   { run rate 1 until landed }
+      beat land   {
+        hold
+        release ball
+        animate ball opacity to 0.5 for 1 s
+        narrate "It lands here." for 2 s
+      }
+      beat rewind { seek t0; bind ball for 1.5 s; animate ball opacity to 1 for 1.5 s }
+      beat slow   { run rate 0.25 until landed }
+    }
+  }
+}
+```
+
+```cases
+run rewind of FreeFall with DropRewind {
+  expect {
+    end of land   == 3.42784312292706 s within 1e-8 s    // T + 2 s
+    end of rewind == 4.92784312292706 s within 1e-8 s
+    end of slow   == 10.6392156146353 s within 1e-8 s    // and the fall at a quarter speed, 4T
+  }
+}
+```
+
+Without `release`, `seek t0` would make the ball jump to the top at once. Run-directing actions such as `seek` apply first in their beat, so `release` goes in the beat before.
 
 ## Exporting a video
 

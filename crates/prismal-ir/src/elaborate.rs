@@ -1274,19 +1274,28 @@ impl<'a> PCx<'a, '_> {
                 Action::Wait { duration } => Action::Wait { duration: self.e(&s, duration) },
                 Action::Explore { limit, keep, controls, fallback } => Action::Explore { limit: ex(self, limit), keep: keep.clone(), controls: self.reps(&s, controls), fallback: self.actions(fallback) },
                 Action::Sequence { actions } => Action::Sequence { actions: self.actions(actions) },
-                // A family of representations is highlighted or hidden member by member.
-                Action::Highlight { target } | Action::Hide { target, .. } if self.families.iter().any(|(id, _)| id == target) => {
+                Action::WaitLearner { limit, fallback } => Action::WaitLearner { limit: ex(self, limit), fallback: self.actions(fallback) },
+                // A family of representations is highlighted, hidden, animated, released or
+                // bound member by member.
+                Action::Highlight { target } | Action::Hide { target, .. } | Action::Animate { target, .. } | Action::Release { target } | Action::Bind { target, .. }
+                    if self.families.iter().any(|(id, _)| id == target) =>
+                {
                     let ids = self.families.iter().find(|(id, _)| id == target).unwrap().1.clone();
                     for id in ids {
                         out.push(match a {
                             Action::Highlight { .. } => Action::Highlight { target: id },
                             Action::Hide { duration, .. } => Action::Hide { target: id, duration: ex(self, duration) },
+                            Action::Animate { property, to, duration, .. } => Action::Animate { target: id, property: *property, to: self.e(&s, to), duration: ex(self, duration) },
+                            Action::Release { .. } => Action::Release { target: id },
+                            Action::Bind { duration, .. } => Action::Bind { target: id, duration: ex(self, duration) },
                             _ => unreachable!(),
                         });
                     }
                     continue;
                 }
                 Action::Hide { target, duration } => Action::Hide { target: target.clone(), duration: ex(self, duration) },
+                Action::Animate { target, property, to, duration } => Action::Animate { target: target.clone(), property: *property, to: self.e(&s, to), duration: ex(self, duration) },
+                Action::Bind { target, duration } => Action::Bind { target: target.clone(), duration: ex(self, duration) },
                 other => other.clone(),
             };
             out.push(na);
