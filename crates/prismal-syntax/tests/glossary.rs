@@ -71,3 +71,29 @@ fn misplaced_words_say_where_they_belong() {
         assert!(ds.iter().any(|d| d.message.contains(hint)), "{src}: {:?}", ds.iter().map(|d| &d.message).collect::<Vec<_>>());
     }
 }
+
+/// The formatter writes newer forms back as written: payload buttons (D-072), live drags
+/// (D-071), plot options (D-070).
+#[test]
+fn newer_forms_print_back() {
+    let src = "space Plane = euclidean(2)
+model M in Plane {
+  state { pos: Point = origin intervenable }
+  discrete { h: Length = 0 m }
+  event push on request(d: Length) { set h = h + d }
+}
+presentation P for M {
+  view s: spatial(Plane, scale: 1 m -> 10 px, y: up) { marker(pos) as puck { on drag live as p { propose pos = p } } }
+  view g: plot(x: [0 s, 5 s], y: [0 m, 1 m], follow: y, window: 5 s, y_unit: cm) { series_plot(h every 0.1 s) }
+  panel c { button(push(2 m), label: \"two\") }
+}
+";
+    let compiled = prismal_syntax::compile(src).unwrap_or_else(|ds| panic!("{:?}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
+    let out = prismal_syntax::format::format(&compiled.doc);
+    for want in ["button(push(2 m), label: \"two\")", "on drag live as p", "follow: y, window: 5 s, y_unit: cm"] {
+        assert!(out.contains(want), "missing `{want}` in:\n{out}");
+    }
+    // And the printed program compiles to the same document.
+    let again = prismal_syntax::compile(&out).unwrap_or_else(|ds| panic!("{:?}\n{out}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
+    assert_eq!(prismal_syntax::format::format(&again.doc), out);
+}

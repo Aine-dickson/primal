@@ -627,13 +627,20 @@ impl Player {
                 }
                 // A button among the beat's controls requests its event on the branch (D-069).
                 LearnerInput::Press { event } => {
-                    let offered = controls.iter().any(|c| c.kind == "button" && matches!(c.sources.first(), Some(prismal_ir::present::Arg::Element { element }) if element == event));
-                    if !offered {
+                    let offered = controls.iter().find(|c| c.kind == "button" && matches!(c.sources.first(), Some(prismal_ir::present::Arg::Element { element }) if element == event));
+                    let payload = offered.and_then(|c| c.props.iter().find(|p| p.name == "payload")).and_then(|p| match &p.value {
+                        prismal_ir::present::Arg::Expr { expr } => Some(expr.clone()),
+                        _ => None,
+                    });
+                    if offered.is_none() {
                         let name = self.pb.cm.ir.events.iter().find(|e| &e.id == event).map(|e| e.name.clone()).unwrap_or_else(|| event.clone());
                         self.pb.refusals.push(Refusal { at: inp.at, input: describe(&inp.input), reason: format!("{beat} offers no button for `{name}` (PK-9.8)") });
                         continue;
                     }
-                    self.modify(inp.at, Action::Request(event.clone()));
+                    self.modify(inp.at, match payload {
+                        Some(v) => Action::RequestWith(event.clone(), v),
+                        None => Action::Request(event.clone()),
+                    });
                 }
             }
         }

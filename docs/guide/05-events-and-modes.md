@@ -318,6 +318,20 @@ run push of Cart with CartChecks {
 
 A host supplies inputs through its interface (`set_input`, `docs/spec/05-host-interface.md`), at the instant it shows.
 
+A learner requests an event with a payload by pressing a button that gives the value: the event's name with the value after it, as in a timeline's `request` (D-072).
+
+```text
+presentation CartLab for Cart {
+  panel controls {
+    button(kick(2 kg*m/s), label: "Small kick")
+    button(kick(6 kg*m/s), label: "Big kick")
+    label(v)
+  }
+}
+```
+
+A button for an event that takes a value must give one of the right type (`button(kick)` and `button(kick(2 m))` are rejected, PK-E05 and PK-E04), and a button for an event that takes none gives none.
+
 A payload with no source:
 
 ```error

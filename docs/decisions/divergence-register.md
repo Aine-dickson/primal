@@ -1331,3 +1331,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** PK-10.9a, RC-10.3a; 04-ir (`inverse.live`); parser, lowering, formatter; `Interactive::seek` commits live drags, `Interactive::drag_live`; the host's `pointer_down` answers `live`, `session` answers `status` and `failure`; the web player; `Run::fail_in_step`; guide chapters 7, 10 and 14; `prismal-host/tests/live_and_pause.rs`.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-072: Buttons whose event takes a payload
+
+- **Status:** Accepted
+- **Original position:** D-069 left "buttons whose event takes a payload (a button supplies none)" for later; a button for an event declared `on request(j: Momentum)` could not be written.
+- **Raised by:** D-069, "Not yet"; PROJECT-STATE, next steps.
+- **Builds on:** PK-6.3, PK-6.3d, D-050, D-059, D-069.
+- **Question:** How does a button give the value its event takes?
+- **Options considered:**
+  1. **The event written as a call:** `button(kick(2 kg*m/s))`, as a timeline writes `request kick(2 kg*m/s)`. Several values are written as several arguments.
+  2. **A named property:** `button(kick, value: 2 kg*m/s)`. Explicit, but a second way to write what a request already writes.
+  3. **A value read from a control** (a number input beside the button). Useful, but a different feature: a form, not a button.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. The IR keeps the event as the button's `element` source and the value as its `payload` property, an expression in the model's scope evaluated when pressed. A button gives a value exactly when its event takes one, of the declared type (PK-E05, PK-E04); an event that takes a member is requested by clicking the member (D-059), not by a button. In a lesson, an explore beat's button requests its event with its value on the branch.
+- **Reason:** the same form as a request keeps one way to write "this event with this value"; the IR needs no new argument kind.
+- **Consequences:** lowering, formatter; `CKind::Button { payload }`; `Interactive::press` and lesson presses request with the value; guide chapters 5, 7, 10 and 14; `prismal-host/tests/payload_buttons.rs`, `prismal-syntax/tests/glossary.rs`. Not yet: option 3.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

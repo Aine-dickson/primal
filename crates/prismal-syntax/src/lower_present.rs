@@ -135,6 +135,16 @@ impl PresCx<'_, '_> {
                 (ExprKind::Name(n), None) if r.kind.text == "button" && RUN_CONTROLS.contains(&n.as_str()) && !self.cx.bindings.contains_key(n) && !self.cx.events.contains_key(n) => {
                     Arg::Word { word: n.clone() }
                 }
+                // `button(add(2 m))`: a button that requests an event with a payload; the payload
+                // is the property `payload` (D-072).
+                (ExprKind::Call(callee, args), None) if r.kind.text == "button" && matches!(&callee.kind, ExprKind::Name(n) if self.cx.events.contains_key(n)) => {
+                    let ExprKind::Name(n) = &callee.kind else { unreachable!() };
+                    let element = self.cx.events.get(n).cloned().unwrap();
+                    let items: Vec<prismal_ir::Expr> = args.iter().map(|x| self.expr(&x.value)).collect();
+                    let payload = if items.len() == 1 { items.into_iter().next().unwrap() } else { prismal_ir::Expr::Tuple { tuple: items } };
+                    props.push(Prop { name: "payload".into(), value: Arg::Expr { expr: payload } });
+                    Arg::Element { element }
+                }
                 // A positional name of an event or equation, not a binding: a model element.
                 (ExprKind::Name(n), None) if a.every.is_none() && !self.cx.bindings.contains_key(n) && (self.cx.events.contains_key(n) || self.equations.contains_key(n)) => {
                     let element = self.cx.events.get(n).or_else(|| self.equations.get(n)).cloned().unwrap();

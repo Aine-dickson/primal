@@ -442,7 +442,8 @@ pub enum CKind {
     /// `ry` absent for a circle or an arc, `from` and `to` present for an arc only.
     Round { center: CExpr, rx: CExpr, ry: Option<CExpr>, rotate: Option<CExpr>, from: Option<CExpr>, to: Option<CExpr> },
     Equation { name: String, lhs: Expr, rhs: Expr, refs: Vec<(Id, usize)>, live: bool },
-    Button { event: Id, label: String },
+    /// `payload`: the value a press requests the event with (D-072).
+    Button { event: Id, label: String, payload: Option<Expr> },
     /// A runtime control (D-069): `reset`, `undo` or `redo`.
     RunButton { control: String, label: String },
     Table { value: CExpr, tys: Vec<Type>, every: f64, columns: Vec<String> },
@@ -805,7 +806,28 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, full: &Rep) -> Result<CRep, Vec<P
                     if !matches!(ev.trigger, prismal_ir::Trigger::Request) {
                         return Err(d("PK-E03", format!("`{}` is not declared `on request`, so no button can request it (D-027)", ev.name)));
                     }
-                    CKind::Button { event: element.clone(), label: label_or(&ev.name) }
+                    // `button(add(2 m))` (D-072): a payload exactly when the event declares one,
+                    // of its type; a button cannot name a member.
+                    let payload = match rep.prop("payload") {
+                        Some(Arg::Expr { expr }) => Some(expr.clone()),
+                        _ => None,
+                    };
+                    match (&ev.payload, &payload) {
+                        (Some(p), Some(e)) => {
+                            if p.of.is_some() {
+                                return Err(d("PK-E05", format!("`{}` takes a member; a member is chosen by clicking it, not by a button (D-059)", ev.name)));
+                            }
+                            match compile_expr(cm, e, Some(&p.ty)) {
+                                Ok((_, t)) if t == p.ty => {}
+                                Ok((_, t)) => return Err(d("PK-E04", format!("`{}` takes a {:?}; the button gives a {:?}", ev.name, p.ty, t))),
+                                Err(ds) => return Err(d("PK-E04", format!("the value for `{}`: {}", ev.name, ds.iter().map(|x| x.message.clone()).collect::<Vec<_>>().join("; ")))),
+                            }
+                        }
+                        (Some(_), None) => return Err(d("PK-E05", format!("`{}` takes a value: write it after the event, `button({}(...))` (D-072)", ev.name, ev.name))),
+                        (None, Some(_)) => return Err(d("PK-E05", format!("`{}` takes no value", ev.name))),
+                        (None, None) => {}
+                    }
+                    CKind::Button { event: element.clone(), label: label_or(&ev.name), payload }
                 }
                 _ => return Err(needs(msg)),
             }
@@ -1130,7 +1152,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             let layout = math::layout(&math::equation(lhs, rhs, cm));
             (Shape::Equation { name: name.clone(), lhs: lhs.clone(), rhs: rhs.clone(), symbols, layout }, text)
         }
-        CKind::Button { event, label } => {
+        CKind::Button { event, label, .. } => {
             let name = cm.ir.events.iter().find(|e| &e.id == event).map(|e| e.name.clone()).unwrap_or_default();
             (Shape::Button { event: Some(event.clone()), control: None, label: label.clone() }, format!("button {label}: requests {name}"))
         }

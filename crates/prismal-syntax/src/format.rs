@@ -842,7 +842,12 @@ impl<'a> Printer<'a> {
             return format!("for {} in {} {{ {} }}", each.var, self.part_name(&each.over), self.rep(&inner, depth));
         }
         let mut args: Vec<String> = r.sources.iter().map(|a| self.arg(a)).collect();
-        args.extend(r.props.iter().map(|p| format!("{}: {}", p.name, self.arg(&p.value))));
+        // `button(add(2 m))`: the payload is written as the event's arguments (D-072).
+        let payload = r.props.iter().find(|p| r.kind == "button" && p.name == "payload");
+        if let (Some(Prop { value: Arg::Expr { expr }, .. }), Some(first)) = (payload, args.first_mut()) {
+            *first = format!("{first}({})", self.payload_args(expr));
+        }
+        args.extend(r.props.iter().filter(|p| !(r.kind == "button" && p.name == "payload")).map(|p| format!("{}: {}", p.name, self.arg(&p.value))));
         let mut s = if args.is_empty() { r.kind.clone() } else { format!("{}({})", r.kind, args.join(", ")) };
         if let Some(n) = &r.name {
             let _ = write!(s, " as {n}");

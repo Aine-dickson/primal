@@ -109,6 +109,20 @@ button(again)
 
 See [What goes where](00-structure.md) and [chapter 7](07-presentations.md).
 
+### Let a button give a value to the event it requests
+
+Combine an **event `on request(name: Type)`** with **button(event(value))**.
+
+```prismal
+// model
+event kick on request(j: Momentum) { set v = v + j / m }
+// presentation / panel
+button(kick(2 kg*m/s), label: "Small kick")
+button(kick(6 kg*m/s), label: "Big kick")
+```
+
+See [chapter 5](05-events-and-modes.md).
+
 ### Let the learner drag a point to set a value
 
 Combine a **marker** with an **inverse**: `on drag as p { propose ... }`.
