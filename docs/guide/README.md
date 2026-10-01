@@ -1,6 +1,6 @@
 # Learn Prismal
 
-A guide to writing Prismal programs in the working syntax (D-028), from a first formula to a narrated lesson. New to Prismal? Start with [the tour](00-tour.md). Each chapter introduces a few forms, shows a complete program that uses them, and ends with exercises. After the last chapter, `10-reference.md` lists every form on one page.
+A guide to writing Prismal programs in the working syntax (D-028), from a first formula to a narrated lesson. New to simulations and mathematical programming? Read [Start here](00-start-here.md) first. New to Prismal only? Start with [the tour](00-tour.md). Each chapter introduces a few forms, shows a complete program that uses them, and ends with exercises. After the last chapter, `10-reference.md` lists every form on one page.
 
 - **Status:** living. Written 2026-09-30 against the prototype (`crates/`). The syntax is the working syntax: usable and implemented, not yet frozen.
 - **Checked:** every program in the guide is compiled and every case in it is run by `cargo test` (`crates/prismal-web/tests/guide.rs`). A program that fails, or an example error that is not reported as stated, fails the test suite.
@@ -9,6 +9,7 @@ A guide to writing Prismal programs in the working syntax (D-028), from a first 
 
 | Chapter | Introduces |
 |---|---|
+| [Start here](00-start-here.md) | the ideas before the code, in plain words: models, quantities, rates of change, simulation, events, tests, and a glossary |
 | [0. A tour](00-tour.md) | one program in four steps: a model, a test, a lab and a narrated lesson, with its video |
 | [1. A first program](01-first-program.md) | models, parameters, derived values, functions, a plot, a slider, a formula, a test case |
 | [2. Quantities and units](02-quantities-and-units.md) | dimensions, units, named types, ranges, how unit errors are reported |

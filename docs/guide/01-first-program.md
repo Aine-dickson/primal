@@ -2,6 +2,8 @@
 
 This chapter writes a complete program: a model of a wave `y(x) = A sin(k x)`, a presentation that plots it with sliders for `A` and `k`, and two test cases.
 
+In plain words: `sin` draws a smooth wave that goes up and down between -1 and 1. Multiplying by `A` (the **amplitude**) makes the wave taller or flatter. `k` (the **wave number**) says how tightly the wave is packed: a larger `k` gives more waves in the same width. The program lets the learner move both and watch the shape change. Readers new to these ideas may want to read [Start here](00-start-here.md) first.
+
 ## The model
 
 ```text
