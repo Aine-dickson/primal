@@ -110,7 +110,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 
 ## Next steps
 
-**Next session starts here:** (handover written 2026-10-01, after the plot-axes session, on branch `plot-axes`; merged into `main` if the owner did so.) Done this session: plot axes that follow the data (`follow: y`, `follow: (x, y)`), axis display units (`x_unit`, `y_unit`), learner zoom and pan of plots (D-070, `prismal-host/tests/plot_axes.rs`); solver rounding near 0 shown as 0 in point descriptions (`y = 0 m`, not `-3.74851e-10 m`); guide page `00-start-here.md` (ideas before code, a glossary, the bathtub program, checked by the guide test) and plain-language notes in chapter 1. Next, in order:
+**Next session starts here:** (handover written 2026-10-01, after the plot-axes session, branch `plot-axes`, merged into `main`.) Done this session: plot axes that follow the data (`follow: y`, `follow: (x, y)`), axis display units (`x_unit`, `y_unit`), learner zoom and pan of plots (D-070, `prismal-host/tests/plot_axes.rs`); solver rounding near 0 shown as 0 in point descriptions (`y = 0 m`, not `-3.74851e-10 m`); guide page `00-start-here.md` (ideas before code, a glossary, the bathtub program, checked by the guide test) and plain-language notes in chapter 1. Next, in order:
    1. **Drag mode `live`** (PK-10.9) and the interactive failure policy `pause` (RC-10.3).
    2. Smaller language items: `contribute` on discrete state, relation sets with one relation per pair, `create`/`connect` outside a collection's container; buttons whose event takes a payload.
    3. Plot follow-ups (D-070, "Not yet"): function graphs sampled over the range shown when panned; a sliding time window; pinch zoom on plots.
