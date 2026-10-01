@@ -2,6 +2,12 @@
 
 A model can state facts that must hold (constraints) and laws it expects to satisfy (equations). A program can state what a run must produce (cases with expectations). This chapter covers all three. Tests are how a program is shown to be right: a case with an independently computed expected value is a claim that anyone can rerun.
 
+> **In plain words.**
+> - A **constraint** is a rule that must always hold, like "the water level is never negative". Prismal checks it while the model runs, and the constraint says what happens when it breaks: refuse the change (`reject`), note it and go on (`report`), or end the run (`stop`).
+> - An **equation** here is a law the model is expected to obey, like "force equals mass times acceleration". It is shown to the learner and can be checked; it does not compute anything by itself.
+> - A **case** (`run ... { ... }`) is a test: run the model in a stated way and compare what comes out with values worked out separately. **Independently computed** means from a formula or by hand, not by copying what the program printed: a test that copies the program's own output can never fail, so it proves nothing.
+> - A **tolerance** (`within 1e-6 m`) is how close the result must be. `1e-6` is scientific notation for 0.000001.
+
 ## Constraints
 
 ```prismal

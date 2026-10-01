@@ -2,6 +2,12 @@
 
 A **lesson** is a presentation with a **timeline**: a sequence of scenes and beats that narrate, run the simulation, pause it, show and highlight things, and give the learner moments to explore. The timeline directs the simulation (play, pause, seek, change); the model never depends on it (D-009).
 
+> **In plain words.**
+> - A **timeline** is the script of a lesson, like the script of a short film. It is split into **scenes**, and each scene into **beats**: small steps such as "say this", "let the ball fall", "pause and highlight it".
+> - **Narration** is the text of the lesson, shown as captions and, when a voice is chosen, spoken.
+> - An **explore** beat hands control to the learner for a while: the lesson waits while they try things with the controls it offers.
+> - **Seek** jumps to another moment of the simulation, like scrubbing a video.
+
 ## Timeline structure
 
 ```prismal
