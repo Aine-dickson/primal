@@ -912,14 +912,22 @@ impl<'a> Printer<'a> {
                     number(scale.px),
                     if *y_up { "up" } else { "down" }
                 ),
-                ViewKind::Plot { x, y } => format!(
-                    "view {}: plot(x: [{}, {}], y: [{}, {}])",
-                    v.name,
-                    self.expr(&x[0]),
-                    self.expr(&x[1]),
-                    self.expr(&y[0]),
-                    self.expr(&y[1])
-                ),
+                ViewKind::Plot { x, y, follow, units } => {
+                    // `follow: y` or `follow: (x, y)`, and display units, after the ranges (D-070).
+                    let mut extra = String::new();
+                    match follow {
+                        [true, true] => extra += ", follow: (x, y)",
+                        [true, false] => extra += ", follow: x",
+                        [false, true] => extra += ", follow: y",
+                        [false, false] => {}
+                    }
+                    for (axis, u) in ["x", "y"].iter().zip(units) {
+                        if let Some(u) = u {
+                            extra += &format!(", {axis}_unit: {u}");
+                        }
+                    }
+                    format!("view {}: plot(x: [{}, {}], y: [{}, {}]{extra})", v.name, self.expr(&x[0]), self.expr(&x[1]), self.expr(&y[0]), self.expr(&y[1]))
+                }
                 ViewKind::Panel => format!("panel {}", v.name),
             };
             let mut block = self.reps_block(&v.representations, 1);

@@ -15,7 +15,7 @@ use prismal_ir::present::{Action as TAction, LearnerInput, Observation, Schedule
 use prismal_ir::Op;
 use prismal_kernel::{compile_expr, CModel};
 use prismal_present::data::Data;
-use crate::input::{dist, focus_order, hit, tolerance, Target, ViewKind, ViewState, Viewport, PLOT_MARGIN};
+use crate::input::{dist, focus_order, hit, tolerance, Map, Target, ViewKind, ViewState, Viewport, PLOT_MARGIN};
 use prismal_present::frame::{CKind, CRep, Frame, RepFrame, Shape, ViewCtx};
 use prismal_present::interact::{si_literal, Interactive, Key};
 use prismal_present::text::{fmt_binding, fmt_num, fmt_payload, fmt_value, print, symbol, unit_text};
@@ -72,13 +72,13 @@ enum Gesture {
     /// A press on a representation that can only be clicked: a release within `tol` pixels
     /// of `from` clicks it.
     Click { view: usize, rep: String, from: [f64; 2], tol: f64 },
-    /// A pan from pixel `from` of the framing `shown`, drawn at `scale` pixels per view
-    /// unit; `before` is the learner's framing to restore on cancel.
+    /// A pan from pixel `from` of the framing `shown`, drawn with `map` when it began;
+    /// `before` is the learner's framing to restore on cancel.
     /// `click` holds the tolerance while a release would still click the point pressed
     /// instead (D-060).
     /// `id` is the pointer's, and `at` where it is now, so that a second touch can make the
     /// pan a pinch.
-    Pan { view: usize, from: [f64; 2], shown: [f64; 4], scale: f64, before: Option<[f64; 4]>, click: Option<f64>, id: Option<u64>, at: [f64; 2] },
+    Pan { view: usize, from: [f64; 2], shown: [f64; 4], map: Map, before: Option<[f64; 4]>, click: Option<f64>, id: Option<u64>, at: [f64; 2] },
     /// Two touches zooming and moving a spatial view (HI-4.5): `p0` where they were when the
     /// second came down, `p` where they are, over the framing `shown` drawn at `scale`
     /// pixels per view unit; `before` is the learner's framing to restore on cancel.
@@ -218,10 +218,16 @@ impl Instance {
                         v["axes"] = json!(axes);
                         v["extent"] = json!(extent(frames.iter().flat_map(|f| f.views.iter().filter(|x| &x.id == id)).flat_map(|x| x.reps.iter()).map(|r| &r.shape)));
                     }
-                    ViewCtx::Plot { x, y, dims } => {
+                    ViewCtx::Plot { x, y, dims, follow, units } => {
                         v["x"] = json!([x.0, x.1]);
                         v["y"] = json!([y.0, y.1]);
-                        v["units"] = json!([unit_text(&dims.0), unit_text(&dims.1)]);
+                        v["follow"] = json!(follow);
+                        // Each axis in its display unit (D-070): its text, and the value of one
+                        // unit in coherent SI units, by which a renderer divides tick values.
+                        let shown = |u: &Option<prismal_ir::Unit>, d| u.as_ref().map(|u| (u.text.clone(), u.scale)).unwrap_or_else(|| (unit_text(d), 1.0));
+                        let (ux, uy) = (shown(&units[0], &dims.0), shown(&units[1], &dims.1));
+                        v["units"] = json!([ux.0, uy.0]);
+                        v["unit_scale"] = json!([ux.1, uy.1]);
                     }
                     ViewCtx::Panel => {}
                 }
@@ -648,9 +654,9 @@ impl Instance {
                 // D-060: on an empty point of a view that requests an event when clicked, a
                 // press that does not move past the tolerance clicks the point.
                 let click = if session && vf.click.is_some() { Some(tolerance(e.pointer)) } else { None };
-                match vp {
-                    Viewport::Spatial { shown, .. } if self.permits("pan") => {
-                        self.gesture = Some(Gesture::Pan { view: vi, from: p, shown, scale: map.scale(), before: self.views[vi].user, click, id: e.id, at: p });
+                match vp.shown() {
+                    Some(shown) if self.permits("pan") => {
+                        self.gesture = Some(Gesture::Pan { view: vi, from: p, shown, map, before: self.views[vi].user, click, id: e.id, at: p });
                         json!({ "handled": true, "action": "pan", "target": null })
                     }
                     _ => match click {
@@ -711,9 +717,11 @@ impl Instance {
                     }
                     json!({ "handled": true, "action": "click", "ok": true })
                 }
-                Some(Gesture::Pan { view, from, shown, scale, before, id, .. }) if view == vi => {
-                    self.gesture = Some(Gesture::Pan { view, from, shown, scale, before, click: None, id, at: p });
-                    self.views[vi].user = Some([shown[0] - (p[0] - from[0]) / scale, shown[1] - (p[1] - from[1]) / scale, shown[2], shown[3]]);
+                Some(Gesture::Pan { view, from, shown, map, before, id, .. }) if view == vi => {
+                    self.gesture = Some(Gesture::Pan { view, from, shown, map, before, click: None, id, at: p });
+                    // The view point under the press stays under the pointer.
+                    let (q0, q) = (map.to_view(from), map.to_view(p));
+                    self.views[vi].user = Some([shown[0] + q0[0] - q[0], shown[1] + q0[1] - q[1], shown[2], shown[3]]);
                     json!({ "handled": true, "action": "pan" })
                 }
                 Some(_) => unhandled(),
@@ -767,7 +775,8 @@ impl Instance {
         }
         let Some(frame) = self.current_frame(time) else { return unhandled() };
         let Some(vf) = frame.views.iter().find(|v| v.id == self.views[vi].id) else { return unhandled() };
-        let Some(vp @ Viewport::Spatial { shown, .. }) = self.views[vi].viewport(vf, self.mode() == "interactive") else { return unhandled() };
+        let Some(vp) = self.views[vi].viewport(vf, self.mode() == "interactive") else { return unhandled() };
+        let Some(shown) = vp.shown() else { return unhandled() };
         let q = vp.map(self.views[vi].size.unwrap_or(vp.natural_size())).to_view([x, y]);
         let k = (delta * 0.0015).exp();
         self.views[vi].user = Some([q[0] - (q[0] - shown[0]) * k, q[1] - (q[1] - shown[1]) * k, shown[2] * k, shown[3] * k]);
@@ -1013,7 +1022,10 @@ fn view_state(v: &Json) -> ViewState {
     let n = |k: &str, i: usize| v[k][i].as_f64().unwrap_or(0.0);
     let kind = match v["kind"].as_str() {
         Some("spatial") => return ViewState::spatial(id, name, [n("extent", 0), n("extent", 1), n("extent", 2), n("extent", 3)]),
-        Some("plot") => ViewKind::Plot { x: (n("x", 0), n("x", 1)), y: (n("y", 0), n("y", 1)) },
+        Some("plot") => {
+            let f = |i: usize| v["follow"][i].as_bool().unwrap_or(false);
+            ViewKind::Plot { x: (n("x", 0), n("x", 1)), y: (n("y", 0), n("y", 1)), follow: [f(0), f(1)] }
+        }
         _ => ViewKind::Panel,
     };
     ViewState { id: id.into(), name: name.into(), kind, user: None, size: None }

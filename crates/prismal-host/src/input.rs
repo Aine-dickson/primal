@@ -31,8 +31,8 @@ pub struct ViewState {
     pub id: String,
     pub name: String,
     pub kind: ViewKind,
-    /// The box the learner's zoom and pan left (spatial views; `None`: the view's own
-    /// framing).
+    /// The box the learner's zoom and pan left (`None`: the view's own framing). For a plot
+    /// it is in plot coordinates, `[x0, y0, width, height]` with `y` upwards.
     pub user: Option<[f64; 4]>,
     /// The size in pixels the host last said it draws the view at.
     pub size: Option<[f64; 2]>,
@@ -42,7 +42,8 @@ pub struct ViewState {
 pub enum ViewKind {
     /// `base` is the framing of the content over the run: its extent with room around it.
     Spatial { base: [f64; 4] },
-    Plot { x: (f64, f64), y: (f64, f64) },
+    /// `follow`: the axes whose range grows to keep what the view draws in view (D-070).
+    Plot { x: (f64, f64), y: (f64, f64), follow: [bool; 2] },
     Panel,
 }
 
@@ -63,7 +64,13 @@ impl ViewState {
                 let shown = self.user.unwrap_or(own);
                 Some(Viewport::Spatial { r#box: camera_box(*base, shown, vf.camera.as_ref()), shown, size: [own[2], own[3]] })
             }
-            ViewKind::Plot { x, y } => Some(Viewport::Plot { x: *x, y: *y }),
+            ViewKind::Plot { x, y, follow } => {
+                let (x, y) = if follow[0] || follow[1] { follow_data((*x, *y), *follow, &vf.reps) } else { (*x, *y) };
+                Some(match self.user {
+                    Some([bx, by, bw, bh]) => Viewport::Plot { x: (bx, bx + bw), y: (by, by + bh) },
+                    None => Viewport::Plot { x, y },
+                })
+            }
             ViewKind::Panel => None,
         }
     }
@@ -91,6 +98,14 @@ impl Viewport {
                 Map::Fit { b, s, off: [(size[0] - b[2] * s) / 2.0, (size[1] - b[3] * s) / 2.0] }
             }
             Viewport::Plot { x, y } => Map::Plot { x, y, size },
+        }
+    }
+
+    /// The framing zoom and pan start from, `[x, y, width, height]` in view coordinates.
+    pub fn shown(&self) -> Option<[f64; 4]> {
+        match *self {
+            Viewport::Spatial { shown, .. } => Some(shown),
+            Viewport::Plot { x, y } => Some([x.0, y.0, x.1 - x.0, y.1 - y.0]),
         }
     }
 
@@ -167,6 +182,38 @@ fn grow_to_fit(vb: [f64; 4], reps: &[RepFrame]) -> [f64; 4] {
         h = h.max(py + FIT_PAD - y);
     }
     [x, y, w, h]
+}
+
+/// A plot's ranges grown on the axes that follow the data (D-070) to hold every point, segment,
+/// polyline and polygon the view draws, with a twentieth of the span as room on the side it
+/// grew. The declared range is always kept: a curve that shrinks back leaves the axis where
+/// it was declared.
+fn follow_data((x, y): ((f64, f64), (f64, f64)), follow: [bool; 2], reps: &[RepFrame]) -> ((f64, f64), (f64, f64)) {
+    fn collect(reps: &[RepFrame], pts: &mut Vec<[f64; 2]>) {
+        for r in reps {
+            match &r.shape {
+                Shape::Point { at } => pts.push(*at),
+                Shape::Arrow { from, to } | Shape::Segment { from, to } => pts.extend([*from, *to]),
+                Shape::Polyline { points } | Shape::Polygon { points } => pts.extend(points.iter().copied()),
+                Shape::Group { members } => collect(members, pts),
+                _ => {}
+            }
+        }
+    }
+    let mut pts = vec![];
+    collect(reps, &mut pts);
+    let grow = |(lo, hi): (f64, f64), vals: &mut dyn Iterator<Item = f64>| {
+        let (mut a, mut b) = (lo, hi);
+        for v in vals.filter(|v| v.is_finite()) {
+            a = a.min(v);
+            b = b.max(v);
+        }
+        let room = (b - a) / 20.0;
+        (if a < lo { a - room } else { lo }, if b > hi { b + room } else { hi })
+    };
+    let x = if follow[0] { grow(x, &mut pts.iter().map(|p| p[0])) } else { x };
+    let y = if follow[1] { grow(y, &mut pts.iter().map(|p| p[1])) } else { y };
+    (x, y)
 }
 
 /// The box a timeline camera shows (D-042): from the centre of the base framing to the

@@ -294,16 +294,17 @@ function buildViews() {
     if (v.kind === 'spatial') {
       // The engine frames the view (D-047); each frame gives the box it shows.
       entry.svg = svg('svg', { role: 'group', 'aria-label': `${v.name}: spatial view` });
-      if (st.layout.permits.includes('zoom') || st.layout.permits.includes('pan')) {
-        const reset = el('button', { type: 'button', class: 'hint', text: 'Reset view' });
-        reset.addEventListener('click', () => { st.player.view_reset(v.id); refresh(); });
-        cap.append(reset);
-      }
       // A wide scene spans the row; a small one sits beside the other views.
       if (v.extent[2] - v.extent[0] + 80 > 480) fig.classList.add('wide');
     } else if (v.kind === 'plot') {
       entry.W = 560; entry.H = 360; entry.m = 44;
       entry.svg = svg('svg', { viewBox: `0 0 ${entry.W} ${entry.H}`, role: 'group', 'aria-label': `${v.name}: plot` });
+    }
+    // Plots zoom and pan like spatial views (D-070).
+    if (entry.svg && (st.layout.permits.includes('zoom') || st.layout.permits.includes('pan'))) {
+      const reset = el('button', { type: 'button', class: 'hint', text: 'Reset view' });
+      reset.addEventListener('click', () => { st.player.view_reset(v.id); refresh(); });
+      cap.append(reset);
     }
     if (entry.svg) {
       fig.append(entry.svg);
@@ -382,8 +383,13 @@ function drawSpatialChrome(v, g, reps, u) {
 }
 
 function drawPlotChrome(v, g) {
-  const m = plotMap(v);
-  const [x0, x1] = v.x, [y0, y1] = v.y;
+  const pm = plotMap(v);
+  // The ranges shown (the frame's box: followed data, zoom and pan) in each axis's display
+  // unit (D-070); ticks are placed in those units.
+  const [kx, ky] = v.unit_scale || [1, 1];
+  const [bx, by, bw, bh] = v.box || [v.x[0], v.y[0], v.x[1] - v.x[0], v.y[1] - v.y[0]];
+  const [x0, x1] = [bx / kx, (bx + bw) / kx], [y0, y1] = [by / ky, (by + bh) / ky];
+  const m = { to: ([x, y]) => pm.to([x * kx, y * ky]) };
   svg('rect', { class: 'frame', x: v.m, y: v.m, width: v.W - 2 * v.m, height: v.H - 2 * v.m }, g);
   // About one tick per 70 px across and 32 px down.
   const xs = niceStep((x1 - x0) / Math.max(2, (v.W - 2 * v.m) / 70));

@@ -380,3 +380,48 @@ run compare of Cannon2 with Compare {
 ```
 
 </details>
+
+## Plots that grow, zoom and pan
+
+A plot's ranges say what part of the curve is drawn. A curve that leaves them is cut off at the frame. Two things help when the curve does not stay where the author expected (D-070):
+
+- `follow: y` lets the `y` axis grow to hold everything the view draws; `follow: x` does the same for `x`, and `follow: (x, y)` for both. The declared range is where the axis starts and the least it shows: it grows, it never shrinks.
+- `permit learner { zoom; pan }` lets the learner scroll the wheel over a plot to zoom about the pointer and drag it to look beyond its ranges, as in a spatial view. `Reset view` returns to the author's framing.
+
+`x_unit` and `y_unit` choose the unit the axis is labelled in. The axis keeps its dimension: `y_unit: cm` on a length axis shows `5` where the value is `0.05 m`.
+
+```text
+model Spring {
+  param {
+    k:  Quantity<M/T^2> = 4 N/m      where k > 0 N/m
+    m:  Mass            = 1 kg       where m > 0 kg
+    x0: Length          = 0.1 m      in [0 m, 0.5 m]
+  }
+  state {
+    x: Length   = x0
+    v: Velocity = 0
+  }
+  flow {
+    der(x) = v
+    der(v) = -(k / m) * x
+  }
+}
+
+presentation SpringLab for Spring {
+  view position: plot(x: [0 s, 5 s], y: [-0.05 m, 0.05 m], follow: (x, y), y_unit: cm) {
+    series_plot(x every 0.02 s)
+  }
+  panel controls { slider(x0, range: [0 m, 0.5 m]) }
+  permit learner { zoom; pan }
+  observe { x2 = x at t0 + 2 s }
+}
+```
+
+The declared `y` range, -5 cm to 5 cm, is smaller than the swing of 10 cm: with `follow` the axis grows to about -11 cm to 11 cm as soon as the curve gets there, and the time axis grows past 5 s while the session plays on. Without `follow`, the curve would leave the frame and the learner could still zoom out or drag the plot to see it.
+
+```cases
+run swing of Spring with SpringLab {
+  until t0 + 2 s
+  expect { x2 == -0.0653643620863612 m within 1e-6 m }
+}
+```

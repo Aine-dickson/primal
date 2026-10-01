@@ -103,10 +103,11 @@ The first argument is a program file or a built-in example; the second names a p
 
 ## Learn Prismal
 
-Start with the tour, then follow the guide. Every program in these pages is compiled and tested with the rest of the repository, so they always work with the current language.
+New to simulations and mathematical programming? Read [Start here](docs/guide/00-start-here.md) first: it explains the ideas in plain words. Then take the tour and follow the guide. Every program in these pages is compiled and tested with the rest of the repository, so they always work with the current language.
 
 | Page | For |
 |---|---|
+| [Start here](docs/guide/00-start-here.md) | the ideas behind every program, in plain words, for readers new to simulation: quantities, rates of change, events, tests |
 | [A tour](docs/guide/00-tour.md) | one program in four steps: a model, a test, a lab, a narrated lesson and its video; ten minutes |
 | [The guide](docs/guide/README.md) | the language chapter by chapter: units, space, motion, events, tests, presentations, lessons, systems of objects |
 | [Recipes](docs/guide/12-recipes.md) | short answers to "how do I ...": graphs, time plots, dragging, many objects, exports, embedding |

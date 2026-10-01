@@ -453,7 +453,12 @@ fn spatial_chrome(out: &mut String, vl: &Json, reps: &[Json], bx: [f64; 4], u: f
 }
 
 fn plot_chrome(out: &mut String, vl: &Json, map: &Map, th: &Theme) {
-    let Map::Plot { x: (x0, x1), y: (y0, y1), w, h, m } = *map else { return };
+    let Map::Plot { x: (bx0, bx1), y: (by0, by1), w, h, m } = *map else { return };
+    // Ticks in each axis's display unit (D-070): `k` is one display unit in SI units.
+    let k: Vec<f64> = arr(&vl["unit_scale"]).iter().map(f).collect();
+    let (kx, ky) = if k.len() == 2 && k[0] > 0.0 && k[1] > 0.0 { (k[0], k[1]) } else { (1.0, 1.0) };
+    let (x0, x1, y0, y1) = (bx0 / kx, bx1 / kx, by0 / ky, by1 / ky);
+    let map = &Map::Plot { x: (x0, x1), y: (y0, y1), w, h, m };
     let _ = write!(
         out,
         "<rect class=\"frame\" x=\"{m}\" y=\"{m}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"{}\"/>",

@@ -123,10 +123,26 @@ pub struct View {
 pub enum ViewKind {
     /// A spatial view of one space (PK-7.2): `scale` maps a model length to view pixels.
     Spatial { space: Id, scale: Scale, y_up: bool },
-    /// A plot view with fixed axis ranges (PK-7.3).
-    Plot { x: [Expr; 2], y: [Expr; 2] },
+    /// A plot view (PK-7.3): the axis ranges, the axes whose range follows the data (`x`,
+    /// `y`; D-070) and each axis's display unit.
+    Plot {
+        x: [Expr; 2],
+        y: [Expr; 2],
+        #[serde(default, skip_serializing_if = "no_follow")]
+        follow: [bool; 2],
+        #[serde(default, skip_serializing_if = "no_units")]
+        units: [Option<String>; 2],
+    },
     /// A region without a coordinate system (controls, formulas).
     Panel,
+}
+
+fn no_follow(f: &[bool; 2]) -> bool {
+    !f[0] && !f[1]
+}
+
+fn no_units(u: &[Option<String>; 2]) -> bool {
+    u[0].is_none() && u[1].is_none()
 }
 
 /// A unit-aware encoding scale (PK-5.5): `quantity` maps to `px` view units.

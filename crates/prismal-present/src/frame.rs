@@ -279,8 +279,9 @@ pub struct Symbol {
 #[derive(Clone, Debug)]
 pub enum ViewCtx {
     Spatial { space: Id, px_per_m: f64, y_up: bool },
-    /// Ranges in coherent SI units, and the dimension of each axis (PK-7.3).
-    Plot { x: (f64, f64), y: (f64, f64), dims: (Dim, Dim) },
+    /// Ranges in coherent SI units, and the dimension of each axis (PK-7.3); the axes that
+    /// follow the data and each axis's display unit (D-070).
+    Plot { x: (f64, f64), y: (f64, f64), dims: (Dim, Dim), follow: [bool; 2], units: [Option<prismal_ir::Unit>; 2] },
     Panel,
 }
 
@@ -298,7 +299,7 @@ impl ViewCtx {
                 };
                 Ok(ViewCtx::Spatial { space: space.clone(), px_per_m: scale.px / q, y_up: *y_up })
             }
-            ViewKind::Plot { x, y } => {
+            ViewKind::Plot { x, y, follow, units } => {
                 let n = |e: &Expr| number(cm, e).map_err(|m| err("PK-E02", m));
                 let dim = |e: &Expr| match compile_expr(cm, e, None) {
                     Ok((_, Type::Quantity { dim })) => Ok(dim),
@@ -308,7 +309,16 @@ impl ViewCtx {
                 if dim(&x[1])? != dx || dim(&y[1])? != dy {
                     return Err(err("PK-E04", "both ends of a plot axis range have the same dimension (PK-7.3)".into()));
                 }
-                Ok(ViewCtx::Plot { x: (n(&x[0])?, n(&x[1])?), y: (n(&y[0])?, n(&y[1])?), dims: (dx, dy) })
+                let unit = |u: &Option<String>, d: &Dim| -> Result<Option<prismal_ir::Unit>, PDiag> {
+                    let Some(u) = u else { return Ok(None) };
+                    match prismal_ir::Unit::parse(u) {
+                        Ok(unit) if unit.dim == *d && unit.offset == 0.0 => Ok(Some(unit)),
+                        Ok(_) => Err(err("PK-E04", format!("the display unit `{u}` does not measure the axis's dimension (D-070)"))),
+                        Err(m) => Err(err("PK-E02", m)),
+                    }
+                };
+                let units = [unit(&units[0], &dx)?, unit(&units[1], &dy)?];
+                Ok(ViewCtx::Plot { x: (n(&x[0])?, n(&x[1])?), y: (n(&y[0])?, n(&y[1])?), dims: (dx, dy), follow: *follow, units })
             }
             ViewKind::Panel => Ok(ViewCtx::Panel),
         }
@@ -328,6 +338,22 @@ impl ViewCtx {
         match self {
             ViewCtx::Spatial { px_per_m, y_up, .. } => [x * px_per_m, if *y_up { -y * px_per_m } else { y * px_per_m }],
             _ => [x, y],
+        }
+    }
+
+    /// The coordinates of a position as text shows them. In a spatial view a coordinate that
+    /// lies within a millionth of a pixel of 0 is rounding left by the solver (a ball resting
+    /// on the ground at `y = -3.7e-10 m`) and is shown as 0; the view's scale decides, so a
+    /// model of atoms drawn at a fitting scale keeps its small lengths. In a plot view the same
+    /// holds for a billionth of the axis span. Elsewhere `components`.
+    pub fn shown(&self, c: &[f64]) -> Vec<f64> {
+        match self {
+            ViewCtx::Spatial { px_per_m, .. } => c.iter().map(|&x| if (x * px_per_m).abs() < 1e-6 { 0.0 } else { x }).collect(),
+            ViewCtx::Plot { x, y, .. } => {
+                let spans = [(x.1 - x.0).abs(), (y.1 - y.0).abs()];
+                c.iter().enumerate().map(|(i, &v)| if i < 2 && v.abs() < 1e-9 * spans[i] { 0.0 } else { v }).collect()
+            }
+            ViewCtx::Panel => crate::text::components(c),
         }
     }
 
@@ -900,7 +926,8 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             Ok(v) => {
                 let c = coords(&v);
                 let unit = if matches!(ctx, ViewCtx::Spatial { .. }) { " m" } else { "" };
-                (Shape::Point { at: ctx.to_view(&c) }, format!("{label} at x = {}{unit}, y = {}{unit}", fmt_num(c[0]), fmt_num(c[1])))
+                let s = ctx.shown(&c);
+                (Shape::Point { at: ctx.to_view(&c) }, format!("{label} at x = {}{unit}, y = {}{unit}", fmt_num(s[0]), fmt_num(s[1])))
             }
             Err(s) => status(s),
         },
@@ -1059,7 +1086,8 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                     let closed = r.rep.kind != "arc";
                     let shape = Shape::Ellipse { center: cv, radii: [u[0].hypot(u[1]), v[0].hypot(v[1])], rotation, start: sense * t1, sweep: sense * (t2 - t1), closed };
                     let name = r.rep.name.as_deref().map(|n| format!(" {n}")).unwrap_or_default();
-                    let at = format!("x = {} m, y = {} m", fmt_num(c[0]), fmt_num(c[1]));
+                    let s = ctx.shown(&c);
+                    let at = format!("x = {} m, y = {} m", fmt_num(s[0]), fmt_num(s[1]));
                     let deg = |x: f64| fmt_num(x.to_degrees());
                     let text = match r.rep.kind.as_str() {
                         "circle" => format!("circle{name} around {at}, radius {} m", fmt_num(a)),
@@ -1274,4 +1302,21 @@ pub fn rep_view(p: &prismal_ir::present::Presentation, id: &str) -> Option<Optio
         return Some(Some(v.id.clone()));
     }
     p.timeline.iter().flat_map(|t| t.scenes.iter().flat_map(|s| &s.beats)).find_map(|b| in_actions(&b.actions, id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rounding_near_zero_is_shown_as_zero() {
+        let ground = ViewCtx::Spatial { space: "S".into(), px_per_m: 50.0, y_up: true };
+        assert_eq!(ground.shown(&[0.0, -3.74851e-10]), vec![0.0, 0.0]);
+        assert_eq!(ground.shown(&[2.0, 0.5]), vec![2.0, 0.5]);
+        // Atoms drawn at 1e11 px/m keep a length of 1e-10 m.
+        let atoms = ViewCtx::Spatial { space: "S".into(), px_per_m: 1e11, y_up: true };
+        assert_eq!(atoms.shown(&[1e-10, 0.0]), vec![1e-10, 0.0]);
+        let plot = ViewCtx::Plot { x: (0.0, 10.0), y: (-1.0, 1.0), dims: (Dim::default(), Dim::default()), follow: [false; 2], units: [None, None] };
+        assert_eq!(plot.shown(&[1e-12, 0.25]), vec![0.0, 0.25]);
+    }
 }
