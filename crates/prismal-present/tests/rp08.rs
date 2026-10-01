@@ -28,7 +28,7 @@ fn script(extra: &[Input]) -> Vec<Input> {
     v
 }
 
-fn lesson<'a>(prog: &'a Program, medium: Medium, inputs: Vec<Input>) -> Playback {
+fn lesson(prog: &Program, medium: Medium, inputs: Vec<Input>) -> Playback {
     let pb = play(prog, "ProjectileLesson", Config::until(LESSON_HORIZON), medium, inputs).unwrap();
     assert!(pb.diagnostics.is_empty(), "{:?}", pb.diagnostics);
     pb

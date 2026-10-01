@@ -11,7 +11,7 @@ use prismal_present::timeline::ease;
 use prismal_present::Program;
 use prismal_runtime::Config;
 
-fn lab<'a>(prog: &'a Program, name: &str) -> Interactive {
+fn lab(prog: &Program, name: &str) -> Interactive {
     Interactive::new(prog, name, Config::until(60.0)).unwrap_or_else(|d| panic!("{d:?}"))
 }
 
@@ -249,8 +249,8 @@ fn animation_frames() {
     use prismal_present::timeline::{play, Medium};
     let prog = program(DROP);
     let pb = play(&prog, "DropMovie", Config::until(10.0), Medium::Interactive, vec![]).unwrap();
-    let (g, h) = (9.81, 10.0);
-    let fall = (2.0 * h / g as f64).sqrt();
+    let (g, h): (f64, f64) = (9.81, 10.0);
+    let fall = (2.0 * h / g).sqrt();
     let camera = |p: f64| pb.frame(p, 0.1).views.iter().find(|v| v.id.ends_with("scene")).unwrap().camera.clone();
     let ground = |p: f64| pb.frame(p, 0.1).reps().find(|r| r.kind == "polyline").cloned();
 

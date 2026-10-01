@@ -38,7 +38,7 @@ fn rp06_interventions_drag_undo() {
     assert_eq!(valid, vec![true, true, true, false, false], "RP-06.E4 previews");
     assert_eq!(s.log_len(), 1, "RP-06.E4 log unchanged");
     // E5: release commits the last valid proposal.
-    let last_valid = proposals.iter().zip(valid.iter()).filter(|(_, ok)| **ok).last().unwrap().0;
+    let last_valid = proposals.iter().zip(valid.iter()).rfind(|(_, ok)| **ok).unwrap().0;
     s.commit(0.0, set_a(*last_valid)).unwrap();
     assert_eq!((s.value(&a).num(), s.value(&f2).num(), s.log_len()), (4.0, 16.0, 2), "RP-06.E5");
     // E6: two keyboard steps of 0.1.

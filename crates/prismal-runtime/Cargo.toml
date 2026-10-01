@@ -12,3 +12,6 @@ prismal-kernel = { path = "../prismal-kernel" }
 [dev-dependencies]
 prismal-syntax = { path = "../prismal-syntax" }
 serde_json.workspace = true
+
+[lints]
+workspace = true

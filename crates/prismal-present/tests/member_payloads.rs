@@ -202,7 +202,7 @@ fn elaborated_payloads() {
     assert!(json.contains("\"pick\":{\"payload\":\"Table.event.remove\"}"), "{json}");
     assert!(json.contains("Table.part.balls.alive@balls[4]"), "{json}");
     // `destroy b` destroys the member whose number is the payload, one conditional per member.
-    assert_eq!(remove.handler.iter().filter(|o| matches!(o, prismal_ir::Op::If { .. })).count() >= 4, true);
+    assert!(remove.handler.iter().filter(|o| matches!(o, prismal_ir::Op::If { .. })).count() >= 4);
 }
 
 #[test]

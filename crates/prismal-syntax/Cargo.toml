@@ -9,3 +9,6 @@ license.workspace = true
 prismal-ir = { path = "../prismal-ir" }
 prismal-kernel = { path = "../prismal-kernel" }
 serde_json.workspace = true
+
+[lints]
+workspace = true

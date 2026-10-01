@@ -164,7 +164,7 @@ fn view_box(svg: &str) -> Vec<f64> {
 /// fades out.
 #[test]
 fn animation_sequence() {
-    let (mut inst, layout) = open("g8-freefall", "DropMovie");
+    let (inst, layout) = open("g8-freefall", "DropMovie");
     let end = layout["lesson"]["end"].as_f64().unwrap();
     let opts = Options::default();
     // Every tenth of a second, and the last instant.

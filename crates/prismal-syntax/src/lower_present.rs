@@ -321,6 +321,7 @@ impl PresCx<'_, '_> {
         Observation { id, name: o.name.text.clone(), source, schedule }
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn actions(&mut self, acts: &[ast::Action], beat: &str, counts: &mut HashMap<String, usize>, span: Span) -> Vec<Action> {
         let mut out = vec![];
         for a in acts {

@@ -716,7 +716,7 @@ impl<'a> Parser<'a> {
     /// `(v)` or `(v, w)` right after an event name in `emit` and `request`: the payload it
     /// supplies, several as one tuple (D-050, D-059).
     fn payload_args(&mut self) -> P<Option<Expr>> {
-        if !(self.is_punct("(") && !self.tok().space_before) {
+        if !self.is_punct("(") || self.tok().space_before {
             return Ok(None);
         }
         let start = self.span();
@@ -865,7 +865,7 @@ impl<'a> Parser<'a> {
         loop {
             let name = match self.peek().clone() {
                 Tok::Ident(s) => Name { text: s, span: self.bump().span },
-                Tok::Num(n) if n == 1.0 => Name { text: "1".into(), span: self.bump().span },
+                Tok::Num(1.0) => Name { text: "1".into(), span: self.bump().span },
                 _ => return Err(self.unexpected("a dimension")),
             };
             let (mut num, mut den) = (1, 1);
