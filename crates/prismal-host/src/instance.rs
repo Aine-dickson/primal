@@ -262,7 +262,16 @@ impl Instance {
     /// instant shown, the run's span, its diagnostics and the number of interventions.
     fn session_info(&self, i: &Interactive) -> Json {
         let run = &i.session.current;
+        // An interactive run's failure policy is `pause` (RC-10.3, RC-10.4): the run holds
+        // at its last committed state with the diagnostic, until an intervention changes it.
+        let (status, failure) = match &run.status {
+            prismal_runtime::RunStatus::Completed => ("running", Json::Null),
+            prismal_runtime::RunStatus::Stopped(d) => ("paused", json!({ "message": d.message, "category": format!("{:?}", d.category).to_lowercase(), "t": d.t })),
+            prismal_runtime::RunStatus::NotStarted(d) => ("failed", json!({ "message": d.message, "category": format!("{:?}", d.category).to_lowercase(), "t": d.t })),
+        };
         json!({
+            "status": status,
+            "failure": failure,
             "dynamic": !i.cm.is_static,
             "t": i.t,
             "t0": run.config.t0,
@@ -533,7 +542,12 @@ impl Instance {
 
     pub fn pointer_down(&mut self, rep: &str, part: Option<&str>) -> Json {
         match self.interactive() {
-            Ok(i) => Self::outcome(i.pointer_down(rep, part)),
+            Ok(i) => {
+                let mut out = Self::outcome(i.pointer_down(rep, part));
+                // Drag mode `live` keeps the clock running (PK-10.9, D-071).
+                out["live"] = json!(i.drag_live());
+                out
+            }
             Err(e) => json!({ "ok": false, "message": e }),
         }
     }

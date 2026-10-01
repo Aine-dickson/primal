@@ -85,6 +85,7 @@ arrow(u, from: A)  { on drag head as h { propose u = h - A } }
 - `on drag as p` gives the drag's position as `p`: a `Point` in a spatial view, a pair `(p.x, p.y)` in a plot view, in the axes' dimensions.
 - `propose x = ...` says which binding the gesture changes and how. The target must be something the learner may change.
 - Proposals go through the model's checks. While dragging, an invalid proposal (outside a range, violating a `reject` constraint) is shown as invalid with the reason; releasing commits the last valid one. Each commit is one intervention, which undo removes.
+- While the learner drags, a running model is held at the instant shown and goes on after the release (drag mode `hold`). `on drag live as p` keeps it running instead, so the learner can steer it (see Steering a running model, below).
 
 What the learner may change: **parameters**, by default; **state**, only when the model declares it `intervenable` (`state { x: Length = 0 m intervenable }`); never constants, derived bindings or inputs (D-023). A control on anything else is rejected when the presentation is checked (PK-E03).
 
@@ -429,3 +430,54 @@ run swing of Spring with SpringLab {
   expect { x2 == -0.0653643620863612 m within 1e-6 m }
 }
 ```
+
+## Steering a running model
+
+**Goal.** The learner grabs a moving puck and steers it while time keeps running, instead of pausing it to place it.
+**How it is built.** The puck's position is `state` marked `intervenable` (the learner may change it); its marker has `on drag live as p { propose pos = p }`.
+
+By default a drag holds the run at the instant shown, and the run goes on from the new value after the release: good for placing something carefully. With `live`, the run keeps going during the drag. At each instant the clock passes, the pointer's position is committed as its own intervention, so the puck follows the pointer, and keeping the pointer still holds the puck still. After the release, the model takes over again from the last position.
+
+```text
+space Plane = euclidean(2)
+
+model Puck in Plane {
+  state {
+    pos: Point            = origin                  intervenable
+    vel: Vector<Velocity> = (1 m/s, 0.5 m/s)
+  }
+  flow { der(pos) = vel }
+}
+
+presentation Rink for Puck {
+  view ice: spatial(Plane, scale: 1 m -> 40 px, y: up) {
+    trace(pos every 0.05 s) as path
+    marker(pos) as puck { on drag live as p { propose pos = p } }
+  }
+  permit learner { timeline_controls }
+  observe { at2 = pos at t0 + 2 s }
+}
+```
+
+```cases
+run drift of Puck with Rink {
+  until t0 + 3 s
+  expect { at2 == origin + (2 m, 1 m) within 1e-9 m }
+}
+```
+
+## When a run fails in a lab
+
+A run can fail: a `constraint` with `policy stop` is broken, an event cascade does not end, a value becomes undefined. A test then stops and reports it. A lab **pauses** instead (RC-10.3): the run holds at the last valid state, just before the failure, and the player says what failed and when. The learner can look at it, then change something at that instant (a slider, a drag, a button) and the run continues from there with the change, or press Reset.
+
+```prismal
+model Rise {
+  param { limit: Real = 2 in [1, 10] }
+  state { x: Real = 0 }
+  flow { der(x) = 1 / 1 s }
+  constraint below: x <= limit policy stop
+}
+```
+
+In a lab of `Rise` with a slider for `limit`, the run pauses at 2 s with "constraint `below` violated". Raising `limit` to 10 at that instant lets it go on to 10 s.
+

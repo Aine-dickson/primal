@@ -856,7 +856,7 @@ impl<'a> Printer<'a> {
             let _ = write!(s, " {{ {c} }}");
         }
         if let Some(inv) = &r.inverse {
-            let part = inv.part.as_ref().map(|p| format!(" {p}")).unwrap_or_default();
+            let part = inv.part.as_ref().map(|p| format!(" {p}")).unwrap_or_default() + if inv.live { " live" } else { "" };
             let bind = if inv.part.as_deref() == Some("head") { "h" } else { "p" };
             let props: Vec<String> =
                 inv.proposals.iter().map(|pr| format!("propose {} = {}", self.target(&Target { binding: pr.target.clone(), component: None, member: pr.member.clone() }), self.expr_p(&pr.value, &[bind.to_string()]))).collect();

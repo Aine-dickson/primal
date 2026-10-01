@@ -1222,6 +1222,7 @@ impl<'a> PCx<'a, '_> {
             inverse: r.inverse.as_ref().map(|inv| Inverse {
                 gesture: inv.gesture.clone(),
                 part: inv.part.clone(),
+                live: inv.live,
                 proposals: inv.proposals.iter().map(|p| crate::present::Proposal { target: self.proposed(s, p), value: self.e(s, &p.value), member: None }).collect(),
             }),
             members: self.reps(s, &r.members),

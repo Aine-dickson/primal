@@ -53,6 +53,11 @@ struct Drag {
     groups: Vec<CRep>,
     previews: Vec<Preview>,
     last_valid: Option<(Action, Run)>,
+    /// Drag mode `live` (PK-10.9, D-071): the last pointer position, to propose again as
+    /// the clock advances, and how many proposals were committed during the drag.
+    live: bool,
+    last_p: Option<[f64; 2]>,
+    committed: usize,
 }
 
 /// A literal of a value in coherent SI units, typed for `ty` (bare for dimensionless).
@@ -131,8 +136,33 @@ impl Interactive {
     /// Makes `t` the instant on display (`seek`, and `play` step by step), within the run.
     /// Returns the instant shown. Never changes the trajectory (RC-12.2).
     pub fn seek(&mut self, t: f64) -> f64 {
+        // A live drag steers while the clock runs (PK-10.9, D-071): the proposal pending at
+        // the instant left is committed there, and the pointer proposes again at the new one.
+        if self.drag.as_ref().is_some_and(|d| d.live) && t > self.t {
+            self.commit_live();
+            self.t = t.clamp(self.cfg.t0, self.end_time());
+            if let Some(p) = self.drag.as_ref().and_then(|d| d.last_p) {
+                self.pointer_move(p);
+            }
+            return self.t;
+        }
         self.t = t.clamp(self.cfg.t0, self.end_time());
         self.t
+    }
+
+    /// Commits a live drag's pending proposal at the instant shown, as its own intervention.
+    fn commit_live(&mut self) {
+        let Some((action, _)) = self.drag.as_mut().and_then(|d| d.last_valid.take()) else { return };
+        if self.commit(action).is_ok() {
+            if let Some(d) = self.drag.as_mut() {
+                d.committed += 1;
+            }
+        }
+    }
+
+    /// Whether a drag in progress is `live`.
+    pub fn drag_live(&self) -> bool {
+        self.drag.as_ref().is_some_and(|d| d.live)
     }
 
     /// A new run with the same configuration and an empty log, shown at `t0` (RC section 12).
@@ -365,14 +395,17 @@ impl Interactive {
         if !r.shown(run, &run.state_at(self.t), self.t) {
             return self.report(Why::Refused, format!("`{rep}` is not shown now: its member is not alive"));
         }
-        self.drag = Some(Drag { rep: r.rep.id.clone(), ctx, crep: r, groups, previews: vec![], last_valid: None });
+        let live = inv.live;
+        self.drag = Some(Drag { rep: r.rep.id.clone(), ctx, crep: r, groups, previews: vec![], last_valid: None, live, last_p: None, committed: 0 });
         Ok(())
     }
 
     /// Moves the pointer during a drag: the inverse proposes values, which are validated and
     /// previewed but not committed (PK-10.6, PK-10.7). Returns whether the proposal is valid.
     pub fn pointer_move(&mut self, p: [f64; 2]) -> bool {
-        let Some(drag) = &self.drag else { return false };
+        let Some(drag) = self.drag.as_mut() else { return false };
+        drag.last_p = Some(p);
+        let drag = self.drag.as_ref().unwrap();
         let inv = drag.crep.rep.inverse.as_ref().unwrap();
         // A member of a group is dragged in the group's frame, where it is written (D-043).
         let gesture = if drag.groups.is_empty() {
@@ -421,7 +454,7 @@ impl Interactive {
         self.last_previews = drag.previews;
         match drag.last_valid {
             Some((action, _)) => self.commit(action).map(|_| true),
-            None => Ok(false),
+            None => Ok(drag.committed > 0),
         }
     }
 

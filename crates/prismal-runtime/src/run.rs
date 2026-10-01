@@ -613,6 +613,44 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// Locates, by bisection to the time tolerance, the first instant of `step` whose state
+    /// breaks a constraint; keeps the step up to the last instant found valid, commits that
+    /// state, and returns the failure at the first instant found broken (RC-10.1, RC-10.3).
+    fn fail_in_step(&mut self, mut step: Step, base: usize, first: RunDiag) -> RunDiag {
+        let state = |me: &Self, t: f64| -> Option<Vec<Value>> {
+            let mut y = vec![0.0; me.cm.n_y()];
+            step.eval(t, &mut y);
+            let mut vals = me.vals.clone();
+            me.cm.load_y(&mut vals, &y);
+            me.cm.update_derived(&mut vals, t, me.cfg.t0).ok()?;
+            Some(vals)
+        };
+        let (mut a, mut b, mut fail) = (step.t0, step.t1, first);
+        while b - a > self.cfg.eps_t() {
+            let m = 0.5 * (a + b);
+            match state(self, m).map(|v| self.check_constraints(&v, false)) {
+                Some(Ok(_)) => a = m,
+                Some(Err(d)) => {
+                    b = m;
+                    fail = d;
+                }
+                None => b = m,
+            }
+        }
+        if a > step.t0 {
+            if let Some(v) = state(self, a) {
+                step.t1 = a;
+                self.run.segments.push(Segment { step, base });
+                self.t = a;
+                self.n = 0;
+                self.vals = v;
+                self.commit();
+            }
+        }
+        fail.t = b;
+        fail
+    }
+
     fn after_step_checks(&mut self) -> Result<(), RunDiag> {
         let reports = self.check_constraints(&self.vals.clone(), false)?;
         self.run.diagnostics.extend(reports);
@@ -769,11 +807,18 @@ impl<'a> Engine<'a> {
                 h = None;
                 continue;
             }
+            // RC-10.1: a step whose end breaks a `reject` or `stop` constraint is not taken
+            // whole. The run ends at the last state found valid inside it.
+            let mut v1 = self.vals.clone();
+            cm.load_y(&mut v1, &y1);
+            cm.update_derived(&mut v1, t1, self.cfg.t0).map_err(|s| self.diag(Category::Model, s.cause, None))?;
+            if let Err(d) = self.check_constraints(&v1, false) {
+                return Err(self.fail_in_step(step, base, d));
+            }
             self.run.segments.push(Segment { step, base });
             self.t = t1;
             self.n = 0;
-            cm.load_y(&mut self.vals, &y1);
-            cm.update_derived(&mut self.vals, self.t, self.cfg.t0).map_err(|s| self.diag(Category::Model, s.cause, None))?;
+            self.vals = v1;
             self.refs = new_refs;
             self.after_step_checks()?;
             // RC-6.7, RC-7.9: a step never crosses a time event; it lands on it.

@@ -173,7 +173,10 @@ impl PresCx<'_, '_> {
                     Proposal { target: target.binding, value: self.cx.expr(v, &locals), member: target.member }
                 })
                 .collect();
-            Inverse { gesture: i.gesture.text.clone(), part: i.part.as_ref().map(|p| p.text.clone()), proposals }
+            if i.live && i.gesture.text != "drag" {
+                self.err("SX-E06", "only a drag can be `live`", i.gesture.span);
+            }
+            Inverse { gesture: i.gesture.text.clone(), part: i.part.as_ref().map(|p| p.text.clone()), proposals, live: i.live }
         });
         // Members are numbered within their group, which is their container (D-043).
         let mut inner = HashMap::new();

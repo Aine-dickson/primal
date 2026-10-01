@@ -120,6 +120,19 @@ marker(A) as a { on drag as p { propose A = p } }
 
 `A` must be a parameter (or state marked `intervenable`). See [chapter 3](03-space-and-vectors.md).
 
+### Let the learner steer something while it moves
+
+Combine **intervenable** state with a **live** drag.
+
+```prismal
+// model / state
+pos: Point = origin   intervenable
+// presentation / view (spatial)
+marker(pos) as puck { on drag live as p { propose pos = p } }
+```
+
+Without `live`, the run holds while the learner drags. See [chapter 7](07-presentations.md), Steering a running model.
+
 ### Model many similar objects
 
 Combine an **object** type, a **collection** in `parts`, and a flow **for each member**.

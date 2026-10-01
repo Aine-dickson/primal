@@ -1436,7 +1436,7 @@ impl<'a> Parser<'a> {
                 p.expect_word("request")?;
                 let event = p.name("an event name")?;
                 let payload = p.payload_args()?;
-                return Ok(vec![Err(Interaction { gesture, part: None, bind, proposals: vec![], request: Some((event, payload)), span: p.since(start) })]);
+                return Ok(vec![Err(Interaction { gesture, part: None, live: false, bind, proposals: vec![], request: Some((event, payload)), span: p.since(start) })]);
             }
             Ok(p.rep_item()?.into_iter().map(Ok).collect())
         })?;
@@ -1498,9 +1498,14 @@ impl<'a> Parser<'a> {
             let event = self.name("an event name")?;
             let payload = self.payload_args()?;
             let bind = gesture.clone();
-            return Ok(Interaction { gesture, part: None, bind, proposals: vec![], request: Some((event, payload)), span: self.since(start) });
+            return Ok(Interaction { gesture, part: None, live: false, bind, proposals: vec![], request: Some((event, payload)), span: self.since(start) });
         }
-        let part = if !self.is_word("as") { Some(self.name("a part")?) } else { None };
+        let part = if !self.is_word("as") && !self.is_word("live") { Some(self.name("a part")?) } else { None };
+        // `on drag [part] live as p`: commits while the run advances (D-071).
+        let live = self.is_word("live");
+        if live {
+            self.bump();
+        }
         self.expect_word("as")?;
         let bind = self.name("a name for the gesture value")?;
         let proposals = self.block(|p| {
@@ -1509,7 +1514,7 @@ impl<'a> Parser<'a> {
             p.expect_punct("=")?;
             Ok(vec![(n, p.expr()?)])
         })?;
-        Ok(Interaction { gesture, part, bind, proposals, request: None, span: self.since(start) })
+        Ok(Interaction { gesture, part, live, bind, proposals, request: None, span: self.since(start) })
     }
 
     fn scene(&mut self) -> P<SceneDecl> {

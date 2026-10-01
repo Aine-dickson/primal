@@ -300,6 +300,7 @@ The explanation timeline is a peer of the model (D-009): it observes the model a
 - **PK-10.7** Preview shows the effect of the proposed value on derived bindings, computed from the proposed state without committing it. Preview state is presentation state.
 - **PK-10.8** On release, the last valid proposed value is committed as one intervention (RC-11.1). On cancel, nothing is committed. Only commits are logged (RC-11.5).
 - **PK-10.9** Default drag mode for a running simulation is `hold`: the lesson or exploration run pauses at the current instant when the drag begins, and resumes after the commit. A presentation MAY choose `live` mode, where each proposed value is committed as a separate intervention while the run advances (for steering). `live` commits are logged individually.
+- **PK-10.9a** A representation chooses `live` in its inverse: `on drag live as p { ... }`. While the pointer is held, the proposal pending at the instant shown is committed when the clock moves on, and the last pointer position is proposed again at the new instant; moves at one instant replace each other (D-071).
 
 ### 10.4 Undo and redo
 
