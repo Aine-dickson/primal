@@ -2,6 +2,12 @@
 
 Flows describe smooth change. **Events** describe sudden change: a ball bounces, a pump switches off, a counter ticks. An event has a **trigger** (when it happens) and a **handler** (what it does). **Discrete state** holds values that change only at events, such as a mode (`pumping`) or a count.
 
+> **In plain words.**
+> - An **event** is a moment when something happens all at once: a switch flips, a ball hits the floor.
+> - Its **trigger** says when: at a set time, or when a value **crosses** a threshold (goes from below it to above it, or back).
+> - Its **handler** says what changes at that moment, as a list of **operations** such as `set pumping = false`.
+> - A **mode** is a value that says which way the system currently behaves: the pump on or off, a ball flying or resting.
+
 ## A pumped tank
 
 **Goal.** A tank that a pump keeps between two levels: the learner sees the level rise and fall in a zigzag and counts the times it was full.
@@ -39,7 +45,7 @@ model Tank {
 - `discrete { pumping: Boolean = true }` is **discrete state**: constant between events, changed only by handlers. A Boolean discrete variable is a **mode**; flows can depend on it with `if ... then ... else`.
 - `event full on rising(level - high) { ... }`: the trigger `rising(g)` happens when `g` crosses zero upward, here when `level` rises through `high`. `falling(g)` is a downward crossing, `crossing(g)` either way. The runtime locates the crossing instant precisely, not at the next step.
 - The handler `{ set pumping = false }` is a list of **operations**. `set` replaces a value. All operations of a handler read the values from before the event, and commit together.
-- `event alarm on full` is triggered by another event: it happens right after `full`, at the same time, in the next **microstep** (D-041). A handler can also signal an event explicitly with `emit E`. Events that cause events form a cascade at one instant; the runtime limits its length.
+- `event alarm on full` is triggered by another event: it happens right after `full`, at the same time, in the next **microstep** (D-041). A microstep is a step in the order of things that happen at one instant: the clock does not move, but `alarm` still comes after `full`. A handler can also signal an event explicitly with `emit E`. Events that cause events form a cascade at one instant; the runtime limits its length.
 - A continuous guard is always a crossing. `level >= high` would be a level condition, which cannot trigger an event by itself (D-004): a level condition may only enable a trigger, as in `event full on rising(level - high) if pumping { ... }`.
 
 With the default values the level rises at `0.01 m/s` from `0.2 m`, reaches `1 m` at 80 s, falls at `0.01 m/s` to `0.5 m` at 130 s, rises again to `1 m` at 180 s, and so on.
@@ -130,13 +136,13 @@ run two_seconds of Metronome with MetronomeChecks {
 
 ## Repeating events and Zeno behavior
 
-An event whose handler changes what its own trigger depends on can happen again and again. A bouncing ball whose bounces lose energy bounces infinitely often in a finite time (a **Zeno** behavior). Such an event must say what happens at the limit:
+An event whose handler changes what its own trigger depends on can happen again and again. A bouncing ball whose bounces lose energy bounces infinitely often in a finite time (a **Zeno** behavior, after the old puzzle of a runner who must first cover half the distance, then half of the rest, and so on forever). Each bounce is shorter than the last, so infinitely many of them fit before the ball would come to rest, and a simulation that tried to compute each one would never get past that moment. Such an event must say what happens at the limit:
 
 ```text
 model Ball {
   param {
     g: Acceleration = 9.81 m/s^2
-    e: Real = 0.8  in [0, 1)            // restitution
+    e: Real = 0.8  in [0, 1)            // restitution: the share of speed a bounce keeps
   }
   state {
     y: Length   = 1 m
@@ -193,7 +199,7 @@ RP-03 in the reference programs is the complete bouncing ball, with its expected
 
 ## Modes with more than two values
 
-A Boolean mode has two values. When a system has more, declare an **enumeration**: a type whose values are named cases (MK-2.2, D-049).
+A Boolean mode has two values. When a system has more, declare an **enumeration**: a type whose values are a short list of names you choose, such as `rising`, `top`, `falling` (MK-2.2, D-049).
 
 ```text
 model Toss {
@@ -307,7 +313,7 @@ model Tally {
 
 ## Events that carry values, and values from outside
 
-An event can carry a value, its **payload** (MK-15.1, D-050). And a model can receive values from its environment while it runs: a sensor, a game controller, a host application. These are **inputs** (RC-11.6, D-051).
+An event can carry a value, its **payload** (MK-15.1, D-050): a kick carries how hard it is, a click carries where it was. And a model can receive values from its environment while it runs: a sensor, a game controller, a host application. These are **inputs** (RC-11.6, D-051).
 
 ```text
 model Cart {

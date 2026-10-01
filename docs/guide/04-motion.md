@@ -2,6 +2,11 @@
 
 So far every value was fixed or computed from fixed values. This chapter adds **state**: values that evolve in time according to **flows**, which say how fast each state variable changes. The runtime integrates the flows with a numerical solver.
 
+> **In plain words.**
+> - **State** is what changes by itself; a **flow** says how fast it changes. [Start here](00-start-here.md) explains both with a draining bathtub.
+> - **Integrating** a flow means adding up its many small changes to find where the value has got to. The part of Prismal that does it, step by step, is the **solver**.
+> - The example is an **oscillator**: a mass on a spring that swings back and forth around its resting place (its **equilibrium**). **Damping** is the friction that makes the swings smaller each time. The spring's **stiffness** `k` says how hard it pulls back per metre stretched.
+
 **Goal of this chapter's program.** A mass on a spring swings back and forth while friction slowly stops it; the learner changes the stiffness and friction and watches the position and energy over time.
 **How it is built.** What moves is `state` (`x`, `v`); how fast it moves is `flow` (`der(x) = v`), with each force as a contribution (`der(v) += ...`) in a named `process`. Over time is shown with `series_plot(... every ...)` in a `plot` view whose `x` axis is a time range. Tests compare `observe`d values with the formula for a damped oscillator.
 
@@ -43,6 +48,8 @@ Time is available as `t` (the current instant), `t0` (the start of the run) and 
 
 A run starts at `t0` and ends at the case's `until`. The default solver is `dopri5`, an adaptive Runge-Kutta method with relative tolerance `1e-6` and absolute tolerance `1e-9`. A case can choose another configuration:
 
+> **In plain words.** A solver moves time forward in small steps. **Runge-Kutta** methods look at the rate of change at a few points inside each step to make the step accurate. **Adaptive** means the solver chooses the step size itself: small steps where things change fast, large ones where they change slowly. The **tolerance** is the error it allows per step: a relative tolerance of `1e-6` means about one part in a million of the value, and the absolute tolerance `1e-9` keeps values near zero accurate too. `rk4` is the classic fixed-step Runge-Kutta method: it takes steps of exactly the size `h` you give it.
+
 ```cases
 run damped of Oscillator with OscillatorLab {
   until t0 + 10 s
@@ -71,7 +78,7 @@ run undamped of Oscillator with OscillatorLab {
 }
 ```
 
-The expected values are the closed-form solution of the damped oscillator, `x(t) = x0 e^(-γt) (cos(ωt) + (γ/ω) sin(ωt))` with `γ = c / 2m` and `ω = sqrt(k/m - γ²)`. Tolerances say how exact the numerical solution must be: the default solver meets `1e-6 m`, tighter tolerances or a small fixed step meet `1e-10 m`. `rk4` needs its step `h`; without one the configuration is rejected (`expect { configuration rejected }`).
+The expected values come from the **closed-form solution** of the damped oscillator, a formula that gives the position at any time directly, without stepping (`e` is about 2.718, `γ` says how fast the swings die out and `ω` how fast they repeat): `x(t) = x0 e^(-γt) (cos(ωt) + (γ/ω) sin(ωt))` with `γ = c / 2m` and `ω = sqrt(k/m - γ²)`. Tolerances say how exact the numerical solution must be: the default solver meets `1e-6 m`, tighter tolerances or a small fixed step meet `1e-10 m`. `rk4` needs its step `h`; without one the configuration is rejected (`expect { configuration rejected }`).
 
 ## Watching motion
 

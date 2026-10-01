@@ -2,6 +2,12 @@
 
 A presentation turns a model into something a learner sees and handles. It never changes the model's meaning: it observes values, draws them, and offers the learner a controlled set of actions, each of which the model validates. One model may have several presentations.
 
+> **In plain words.**
+> - A **view** is an area of the screen: a **spatial** view draws the model's space like a map, a **plot** draws values against axes, a **panel** holds controls and readouts.
+> - A **representation** is one thing drawn or shown: a dot, an arrow, a curve, a slider, a number.
+> - A **control** lets the learner change a value: a slider, a typed number, a switch, a button. An **inverse** lets the learner change a value by dragging the drawing itself.
+> - A **lab** is a presentation without a timeline: the learner explores freely. A presentation with a timeline is a lesson (chapter 8).
+
 ## Structure
 
 ```prismal

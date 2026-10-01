@@ -2,6 +2,12 @@
 
 Geometry in Prismal distinguishes **points** (places) from **vectors** (displacements, velocities, forces). A point minus a point is a vector; a point plus a vector is a point; two points cannot be added. Both belong to a **space**, which gives them their axes.
 
+> **In plain words.**
+> - A **point** is a place, like a street address. A **vector** is a step with a size and a direction, like "3 blocks east and 4 blocks north". Subtracting two addresses gives the step from one to the other; adding a step to an address gives a new address; adding two addresses means nothing, so Prismal refuses it.
+> - Velocities and forces are vectors too: they have a size and a direction.
+> - A **space** is the flat surface (or volume) the points live in. **Euclidean** means ordinary school geometry: straight lines, right angles, distances measured with a ruler. The **origin** is the point at (0, 0).
+> - The **components** of a vector are its parts along each axis: `(3 m, 4 m)` has `x` component 3 m and `y` component 4 m. Its **norm**, written `|v|`, is its length: 5 m here.
+
 ## Spaces
 
 ```prismal
@@ -16,7 +22,7 @@ declares a two-dimensional Euclidean space named `Plane`, with axes `x` and `y` 
 |---|---|---|
 | `origin` | `Point` | the space's origin |
 | `origin + (4 m, 0 m)` | `Point` | the point 4 m along `x` |
-| `(3 m, 0 m)` | `Vector<Length>` when a vector is expected | a tuple is a vector when its context needs one (D-032) |
+| `(3 m, 0 m)` | `Vector<Length>` when a vector is expected | values in brackets (a **tuple**) are a vector where a vector is needed (D-032) |
 | `B - A` | `Vector<Length>` | from `A` to `B` |
 | `A + v` | `Point` | `A` moved by `v` |
 | `2 * v`, `v / 2` | `Vector<Length>` | scaled |
@@ -53,8 +59,8 @@ model Triangle in Plane {
 }
 ```
 
-- The centroid is a point plus a vector: `(B - A) + (C - A)` is a sum of vectors, divided by 3, then added to `A`. Writing `(A + B + C) / 3` would add points and is rejected.
-- `area` uses the cross product of two sides, written out with components.
+- The **centroid** is the triangle's balance point, the average of its corners. It is a point plus a vector: `(B - A) + (C - A)` is a sum of vectors, divided by 3, then added to `A`. Writing `(A + B + C) / 3` would add points and is rejected.
+- `area` uses the **cross product** of two sides, written out with components: for two sides `u` and `v` from one corner, `u.x * v.y - u.y * v.x` is the area of the parallelogram they span, and half of it is the triangle's.
 
 ## Showing it in space
 

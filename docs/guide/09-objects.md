@@ -2,6 +2,12 @@
 
 Many systems are made of several things of one kind: balls in a box, planets around a star, masses on a chain of springs. This chapter declares a kind of thing once, as an **object type**, and puts objects of that type in a model: one at a time, or as a **collection** of members (D-055).
 
+> **In plain words.**
+> - An **object type** is a description of one kind of thing, written once: what a ball has (a position, a speed) and how it behaves. Each **object** made from it is one actual ball.
+> - A **collection** is a numbered group of objects of one type, like a row of balls; each one is a **member**, named `row[1]`, `row[2]`, ...
+> - An **aggregate** combines a value over all members: `sum`, `count`, `max` (the highest ball, the number at rest).
+> - A **relation** connects members, like a spring between two balls or a bond between two atoms. It can have its own values (the spring's stiffness).
+
 ## Object types
 
 An object type is declared inside a model with `object`, and has the body of a model: parameters, inputs, state, derived values, flows, events.

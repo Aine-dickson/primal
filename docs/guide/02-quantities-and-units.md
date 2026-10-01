@@ -2,6 +2,12 @@
 
 Physical values in Prismal carry their dimension. A length cannot be added to a time, a velocity must come out as length per time, and every value is stored in coherent SI units whatever unit it was written in. This chapter covers how to write quantities and how dimension errors are reported.
 
+> **In plain words.**
+> - A **dimension** is the kind of thing a number measures: a length, a time, a mass, a speed. A **unit** is the scale it is written in: metres, centimetres and kilometres are all units of length.
+> - **SI units** are the international standard units: the metre (m), kilogram (kg), second (s) and a few more. **Coherent** means that units built from them need no extra factor: a speed is metres per second, a force is a newton, which is exactly 1 kg times 1 m/s^2. Prismal turns every value into these units as it reads the program, so `120 km` is kept as 120000 metres. You can still write any unit you like.
+> - **Dimensionless** means "a plain number with no unit": a count, a ratio, a percentage written as 0.25.
+> - A **binding** is any named value in a model: a parameter, a state value, a derived value, a constant.
+
 ## Writing quantities
 
 A number followed by a unit is a quantity: `120 km`, `1.5 h`, `9.81 m/s^2`, `4 N/m`, `0.01 /m`, `45 deg`.
@@ -21,14 +27,16 @@ A number followed by a unit is a quantity: `120 km`, `1.5 h`, `9.81 m/s^2`, `4 N
 | `Angle` | angles; dimensionless, so `rad` is `1`, `deg` is `π/180`, `rev` is `2π` (D-021) |
 | `Boolean` | `true`, `false` |
 
-`Quantity<1/L>` is the type of a coefficient per metre, `Quantity<M/T^2>` that of a spring stiffness (N/m).
+The base symbols stand for length (`L`), mass (`M`), time (`T`), electric current (`I`), temperature (`Θ`), amount of substance (`N`) and luminous intensity (`J`). A dimension is built from them like a unit: `L/T^2` reads "length per time squared", an acceleration.
+
+`Quantity<1/L>` is the type of a value per metre (for instance how much of something there is along each metre), `Quantity<M/T^2>` that of a spring's stiffness, how hard it pulls per metre stretched (N/m).
 
 ## Rules
 
-- `+`, `-` and comparisons need operands of the same dimension.
+- `+`, `-` and comparisons need both sides to have the same dimension: you can add metres to metres, not metres to seconds.
 - `*` and `/` combine dimensions: a length divided by a time is a velocity.
 - `^` takes a whole number (`speed^2`); `sqrt` takes a square root and halves the dimension (`sqrt(L / g)` is a time).
-- `sin`, `cos`, `tan`, `exp`, `log` take dimensionless arguments (an angle is dimensionless).
+- `sin`, `cos`, `tan`, `exp`, `log` take dimensionless arguments. An angle counts as dimensionless: in radians it is an arc length divided by a radius, a length over a length. That is why `deg` is just the number `π/180`.
 - A declared type is checked: `speed: Velocity = distance / duration` compiles only if the right side is a length per time.
 - A bare number where a quantity is required is an error, with one exception: `0` stands for zero of any dimension (and for the zero vector, chapter 3). Write `5 m`, not `5`.
 
