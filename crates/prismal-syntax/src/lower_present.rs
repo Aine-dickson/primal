@@ -253,7 +253,9 @@ impl PresCx<'_, '_> {
                         }
                     }
                 }
-                ViewKind::Plot { x: [x.0, x.1], y: [y.0, y.1], follow, units }
+                // `window: 10 s`: the latest span of the `x` axis once the data passes it.
+                let window = named("window").map(|w| self.cx.expr(w, &[]));
+                ViewKind::Plot { x: [x.0, x.1], y: [y.0, y.1], follow, units, window }
             }
             "panel" => ViewKind::Panel,
             other => {

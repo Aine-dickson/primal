@@ -132,6 +132,10 @@ pub enum ViewKind {
         follow: [bool; 2],
         #[serde(default, skip_serializing_if = "no_units")]
         units: [Option<String>; 2],
+        /// `window: 10 s`: the `x` axis shows the latest span of this length once the data
+        /// passes its declared range (D-070).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window: Option<Expr>,
     },
     /// A region without a coordinate system (controls, formulas).
     Panel,

@@ -43,7 +43,8 @@ pub enum ViewKind {
     /// `base` is the framing of the content over the run: its extent with room around it.
     Spatial { base: [f64; 4] },
     /// `follow`: the axes whose range grows to keep what the view draws in view (D-070).
-    Plot { x: (f64, f64), y: (f64, f64), follow: [bool; 2] },
+    /// `window`: the `x` axis shows the latest span of this length once the data passes it.
+    Plot { x: (f64, f64), y: (f64, f64), follow: [bool; 2], window: Option<f64> },
     Panel,
 }
 
@@ -64,8 +65,11 @@ impl ViewState {
                 let shown = self.user.unwrap_or(own);
                 Some(Viewport::Spatial { r#box: camera_box(*base, shown, vf.camera.as_ref()), shown, size: [own[2], own[3]] })
             }
-            ViewKind::Plot { x, y, follow } => {
-                let (x, y) = if follow[0] || follow[1] { follow_data((*x, *y), *follow, &vf.reps) } else { (*x, *y) };
+            ViewKind::Plot { x, y, follow, window } => {
+                let (mut x, y) = if follow[0] || follow[1] { follow_data((*x, *y), *follow, &vf.reps) } else { (*x, *y) };
+                if let Some(w) = window {
+                    x = slide(x, *w, &vf.reps);
+                }
                 Some(match self.user {
                     Some([bx, by, bw, bh]) => Viewport::Plot { x: (bx, bx + bw), y: (by, by + bh) },
                     None => Viewport::Plot { x, y },
@@ -214,6 +218,29 @@ fn follow_data((x, y): ((f64, f64), (f64, f64)), follow: [bool; 2], reps: &[RepF
     let x = if follow[0] { grow(x, &mut pts.iter().map(|p| p[0])) } else { x };
     let y = if follow[1] { grow(y, &mut pts.iter().map(|p| p[1])) } else { y };
     (x, y)
+}
+
+/// A plot's `x` range as a window of length `w` (D-070): the declared range while the data
+/// stays inside it, then the latest `w` of the data, with a twentieth of `w` as room ahead.
+fn slide(x: (f64, f64), w: f64, reps: &[RepFrame]) -> (f64, f64) {
+    fn last(reps: &[RepFrame], m: &mut f64) {
+        for r in reps {
+            match &r.shape {
+                Shape::Point { at } => *m = m.max(at[0]),
+                Shape::Arrow { from, to } | Shape::Segment { from, to } => *m = m.max(from[0]).max(to[0]),
+                Shape::Polyline { points } | Shape::Polygon { points } => points.iter().for_each(|p| *m = m.max(p[0])),
+                Shape::Group { members } => last(members, m),
+                _ => {}
+            }
+        }
+    }
+    let mut m = f64::NEG_INFINITY;
+    last(reps, &mut m);
+    if !m.is_finite() || m <= x.1 {
+        return x;
+    }
+    let hi = m + w / 20.0;
+    (hi - w, hi)
 }
 
 /// The box a timeline camera shows (D-042): from the centre of the base framing to the

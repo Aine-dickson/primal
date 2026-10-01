@@ -11,6 +11,7 @@ const SWING: &str = "model Swing {
 presentation Lab for Swing {
   view fixed: plot(x: [0 s, 2 s], y: [-0.05 m, 0.05 m]) { series_plot(x every 0.02 s) }
   view grows: plot(x: [0 s, 2 s], y: [-0.05 m, 0.05 m], follow: (x, y), y_unit: cm) { series_plot(x every 0.02 s) }
+  view recent: plot(x: [0 s, 2 s], y: [-0.1 m, 0.1 m], window: 2 s) { series_plot(x every 0.02 s) }
   permit learner { zoom; pan }
 }
 ";
@@ -76,4 +77,71 @@ fn a_plot_zooms_and_pans() {
     let i = e.instance(&h).unwrap();
     i.view_reset(&fixed);
     assert_eq!(view_box(&mut e, &h, "fixed"), [0.0, -0.05, 2.0, 0.1]);
+}
+
+const WAVE: &str = "model Wave {
+  param { A: Real = 1 }
+  derived { y(x: Real): Real = A * sin(x) }
+}
+presentation Graph for Wave {
+  view graph: plot(x: [0, 6], y: [-2, 2]) { function_graph(y) }
+  permit learner { zoom; pan }
+}
+";
+
+/// The `x` extent of the first polyline the frame draws in its first view.
+fn graph_extent(e: &mut Engine, h: &str) -> (f64, f64) {
+    let f = e.instance(h).unwrap().frame(0.0, 0.0);
+    let r = f["views"][0]["reps"].as_array().unwrap().iter().find(|r| r["shape"] == "polyline").unwrap().clone();
+    let xs: Vec<f64> = r["points"].as_array().unwrap().iter().map(|p| p[0].as_f64().unwrap()).collect();
+    (xs.iter().cloned().fold(f64::INFINITY, f64::min), xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max))
+}
+
+#[test]
+fn a_function_graph_follows_zoom_and_pan() {
+    let mut e = Engine::new();
+    let doc = e.load(Content::Text(WAVE.into())).unwrap();
+    let (h, _) = e.open(&doc, "Graph", false).unwrap();
+    assert_eq!(graph_extent(&mut e, &h), (0.0, 6.0));
+    let i = e.instance(&h).unwrap();
+    let view = i.layout()["views"][0]["id"].as_str().unwrap().to_string();
+    let size = Some([560.0, 347.0]);
+    let ev = |phase, x| PointerEvent { phase, view: &view, x, y: 173.5, size, pointer: "mouse", id: None, time: 0.0 };
+    i.pointer(&ev("down", 400.0));
+    i.pointer(&ev("move", 100.0));
+    i.pointer(&ev("up", 100.0));
+    let [bx, _, bw, _] = view_box(&mut e, &h, "graph");
+    let (lo, hi) = graph_extent(&mut e, &h);
+    assert!(bx > 0.0 && (lo - bx).abs() < 1e-9 && (hi - (bx + bw)).abs() < 1e-9, "graph drawn over the range shown: {lo} {hi} vs {bx} {}", bx + bw);
+    e.instance(&h).unwrap().view_reset(&view);
+    assert_eq!(graph_extent(&mut e, &h), (0.0, 6.0));
+}
+
+#[test]
+fn two_touches_pinch_a_plot() {
+    let mut e = Engine::new();
+    let doc = e.load(Content::Text(WAVE.into())).unwrap();
+    let (h, _) = e.open(&doc, "Graph", false).unwrap();
+    let i = e.instance(&h).unwrap();
+    let view = i.layout()["views"][0]["id"].as_str().unwrap().to_string();
+    let size = Some([560.0, 347.0]);
+    let ev = |phase, x, id| PointerEvent { phase, view: &view, x, y: 173.5, size, pointer: "touch", id: Some(id), time: 0.0 };
+    i.pointer(&ev("down", 250.0, 1));
+    assert_eq!(i.pointer(&ev("down", 310.0, 2))["action"], "pinch");
+    // Spreading the touches apart zooms in: a narrower range is shown.
+    i.pointer(&ev("move", 190.0, 1));
+    i.pointer(&ev("move", 370.0, 2));
+    i.pointer(&ev("up", 370.0, 2));
+    let [_, _, w, hh] = view_box(&mut e, &h, "graph");
+    assert!((w - 2.0).abs() < 1e-9 && (hh - 4.0 / 3.0).abs() < 1e-9, "zoomed in three times: {w} {hh}");
+}
+
+#[test]
+fn a_window_shows_the_latest_span() {
+    let (mut e, h) = session();
+    e.instance(&h).unwrap().seek(1.0);
+    assert_eq!(view_box(&mut e, &h, "recent"), [0.0, -0.1, 2.0, 0.2]);
+    e.instance(&h).unwrap().seek(5.0);
+    let [x, _, w, _] = view_box(&mut e, &h, "recent");
+    assert!((w - 2.0).abs() < 1e-9 && (x + w - 5.1).abs() < 0.03, "the last 2 s up to the instant shown: {x} {}", x + w);
 }
