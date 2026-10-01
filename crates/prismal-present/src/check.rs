@@ -67,6 +67,20 @@ pub fn check_presentation(cm: &CModel, p: &Presentation) -> Vec<PDiag> {
             }
         }
     }
+    // A runtime control acts on a lab's session; a lesson's timeline is directed by the
+    // learner through the player instead (PK-9.7, D-069).
+    if p.timeline.is_some() {
+        let mut ids = vec![];
+        for v in &p.views {
+            run_buttons(&v.representations, &mut ids);
+        }
+        for b in p.timeline.iter().flat_map(|t| t.scenes.iter().flat_map(|s| &s.beats)) {
+            run_buttons_in(&b.actions, &mut ids);
+        }
+        for id in ids {
+            out.push(PDiag { code: "PK-E05", message: "a runtime-control button (`reset`, `undo`, `redo`) belongs in a lab, not a lesson (D-069)".into(), element: id });
+        }
+    }
     for o in &p.observations {
         match &o.source {
             Source::Expr { expr: e } => expr(cm, e, None, &o.id, &mut out),
@@ -264,6 +278,30 @@ fn check_actions(cm: &CModel, p: &Presentation, pr: &Projector, acts: &[Action],
                 known(reps, target, beat, out);
                 expr(cm, d, Some(duration), beat, out);
             }
+        }
+    }
+}
+
+/// Runtime-control buttons among representations (D-069).
+fn run_buttons(reps: &[prismal_ir::present::Rep], out: &mut Vec<String>) {
+    for r in reps {
+        if r.kind == "button" && matches!(r.sources.first(), Some(prismal_ir::present::Arg::Word { .. })) {
+            out.push(r.id.clone());
+        }
+        run_buttons(&r.members, out);
+    }
+}
+
+fn run_buttons_in(acts: &[Action], out: &mut Vec<String>) {
+    for a in acts {
+        match a {
+            Action::Show { reps, .. } | Action::Reveal { reps, .. } => run_buttons(reps, out),
+            Action::Explore { controls, fallback, .. } => {
+                run_buttons(controls, out);
+                run_buttons_in(fallback, out);
+            }
+            Action::Sequence { actions } | Action::WaitLearner { fallback: actions, .. } => run_buttons_in(actions, out),
+            _ => {}
         }
     }
 }

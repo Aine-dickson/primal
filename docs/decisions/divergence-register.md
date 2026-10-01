@@ -88,6 +88,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-066 | Collections without a declared limit: `[max inf]`, a working capacity that doubles and recomputes the run when filled | Accepted |
 | D-067 | Continue points: `wait learner [limit d] [fallback { ... }]`, opened when the beat's other actions end; a pending point stops the player | Accepted |
 | D-068 | Animated properties and handover: `animate R opacity` or `offset to v [for d]`, `release R`, `bind R [for d]` | Accepted |
+| D-069 | Buttons in lessons and runtime-control buttons: an explore beat's `button(E)`, the learner step `press E`, `button(reset)`, `button(undo)`, `button(redo)` in labs | Accepted |
 
 ---
 
@@ -1276,5 +1277,22 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. An offset is evaluated once, at the instant shown when the animation starts, and applies to markers, arrows, segments, paths, polygons, circles, ellipses, arcs and groups (members included); a representation not drawn in a spatial view takes no offset (PK-E05). An opacity outside 0 to 1 is PK-E02. A released representation shows its geometry and text at the release instant whatever the run does; offsets and opacity still apply. `bind` blends shape by shape when the held and live geometry have the same form (the same kind and number of points) and switches at the end of the blend otherwise. Releasing a released representation, or binding one that is not released, is a playback diagnostic. A family of representations (D-055) is animated, released and bound member by member.
 - **Reason:** opacity and an offset are the separate properties PK-8.5 names, and with the handover they cover the uses PK-8.4 lists for emphasis and moves without letting an animation drive a bound property. Frames stay functions of presentation time (PK-8.7); the model and its runs are untouched.
 - **Consequences:** PK-9.2f; 04-ir (`animate`, `release`, `bind`); working syntax; parser (SX-E06 for these words removed), lowering, formatter, elaboration, checks; `Playback::animations`, `released`; guide chapter 8, Moving and fading, Holding and handing back; `prismal-present/tests/timeline_actions.rs`. Not yet: animated color, line and scale, shape morphs, chosen easing functions (option 2).
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-069: Buttons in lessons and runtime-control buttons
+
+- **Status:** Accepted
+- **Original position:** PK-6.3 gives `button` a requestable event (D-027) "or a runtime control" as its source, and PK-9.8 lets an explore beat declare "which controls and intervenable bindings are available". The prototype implemented event buttons in labs only: a button in a lesson was refused ("buttons act in labs; in a lesson the timeline requests events"), a learner script could only set controls and continue, and no button offered a runtime control.
+- **Raised by:** PROJECT-STATE, next steps; `docs/prototype.md`, "Not implemented".
+- **Builds on:** PK-6.3, PK-9.7, PK-9.8, PK-9.8a, PK-10.4, RC section 12, D-025, D-027, D-047.
+- **Question:** How does a learner press a button in a lesson, how does a learner script say so, and which runtime controls can a button offer, where?
+- **Options considered:**
+  1. **Explore-beat buttons and three session controls.** A `button(E)` among an explore beat's controls requests `E` on the learner's branch at the instant pressed, like a slider's setting; elsewhere in a lesson a press is refused (PK-9.8a). A learner script writes `at τ: press E`. `button(reset)`, `button(undo)` and `button(redo)` are runtime controls of a lab's session; the clock (play, pause, seek) stays the host's (HI-4.2), so no button offers it.
+  2. **The same, with timeline buttons in lessons** (`button(continue)`, `button(replay)`). The learner already has these from the player (PK-9.7); a second set inside the views would duplicate them and depend on each host's transport.
+  3. **Runtime controls as their own representation kind** (`run_control(reset)`). Clear, but PK-6.3 lists them under `button`, and authors would learn two kinds for one widget.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. In `button(...)`, the words `reset`, `undo` and `redo` name runtime controls unless the model declares an event of that name, which then wins (the IR stores a control as a `word` argument and an event as an `element`, so the meaning is fixed once lowered). A runtime-control button in a presentation with a timeline is PK-E05. A press names the event, not the button: an explore beat that offers no button for it refuses the press with a reason. `press`, `undo` and `redo` are contextual keywords (D-040). In frames a button carries `event` or `control`; hosts send `press` with `time` in a lesson (HI-4.3), and Enter or space on a focused button presses it in both modes.
+- **Reason:** an explore beat is where the learner acts on the model (D-025), and a button is one of its controls as a slider is; the branch keeps the lesson's own run unchanged (PK-9.9). Reset, undo and redo act on the session, which the engine owns (HI-1.4); the clock does not.
+- **Consequences:** PK-6.3d, PK-9.8b; 04-ir (learner step `press`, `word` argument of `button`); working syntax; HI-4.3; parser, lowering, formatter; `CKind::RunButton`, `Shape::Button { event, control }`; `Interactive::press`, `Instance::lesson_press`, the protocol's `press` in lessons; the web player; guide chapters 7, 8 and 10; `prismal-present/tests/buttons.rs`. Not yet: buttons whose event takes a payload (a button supplies none).
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

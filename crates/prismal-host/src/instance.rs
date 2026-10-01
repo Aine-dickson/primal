@@ -855,7 +855,10 @@ impl Instance {
                     _ if r.click.is_some() && session => merge(self.click(&id), json!({ "handled": true, "action": "click", "target": { "rep": id } })),
                     _ if r.click.is_some() => json!({ "handled": true, "action": "click", "ok": false, "message": "clicks act in labs; in a lesson the timeline requests events" }),
                     Shape::Button { .. } if session => merge(self.press(&id), json!({ "handled": true, "action": "press", "target": { "rep": id } })),
-                    Shape::Button { .. } => json!({ "handled": true, "action": "press", "ok": false, "message": "buttons act in labs; in a lesson the timeline requests events" }),
+                    Shape::Button { .. } => {
+                        let res = self.lesson_press(time, &id);
+                        Self::lesson_answer("press", time, res)
+                    }
                     Shape::Control { control, value, .. } if control == "toggle" => {
                         let v = if *value != 0.0 { 0.0 } else { 1.0 };
                         if session {
@@ -873,15 +876,21 @@ impl Instance {
 
     /// A control set from the keyboard in a lesson, answered as the raw inputs are.
     fn lesson_step(&mut self, time: f64, rep: &str, value: f64) -> Json {
-        match self.lesson_set_control(time, rep, value) {
+        let res = self.lesson_set_control(time, rep, value);
+        Self::lesson_answer("step", time, res)
+    }
+
+    /// A lesson input's answer to raw input: refused when the lesson refused it at `time`.
+    fn lesson_answer(action: &str, time: f64, res: Result<Json, Json>) -> Json {
+        match res {
             Ok(info) => {
                 let refused = info["refusals"].as_array().into_iter().flatten().find(|r| r["at"].as_f64() == Some(time)).map(|r| r["reason"].clone());
                 match refused {
-                    Some(reason) => json!({ "handled": true, "action": "step", "ok": false, "message": reason, "lesson": info }),
-                    None => json!({ "handled": true, "action": "step", "ok": true, "lesson": info }),
+                    Some(reason) => json!({ "handled": true, "action": action, "ok": false, "message": reason, "lesson": info }),
+                    None => json!({ "handled": true, "action": action, "ok": true, "lesson": info }),
                 }
             }
-            Err(e) => json!({ "handled": true, "action": "step", "ok": false, "message": e }),
+            Err(e) => json!({ "handled": true, "action": action, "ok": false, "message": e }),
         }
     }
 
@@ -908,6 +917,20 @@ impl Instance {
         let value = literal(value, &l.pb.cm.bindings[*idx].ty);
         let input = Input { at: p, input: LearnerInput::SetControl { control: control.clone(), binding: binding.clone(), value } };
         self.lesson_input(input)
+    }
+
+    /// A learner's press of a button at presentation instant `p` (D-069): an explore beat's
+    /// button requests its event on the learner's branch; refused outside explore beats
+    /// (PK-9.8). Runtime-control buttons act in labs only.
+    pub fn lesson_press(&mut self, p: f64, rep: &str) -> Result<Json, Json> {
+        let Mode::Lesson(l) = &self.mode else { return Err(json!("no lesson is open")) };
+        let event = l.pb.shown.iter().map(|s| &s.rep).find(|r| r.rep.id == rep).map(|r| &r.kind);
+        let event = match event {
+            Some(CKind::Button { event, .. }) => event.clone(),
+            Some(CKind::RunButton { control, .. }) => return Err(json!(format!("`{control}` is a runtime control of labs; in a lesson the learner directs the timeline (PK-9.7)"))),
+            _ => return Err(json!(format!("no button `{rep}` in this lesson"))),
+        };
+        self.lesson_input(Input { at: p, input: LearnerInput::Press { event } })
     }
 
     /// The learner continues at presentation instant `p` (ends an explore beat).

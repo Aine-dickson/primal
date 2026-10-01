@@ -610,7 +610,16 @@ function renderItem(host, r) {
       if (!it.button) {
         it.button = el('button', { type: 'button', text: r.label });
         it.button.addEventListener('click', () => {
-          if (st.lesson) { status('Buttons act in labs; in a lesson the timeline requests events.', true); return; }
+          if (st.lesson) {
+            // An explore beat's button (D-069): a learner input at the instant shown.
+            try {
+              st.lesson = JSON.parse(st.player.lesson_press(st.p, r.id));
+              afterLessonInput();
+            } catch (e) {
+              status(String(e), true);
+            }
+            return;
+          }
           report(JSON.parse(st.player.press(r.id)));
           afterSessionAction();
         });

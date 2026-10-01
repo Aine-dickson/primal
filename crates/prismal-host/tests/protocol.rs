@@ -174,7 +174,8 @@ fn instances_of_both_modes() {
     let again = info["beats"].as_array().unwrap().iter().find(|b| b["beat"] == "again").unwrap().clone();
     let fall = (2.0 * 20.0 / 9.81f64).sqrt();
     assert!((again["end"].as_f64().unwrap() - again["start"].as_f64().unwrap() - fall).abs() < 1e-6, "dropped from 20 m: {again}");
-    assert_eq!(codes(&mut e, &json!({ "protocol": 1, "op": "press", "instance": les, "rep": "x" }).to_string()), ["HI-E03"]);
+    // A press in a lesson carries its instant and names a button the lesson shows (D-069).
+    assert_eq!(codes(&mut e, &json!({ "protocol": 1, "op": "press", "instance": les, "rep": "x", "time": choose + 1.0 }).to_string()), ["HI-E03"]);
     assert_eq!(codes(&mut e, &json!({ "protocol": 1, "op": "open", "document": d, "presentation": "Nope" }).to_string()), ["HI-E02"]);
 }
 

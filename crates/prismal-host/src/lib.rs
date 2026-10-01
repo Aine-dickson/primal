@@ -243,10 +243,8 @@ fn instance_op(i: &mut Instance, op: &str, r: &Json, s: Field<&str>, n: Field<f6
             only(false)?;
             Ok(i.set_input(s("input")?, n("value")?))
         }
-        "press" => {
-            only(false)?;
-            Ok(i.press(s("rep")?))
-        }
+        "press" if lesson => i.lesson_press(n("time")?, s("rep")?).map_err(from_json),
+        "press" => Ok(i.press(s("rep")?)),
         "click" => {
             only(false)?;
             Ok(i.click(s("rep")?))

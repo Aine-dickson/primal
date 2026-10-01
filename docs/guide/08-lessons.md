@@ -71,6 +71,46 @@ beat choose {
 - The beat ends when the learner continues, or after `limit`.
 - `fallback { ... }` is what plays instead in media without interaction (a video export, PK-9.10).
 
+### Buttons in explore beats
+
+An explore beat may offer a button among its controls. Pressing it requests the event on the learner's branch, at the instant shown:
+
+```text
+presentation DropTry for FreeFall {
+  view scene: spatial(Plane, scale: 1 m -> 12 px, y: up) {
+    axes
+    marker(pos) as ball
+  }
+  timeline {
+    scene try_it {
+      beat first { run rate 1 until landed }
+      beat yours {
+        explore limit 20 s keep h {
+          slider(h, range: [1 m, 50 m])
+          button(drop, label: "Drop it")
+        }
+      }
+    }
+  }
+}
+```
+
+```cases
+run pressed of FreeFall with DropTry {
+  learner {
+    at 2 s: set slider h = 20 m
+    at 3 s: press drop
+    at 6 s: continue
+  }
+  expect {
+    end of yours == 6 s exactly
+  }
+}
+```
+
+- `at 3 s: press drop` presses the button that requests `drop`. With `h` set to 20 m first, the ball falls from 20 m on the branch.
+- Outside an explore beat, or when the beat offers no button for the event, a press is refused, as a slider's setting is.
+
 ## A program
 
 ```text
@@ -186,7 +226,7 @@ run without_learner of FreeFall with DropLesson {
 }
 ```
 
-- `at 15 s: set slider h = 20 m` moves the slider for `h` at presentation time 15 s; `at 16 s: continue` ends the explore beat.
+- `at 15 s: set slider h = 20 m` moves the slider for `h` at presentation time 15 s; `at 16 s: continue` ends the explore beat. `at τ: press E` presses an explore beat's button for `E`.
 - `end of fall` and `start of fall` are beat times in presentation seconds.
 - An input outside an explore beat is refused (the model is not the learner's to change then), and a case can check that the lesson is unaffected.
 - The observation `fall_times` reads the lesson's run as it is at the end: the first landing, and the landing after the second drop. `elapsed` is simulation time since `t0`; the second drop happens at simulation time `T`, where the run was held.
@@ -394,6 +434,7 @@ presentation DropLab for FreeFall {
 ```
 
 - `button(drop, label: "Drop again")` requests the event `drop`, which must be declared `on request`. A button is an action of the learner like a slider: it takes effect at the instant shown and is logged as an intervention; undo removes it.
+- A lab can offer its own runtime controls as buttons: `button(undo)`, `button(redo)`, `button(reset, label: "Start again")`. They act on the session, never on the model's rules; a lesson has none (its learner uses the player's controls).
 - `table((pos.y, vel.y) every 0.25 s)` lists the height and vertical speed every quarter second up to the instant shown, one column per component of the tuple, with the time first.
 - `polyline(P, Q, ...)` draws a path through points (here the ground); `polygon` closes it.
 
