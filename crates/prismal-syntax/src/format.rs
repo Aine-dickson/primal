@@ -1192,15 +1192,28 @@ impl<'a> Printer<'a> {
                 }
                 s
             }
-            Action::Animate { target, property, to, duration } => {
+            Action::Animate { target, property, to, word, duration, ease } => {
                 let name = self.rep_names.get(target).cloned().unwrap_or_else(|| target.clone());
                 let prop = match property {
                     Animated::Opacity => "opacity",
                     Animated::Offset => "offset",
+                    Animated::Color => "color",
+                    Animated::Line => "line",
+                    Animated::Scale => "scale",
+                    Animated::Morph => "morph",
                 };
-                let mut s = format!("animate {name} {prop} to {}", self.expr(to));
+                let value = match (to, word) {
+                    (Some(e), _) => self.expr(e),
+                    (None, Some(w)) if *property == Animated::Morph => self.rep_names.get(w).cloned().unwrap_or_else(|| w.clone()),
+                    (None, Some(w)) => w.clone(),
+                    (None, None) => String::new(),
+                };
+                let mut s = format!("animate {name} {prop} to {value}");
                 if let Some(d) = duration {
                     let _ = write!(s, " for {}", self.expr(d));
+                }
+                if let Some(e) = ease {
+                    let _ = write!(s, " ease {}", e.word());
                 }
                 s
             }

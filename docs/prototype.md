@@ -329,8 +329,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
 | Relations between relations, relation sets with at most one relation per pair, relation types declared in object types (D-074), creation and destruction as interventions (set aside by D-059), native growable state for very large populations (D-066 option 1); function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
 | Sampled sources `over I`; a button's value read from a control (D-072 option 3) | PK-6.3, PK-6.3b |
-| Plot axes controlled by a timeline camera (D-070) | PK-7.3 |
-| Animated color, line and scale, shape morphs and chosen easing functions (D-068 option 2); narration speed as a learner control separate from playback speed (the web player offers pause, seek, replay, speed, zoom and pan) | PK-8.4, PK-9.7 |
+| Easing for `reveal`, `hide` and `camera`; animated line width (D-075); narration speed as a learner control separate from playback speed (the web player offers pause, seek, replay, speed, zoom and pan) | PK-8.4, PK-9.7 |
 | Learner predictions as expected values; instruments | PK-4.3, PK-3.7, PK-7.4 |
 | Combinations supplied by types (D-073 option 2) | MK-14.9 |
 | Failure policies chosen per category in a run's configuration (D-071) | RC-10.3 |
@@ -368,3 +367,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-10-01 buttons whose event takes a payload, `button(kick(2 kg*m/s))` (D-072).
 - 2026-10-01 contributions to discrete state with `combine` (D-073).
 - 2026-10-01 `create` and `connect` through part paths, `create left.atoms { ... }` (D-074).
+- 2026-10-01 animated color, line style and scale, shape morphs, easing functions; cameras on plots (D-075).

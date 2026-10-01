@@ -133,6 +133,134 @@ fn translate(sh: &mut Shape, d: [f64; 2]) {
     }
 }
 
+/// The points of a drawn shape, and whether it is closed: what a morph moves (D-075).
+/// Ellipses and arcs are sampled.
+fn outline(sh: &Shape) -> Option<(Vec<[f64; 2]>, bool)> {
+    Some(match sh {
+        Shape::Point { at } => (vec![*at], false),
+        Shape::Arrow { from, to } | Shape::Segment { from, to } => (vec![*from, *to], false),
+        Shape::Polyline { points } => (points.clone(), false),
+        Shape::Polygon { points } => (points.clone(), true),
+        Shape::Ellipse { center, radii, rotation, start, sweep, closed } => {
+            let n = 72;
+            let (s, c) = rotation.sin_cos();
+            let at = |a: f64| {
+                let (x, y) = (radii[0] * a.cos(), radii[1] * a.sin());
+                [center[0] + c * x - s * y, center[1] + s * x + c * y]
+            };
+            let count = if *closed { n } else { n + 1 };
+            ((0..count).map(|i| at(start + sweep * i as f64 / n as f64)).collect(), *closed)
+        }
+        _ => return None,
+    })
+}
+
+/// `n` points spaced evenly along a path by length; around a closed one, starting at its
+/// first point.
+fn resample(pts: &[[f64; 2]], closed: bool, n: usize) -> Vec<[f64; 2]> {
+    let mut path = pts.to_vec();
+    if closed && !pts.is_empty() {
+        path.push(pts[0]);
+    }
+    let seg: Vec<f64> = path.windows(2).map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1])).collect();
+    let total: f64 = seg.iter().sum();
+    if path.len() < 2 || total <= 0.0 {
+        return vec![pts.first().copied().unwrap_or([0.0, 0.0]); n];
+    }
+    let step = if closed { total / n as f64 } else { total / (n - 1).max(1) as f64 };
+    let (mut out, mut i, mut acc) = (vec![], 0, 0.0);
+    for j in 0..n {
+        let d = (step * j as f64).min(total);
+        while i + 1 < seg.len() && acc + seg[i] < d {
+            acc += seg[i];
+            i += 1;
+        }
+        let f = if seg[i] > 0.0 { ((d - acc) / seg[i]).clamp(0.0, 1.0) } else { 0.0 };
+        out.push([path[i][0] + (path[i + 1][0] - path[i][0]) * f, path[i][1] + (path[i + 1][1] - path[i][1]) * f]);
+    }
+    out
+}
+
+/// The shape `k` of the way from `a` to the shape `b` (D-075). Shapes of one form move point
+/// by point; others are resampled to the same number of points, a closed one turned so
+/// that each point travels least, and drawn as a path until the morph ends in `b` itself.
+/// Shapes without points (text) switch halfway.
+fn morph(a: &Shape, b: &Shape, k: f64) -> Shape {
+    if k >= 1.0 {
+        return b.clone();
+    }
+    if let Some(s) = lerp_shape(a, b, k) {
+        return s;
+    }
+    let (Some((pa, ca)), Some((pb, cb))) = (outline(a), outline(b)) else {
+        return if k >= 0.5 { b.clone() } else { a.clone() };
+    };
+    let n = pa.len().max(pb.len()).max(64);
+    let ra = resample(&pa, ca, n);
+    let mut rb = resample(&pb, cb, n);
+    if ca && cb {
+        let cost = |s: usize| (0..n).map(|i| (ra[i][0] - rb[(i + s) % n][0]).powi(2) + (ra[i][1] - rb[(i + s) % n][1]).powi(2)).sum::<f64>();
+        let best = (0..n).min_by(|x, y| cost(*x).total_cmp(&cost(*y))).unwrap_or(0);
+        rb.rotate_left(best);
+    }
+    let points: Vec<[f64; 2]> = ra.iter().zip(&rb).map(|(x, y)| [x[0] + (y[0] - x[0]) * k, x[1] + (y[1] - x[1]) * k]).collect();
+    if ca && cb {
+        Shape::Polygon { points }
+    } else {
+        Shape::Polyline { points }
+    }
+}
+
+/// Scales a drawn shape by `s` about its center (D-075): an arrow about its base, a group
+/// about the center of its members; a point keeps its place.
+fn scale_shape(sh: &mut Shape, s: f64) {
+    fn anchors(sh: &Shape, out: &mut Vec<[f64; 2]>) {
+        match sh {
+            Shape::Point { at } => out.push(*at),
+            Shape::Arrow { from, to } | Shape::Segment { from, to } => out.extend([*from, *to]),
+            Shape::Polyline { points } | Shape::Polygon { points } => out.extend(points.iter().copied()),
+            Shape::Ellipse { center, .. } => out.push(*center),
+            Shape::Group { members } => members.iter().for_each(|m| anchors(&m.shape, out)),
+            _ => {}
+        }
+    }
+    fn about(sh: &mut Shape, c: [f64; 2], s: f64) {
+        let f = |q: &mut [f64; 2]| *q = [c[0] + (q[0] - c[0]) * s, c[1] + (q[1] - c[1]) * s];
+        match sh {
+            Shape::Point { at } => f(at),
+            Shape::Arrow { from, to } | Shape::Segment { from, to } => {
+                f(from);
+                f(to);
+            }
+            Shape::Polyline { points } | Shape::Polygon { points } => points.iter_mut().for_each(f),
+            Shape::Ellipse { center, radii, .. } => {
+                f(center);
+                radii[0] *= s;
+                radii[1] *= s;
+            }
+            Shape::Group { members } => members.iter_mut().for_each(|m| about(&mut m.shape, c, s)),
+            _ => {}
+        }
+    }
+    let c = match sh {
+        Shape::Arrow { from, .. } => *from,
+        _ => {
+            let mut pts = vec![];
+            anchors(sh, &mut pts);
+            if pts.is_empty() {
+                return;
+            }
+            let (mut lo, mut hi) = (pts[0], pts[0]);
+            for q in &pts {
+                lo = [lo[0].min(q[0]), lo[1].min(q[1])];
+                hi = [hi[0].max(q[0]), hi[1].max(q[1])];
+            }
+            [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0]
+        }
+    };
+    about(sh, c, s);
+}
+
 /// The shape `k` of the way from `a` to `b` (a `bind` handing back, D-068), when both have
 /// the same form; `None` otherwise.
 fn lerp_shape(a: &Shape, b: &Shape, k: f64) -> Option<Shape> {
@@ -179,12 +307,17 @@ pub struct WaitPoint {
     pub explore: bool,
 }
 
-/// The value an animation drives a property to (D-068): an opacity, or an offset in view
-/// coordinates.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// The value an animation drives a property to (D-068, D-075): an opacity, an offset in
+/// view coordinates, a palette color, a line style, a size factor, or the representation
+/// whose shape is taken.
+#[derive(Clone, Debug, PartialEq)]
 pub enum AnimValue {
     Opacity(f64),
     Offset([f64; 2]),
+    Color(String),
+    Line(String),
+    Scale(f64),
+    Morph(Id),
 }
 
 /// An animation of a presentation property (PK-8.4, D-068): from presentation instant
@@ -195,6 +328,7 @@ pub struct Animation {
     pub from: f64,
     pub duration: f64,
     pub to: AnimValue,
+    pub ease: prismal_ir::present::Ease,
 }
 
 /// A representation released from its projection (PK-8.5, D-068): from `from` it shows its
@@ -449,6 +583,17 @@ impl Player {
                             None
                         }
                     },
+                    // A plot's camera centers on a pair of axis values (D-075).
+                    (Some(e), ViewCtx::Plot { dims, .. }) => {
+                        let ty = prismal_ir::Type::Tuple { items: vec![prismal_ir::Type::Quantity { dim: dims.0 }, prismal_ir::Type::Quantity { dim: dims.1 }] };
+                        match prismal_kernel::compile_expr(&self.pb.cm, e, Some(&ty)) {
+                            Ok((ce, _)) => Some(ce),
+                            Err(ds) => {
+                                self.pb.diagnostics.extend(ds.iter().map(|x| x.to_string()));
+                                None
+                            }
+                        }
+                    }
                     _ => None,
                 };
                 self.pb.cameras.push(CameraCue { view: view.clone(), from: p, duration: d, center: c, zoom: z });
@@ -530,13 +675,20 @@ impl Player {
                     end
                 }
             },
-            TAction::Animate { target, property, to, duration } => {
+            TAction::Animate { target, property, to, word, duration, ease } => {
                 let d = duration.as_ref().map(|d| self.num(d)).unwrap_or(1.0);
-                let to = match property {
-                    Animated::Opacity => AnimValue::Opacity(self.num(to).clamp(0.0, 1.0)),
-                    Animated::Offset => AnimValue::Offset(self.offset(target, to, p)),
+                let w = || word.clone().unwrap_or_default();
+                let to = match (property, to) {
+                    (Animated::Opacity, Some(to)) => AnimValue::Opacity(self.num(to).clamp(0.0, 1.0)),
+                    (Animated::Offset, Some(to)) => AnimValue::Offset(self.offset(target, to, p)),
+                    (Animated::Scale, Some(to)) => AnimValue::Scale(self.num(to).max(0.0)),
+                    (Animated::Color, _) => AnimValue::Color(w()),
+                    (Animated::Line, _) => AnimValue::Line(w()),
+                    (Animated::Morph, _) => AnimValue::Morph(w()),
+                    _ => return p,
                 };
-                self.pb.animations.push(Animation { target: target.clone(), from: p, duration: d, to });
+                let ease = ease.unwrap_or(prismal_ir::present::Ease::Smooth);
+                self.pb.animations.push(Animation { target: target.clone(), from: p, duration: d, to, ease });
                 p + d
             }
             TAction::Release { target } => {
@@ -812,6 +964,24 @@ impl Playback {
             }
             each_rep_mut(&mut overlay, &mut swap);
         }
+        // The shapes representations morph into (D-075), taken before hidden ones are removed:
+        // a morph's target is usually hidden, drawn only through the morph.
+        let morph_targets: Vec<(Id, Shape)> = {
+            let ids: Vec<&Id> = self.animations.iter().filter_map(|a| if let AnimValue::Morph(id) = &a.to { Some(id) } else { None }).collect();
+            let mut found = vec![];
+            if !ids.is_empty() {
+                let mut look = |r: &mut crate::frame::RepFrame| {
+                    if ids.contains(&&r.id) {
+                        found.push((r.id.clone(), r.shape.clone()));
+                    }
+                };
+                for v in views.iter_mut() {
+                    each_rep_mut(&mut v.reps, &mut look);
+                }
+                each_rep_mut(&mut overlay, &mut look);
+            }
+            found
+        };
         // Hidden representations: gone after their fade, fading during it.
         // Members of groups are found by the same rules (D-043).
         let gone: Vec<&Id> = self.hidden.iter().filter(|h| h.1 + h.2 <= p).map(|h| &h.0).collect();
@@ -844,11 +1014,16 @@ impl Playback {
         // Animated properties (D-068): each animation starts from the value the previous one
         // left; the last value holds after it ends.
         let mut animated = |r: &mut crate::frame::RepFrame| {
-            let (mut opacity, mut offset) = (1.0, [0.0, 0.0]);
-            let mut any = (false, false);
+            let (mut opacity, mut offset, mut scale) = (1.0, [0.0, 0.0], 1.0);
+            let mut any = (false, false, false);
+            // A color reached so far, and one being blended to (D-075).
+            let (mut color, mut mix): (Option<String>, Option<(String, f64)>) = (r.color.clone(), None);
+            let mut line: Option<String> = None;
+            let mut morphs: Vec<(&Id, f64)> = vec![];
             for a in self.animations.iter().filter(|a| a.target == r.id && a.from <= p) {
-                let k = if a.duration > 0.0 { ease((p - a.from) / a.duration) } else { 1.0 };
-                match a.to {
+                let k = if a.duration > 0.0 { a.ease.apply((p - a.from) / a.duration) } else { 1.0 };
+                let done = a.duration <= 0.0 || p >= a.from + a.duration;
+                match &a.to {
                     AnimValue::Opacity(x) => {
                         opacity += (x - opacity) * k;
                         any.0 = true;
@@ -857,13 +1032,51 @@ impl Playback {
                         offset = [offset[0] + (d[0] - offset[0]) * k, offset[1] + (d[1] - offset[1]) * k];
                         any.1 = true;
                     }
+                    AnimValue::Scale(x) => {
+                        scale += (x - scale) * k;
+                        any.2 = true;
+                    }
+                    AnimValue::Color(c) => {
+                        if let Some((prev, _)) = mix.take() {
+                            color = Some(prev);
+                        }
+                        if done {
+                            color = Some(c.clone());
+                        } else {
+                            mix = Some((c.clone(), k));
+                        }
+                    }
+                    // A line style has no values between: it switches halfway.
+                    AnimValue::Line(l) => {
+                        if done || p >= a.from + a.duration / 2.0 {
+                            line = Some(l.clone());
+                        }
+                    }
+                    AnimValue::Morph(id) => morphs.push((id, if done { 1.0 } else { k })),
                 }
+            }
+            for (id, k) in morphs {
+                if let Some((_, target)) = morph_targets.iter().find(|(t, _)| t == id) {
+                    r.shape = morph(&r.shape, target, k);
+                }
+            }
+            if any.2 {
+                scale_shape(&mut r.shape, scale);
+                r.scale = Some(scale);
             }
             if any.0 {
                 r.opacity = Some(r.opacity.unwrap_or(1.0) * opacity);
             }
             if any.1 {
                 translate(&mut r.shape, offset);
+            }
+            r.color = color;
+            if let Some((to, k)) = mix {
+                r.color_to = Some(to);
+                r.color_mix = Some(k);
+            }
+            if let Some(l) = line {
+                r.line = Some(l);
             }
         };
         if !self.animations.is_empty() {

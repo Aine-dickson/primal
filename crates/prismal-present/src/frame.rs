@@ -119,6 +119,16 @@ pub struct RepFrame {
     /// The author's line style: `dashed` or `dotted`; absent is the kind's own (D-061).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<String>,
+    /// During a color animation (D-075): the color being blended to, and how far, from 0
+    /// (`color`) to 1 (`color_to`). Media mix the two colors they map the names to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_mix: Option<f64>,
+    /// An animated size factor (D-075): geometry is already scaled; media draw a marker's
+    /// dot and an arrow's head this much larger.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
 }
 
 /// Named colors an author may give a representation (D-061). Media map them to values that
@@ -969,7 +979,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                 Some(Ok(v)) => coords(&v),
                 Some(Err(s)) => {
                     let (sh, tx) = status(s);
-                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None, color: None, line: None };
+                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None, color: None, line: None, color_to: None, color_mix: None, scale: None };
                 }
                 None => vec![0.0, 0.0],
             };
@@ -1091,7 +1101,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                     Ok(v) => pts.push(ctx.to_view(&coords(&v))),
                     Err(s) => {
                         let (sh, tx) = status(s);
-                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None, color: None, line: None };
+                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None, color: None, line: None, color_to: None, color_mix: None, scale: None };
                     }
                 }
             }
@@ -1212,7 +1222,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
         None => text,
     };
     let (color, line) = (style_word(&r.rep, "color"), style_word(&r.rep, "line"));
-    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag, click, color, line }
+    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag, click, color, line, color_to: None, color_mix: None, scale: None }
 }
 
 /// Sample instants `t0, t0 + dt, ...` up to `t`, and `t` itself (PK-6.3, PK-7.5: a trace

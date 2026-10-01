@@ -317,6 +317,30 @@ timeline {
 
 A presentation with a timeline is a lesson; one without is a lab. See [chapter 8](08-lessons.md).
 
+### Change a drawing's color, size or shape during a lesson
+
+Use **animate** with the property: **color**, **line**, **scale** or **morph**, and optionally **ease**.
+
+```prismal
+// presentation / timeline / scene / beat
+animate base color to red for 1 s
+animate centre scale to 2 for 1 s ease out
+animate square morph to round for 2 s       // `round` is a hidden representation
+```
+
+See [chapter 8](08-lessons.md), Color, size and shape.
+
+### Zoom into part of a graph during a lesson
+
+Use **camera** on the plot view, with a pair of axis values.
+
+```prismal
+// presentation / timeline / scene / beat
+camera graph to (2, 2) zoom 2 for 1 s
+```
+
+See [chapter 8](08-lessons.md).
+
 ### Pause a lesson and let the learner try things
 
 Use an **explore** beat with the controls the learner may use.

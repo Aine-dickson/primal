@@ -70,10 +70,10 @@ impl ViewState {
                 if let Some(w) = window {
                     x = slide(x, *w, &vf.reps);
                 }
-                Some(match self.user {
-                    Some([bx, by, bw, bh]) => Viewport::Plot { x: (bx, bx + bw), y: (by, by + bh) },
-                    None => Viewport::Plot { x, y },
-                })
+                // A lesson's camera moves and zooms a plot as it does a spatial view (D-075).
+                let base = [x.0, y.0, x.1 - x.0, y.1 - y.0];
+                let [bx, by, bw, bh] = camera_box(base, self.user.unwrap_or(base), vf.camera.as_ref());
+                Some(Viewport::Plot { x: (bx, bx + bw), y: (by, by + bh) })
             }
             ViewKind::Panel => None,
         }

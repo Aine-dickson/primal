@@ -115,3 +115,30 @@ model Feed in Plane {
     let again = prismal_syntax::compile(&out).unwrap_or_else(|ds| panic!("{:?}\n{out}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
     assert_eq!(prismal_syntax::format::format(&again.doc), out);
 }
+
+/// Animations of color, line, scale and shape, with easing, print back as written (D-075).
+#[test]
+fn animations_print_back() {
+    let src = "space Plane = euclidean(2)
+model Figure in Plane { param { a: Real = 1 } }
+presentation Shapes for Figure {
+  view scene: spatial(Plane, scale: 1 m -> 40 px, y: up) {
+    segment(origin, origin + (2 m, 0 m)) as base
+    circle(origin, 1 m) as round
+    marker(origin) as centre
+  }
+  timeline {
+    scene look {
+      beat b { animate base color to red for 1 s; animate base line to dashed; animate centre scale to 2 for 1 s ease out; animate base morph to round ease linear }
+    }
+  }
+}
+";
+    let compiled = prismal_syntax::compile(src).unwrap_or_else(|ds| panic!("{:?}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
+    let out = prismal_syntax::format::format(&compiled.doc);
+    for want in ["animate base color to red for 1 s", "animate base line to dashed", "animate centre scale to 2 for 1 s ease out", "animate base morph to round ease linear"] {
+        assert!(out.contains(want), "missing `{want}` in:\n{out}");
+    }
+    let again = prismal_syntax::compile(&out).unwrap_or_else(|ds| panic!("{:?}\n{out}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
+    assert_eq!(prismal_syntax::format::format(&again.doc), out);
+}

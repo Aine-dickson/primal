@@ -1382,3 +1382,21 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** parser (`create` and `connect` take part paths), lowering (`part_ref`), elaboration (`holder`; the count of members made keyed by its binding; endpoints read in the handler's scope against collections of the set's holder); guide chapter 9, Making members of a contained object; `prismal-syntax/tests/glossary.rs`. Not yet: option 2; relation types declared in object types.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-075: Animated color, line style and scale, shape morphs, easing, and cameras on plots
+
+- **Status:** Accepted
+- **Original position:** PK-8.4 defines an animation "from a value, to a value, with a duration and an easing function". D-068 implemented opacity and offsets with one easing, and left "animated color, line and scale, shape morphs and chosen easing functions" (its option 2). D-042's `camera` moved spatial views only, and PK-7.3 lists plot axes "controlled by the camera" (D-070, "Not yet").
+- **Raised by:** the owner (2026-10-01); D-068 and D-070, "Not yet".
+- **Builds on:** PK-6.6a, PK-7.3, PK-8.4, PK-8.5, PK-8.7, D-042, D-061, D-068, D-070.
+- **Question:** How are these properties written and interpolated so that every medium draws the same animation?
+- **Options considered:**
+  1. **More properties of `animate`, interpolated by the kernel where it can be and by media where it must be.** `color` blends between palette names: the frame carries the color reached, the color being blended to and the fraction, and each medium mixes the values it maps the names to. `line` switches style halfway, having no values between. `scale` multiplies the drawn geometry about the shape's centre (an arrow about its base) in the kernel; frames carry the factor so that media draw a marker's dot and an arrow's head larger. `morph to R` moves the drawn points to the shape of the representation `R`: shapes of one form point by point, others resampled by length to the same number of points, a closed path turned so that each point travels least, ending in `R`'s own shape. `ease linear|smooth|in|out` chooses the easing; `smooth` stays the default. A camera on a plot centres on a pair of axis values and zooms the axes, through the same viewport as the learner's zoom and pan.
+  2. **Colors as values the kernel blends** (RGB in frames). One computation, but frames would fix colors that each medium chooses for its theme (D-061).
+  3. **Morphs only between shapes of one form.** Simpler, but the useful morphs (a square into a circle, a path into another) are between forms.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. A color animation from a representation with no author color starts from the kind's own color. A morph's target may be hidden: its shape is taken before hidden representations are removed from the frame. Unknown colors and line styles are PK-E02, a scale that is not positive is PK-E02, a morph between representations not both drawn in views is PK-E05. Easing applies to `animate`; `reveal`, `hide` and `camera` keep `smooth`.
+- **Reason:** names in frames keep each medium free to choose its colors (D-061) while all media agree on the blend; geometry done in the kernel keeps renderers simple and video export identical to the player.
+- **Consequences:** PK-8.4a, PK-9.2g; 04-ir (`animate` `word`, `ease`; `to` optional); working syntax (`ease` contextual); parser, lowering, formatter, checks; `AnimValue`, `Ease`, `morph`, `scale_shape`; frame fields `color_to`, `color_mix`, `scale`; the host's plot viewport takes the camera; both renderers (`color-mix` in the browser, `mix_hex` in SVG); guide chapters 8, 10 and 14; `prismal-host/tests/animation.rs`, `prismal-syntax/tests/glossary.rs`. Found and fixed while checking stills: a camera's centre in a plot was not compiled, so the camera zoomed about the axes' middle. Not yet: easing for `reveal`, `hide` and `camera`; line width as an animated property.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
