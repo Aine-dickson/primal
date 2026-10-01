@@ -1365,3 +1365,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** working syntax (modifier, contextual word); IR `Binding.combine`; parser, lowering, formatter; `COp::Contribute`, the runtime's `combine`; guide chapters 5, 10 and 14. Not yet: combinations supplied by types (option 2).
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-074: `create` and `connect` through part paths
+
+- **Status:** Accepted
+- **Original position:** D-065 let a model name a contained object's collection by its path (`left.atoms`) in member expressions, loops, aggregates and relation endpoints, but left out "`create` and `connect` written outside the container of the collection they change": only a cell's own events could make its atoms.
+- **Raised by:** D-065, "Not yet"; PROJECT-STATE, next steps.
+- **Builds on:** MK-7.10, MK-16.1a, MK-16.1b, MK-16.6, D-057, D-058, D-065.
+- **Question:** Can a container make members of a collection held by one of its contained objects, and in which scope are the starting values read?
+- **Options considered:**
+  1. **Part paths in `create` and `connect`.** `create left.atoms { pos = e }` makes the next member where the collection is held, with its capacity and its count of members made; the starting values and endpoints are read in the scope where the operation is written. Creates of one collection from any handlers of one transition conflict on its count, inside or outside (MK-16.6).
+  2. **Requests into the contained object.** The container requests an event of the cell (`request left.grow`), which makes the atom. Keeps each object the only writer of its parts, but needs events addressed to contained objects and payloads to pass the starting values.
+  3. **Keep the restriction.** Authors move the collection up to the container, losing the structure the cell expresses.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. MK-7.10 already lets a container write a part's bindings (`set b.vel = ...`); making a part's members is the same direction, container to part. A path goes through contained objects only (SX-E03 at a collection). In v0 relation sets are held by the model declaring the relation type, so `connect` paths name sets of that model; the elaboration resolves them generally for when relation types may be declared in object types.
+- **Reason:** one way to name a collection everywhere (D-065); the existing conflict rule on the count of members made already covers creates from inside and outside at one instant.
+- **Consequences:** parser (`create` and `connect` take part paths), lowering (`part_ref`), elaboration (`holder`; the count of members made keyed by its binding; endpoints read in the handler's scope against collections of the set's holder); guide chapter 9, Making members of a contained object; `prismal-syntax/tests/glossary.rs`. Not yet: option 2; relation types declared in object types.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

@@ -167,6 +167,17 @@ Combine an **object** type, a **collection** in `parts`, and a flow **for each m
 
 See [chapter 9](09-objects.md): the combination has several parts, and the chapter builds it step by step.
 
+### Add members to a part's collection from outside it
+
+Use **create** with the collection's **path** through the contained object.
+
+```prismal
+// model (the container of `left`)
+event add on request { create left.atoms { pos = origin + (1 m, 0 m) } }
+```
+
+See [chapter 9](09-objects.md), Making members of a contained object.
+
 ### Join two members at most once
 
 Combine an event **on request** with a **condition** that no relation already has both members.

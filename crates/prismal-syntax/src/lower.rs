@@ -986,9 +986,13 @@ impl<'a> ModelCx<'a> {
             }
             // D-057: the overrides name the member's bindings and are read in this scope.
             ast::OpStmt::Create { part, overrides, .. } => {
-                let Some(p) = self.parts.get(&part.text).cloned() else {
-                    self.err("SX-E03", format!("unknown collection `{}`", part.text), part.span);
-                    return Op::Create { part: part.text.clone(), overrides: vec![] };
+                // A part path reaches a collection of a contained object (D-074).
+                let p = match self.part_ref(&part.text) {
+                    Ok(p) => p,
+                    Err(m) => {
+                        self.err("SX-E03", m, part.span);
+                        return Op::Create { part: part.text.clone(), overrides: vec![] };
+                    }
                 };
                 if !p.many {
                     self.err("SX-E08", format!("`{}` is one object; `create` makes a member of a collection", part.text), part.span);
@@ -1014,9 +1018,12 @@ impl<'a> ModelCx<'a> {
             },
             // D-058: endpoints are members, in the order of the relation type's roles.
             ast::OpStmt::Connect { part, ends, overrides, .. } => {
-                let Some(p) = self.parts.get(&part.text).cloned() else {
-                    self.err("SX-E03", format!("unknown set of relations `{}`", part.text), part.span);
-                    return Op::Connect { part: part.text.clone(), ends: vec![], overrides: vec![] };
+                let p = match self.part_ref(&part.text) {
+                    Ok(p) => p,
+                    Err(m) => {
+                        self.err("SX-E03", m.replace("collection", "set of relations"), part.span);
+                        return Op::Connect { part: part.text.clone(), ends: vec![], overrides: vec![] };
+                    }
                 };
                 let obj = self.objects.get(&p.object).cloned().unwrap_or_default();
                 if obj.ends.is_empty() && self.objects.contains_key(&p.object) {

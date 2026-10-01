@@ -594,6 +594,54 @@ run bonded of Cells with Bonds {
 }
 ```
 
+### Making members of a contained object
+
+**Goal.** A model adds atoms to one of its cells from its own events, without the cell knowing why.
+**How it is built.** The cell holds the collection (`atoms: Atom[1, max 4]`); the model's event writes `create left.atoms { ... }`, naming the collection by its path through the contained object `left` (D-074).
+
+```text
+space Plane = euclidean(2)
+
+model Feed in Plane {
+  object Atom { state { pos: Point = origin } }
+  object Cell {
+    parts { atoms: Atom[1, max 4] { pos = origin } }
+  }
+  parts { left: Cell }
+  state { clock: Time = 0 s }
+  flow { der(clock) = 1 }
+  event add on every 1 s from t0 + 1 s if count(left.atoms) < 3 {
+    create left.atoms { pos = origin + (count(left.atoms) * 1 m, 0 m) }
+  }
+  derived {
+    atoms: Real   = count(left.atoms)
+    last:  Length = left.atoms[3].pos.x
+  }
+}
+
+presentation FeedChecks for Feed {
+  observe {
+    n    = atoms at t0 + 3.5 s
+    last = last  at t0 + 3.5 s
+  }
+}
+```
+
+```cases
+run fed of Feed with FeedChecks {
+  until t0 + 4 s
+  expect {
+    n    == 3 exactly      // one atom to start, one made at 1 s and one at 2 s
+    last == 2 m exactly    // made when the cell had two atoms
+  }
+}
+```
+
+- The starting values (`pos = ...`) are read in the scope where `create` is written, the model's: `count(left.atoms)` is the count before the atom is made.
+- The member is made where the collection is held: it is `left.atoms[3]`, with the cell's capacity.
+- A cell's own event and the model's event creating atoms of one collection at the same instant conflict, as two creates from two events always do (MK-16.6): the run stops, or pauses in a lab.
+- `connect` takes paths the same way. In v0 relation sets are held by the model that declares the relation type (D-065), so its paths name sets of the model itself.
+
 ## Labs with members
 
 A lab with many objects lets the learner act on one of them: drag this planet, remove that one. The learner's action has to say **which** member it is about. An event can receive a member as its payload (D-059):

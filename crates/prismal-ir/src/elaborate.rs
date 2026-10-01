@@ -216,6 +216,22 @@ impl<'a> Cx<'a> {
     }
 
     /// The key of the collection a part (or part path, D-065) names in scope `s`.
+    /// The scope that holds the part a path names, and the part's identity there:
+    /// `left/atoms` is `atoms` in the scope of the object `left` (D-065, D-074).
+    fn holder(&mut self, s: &Scope<'a>, id: &str) -> Option<(Scope<'a>, Id)> {
+        match id.split_once(crate::PART_PATH) {
+            Some((first, rest)) => {
+                let (ms, many) = self.members(s, first)?;
+                if many {
+                    self.err("MK-E26", format!("`{}` is a collection: a path goes through contained objects only", part_name(s.ty, first)));
+                    return None;
+                }
+                self.holder(&Scope::inside(ms.into_iter().next()?), rest)
+            }
+            None => Some((s.clone(), id.to_string())),
+        }
+    }
+
     fn coll_of(&mut self, s: &Scope<'a>, id: &str) -> Option<String> {
         match id.split_once(crate::PART_PATH) {
             Some((first, rest)) => {
@@ -685,24 +701,30 @@ impl<'a> Cx<'a> {
                     self.destroy(&sel, what, &mut out);
                 }
                 Op::Create { part, overrides } => {
-                    let Some(ty) = s.ty.part(part).and_then(|p| self.root.objects.iter().find(|o| o.id == p.object)) else {
+                    // The member is made where its collection is held; its starting values
+                    // are read here, in the handler's scope (D-074).
+                    let Some((h, part)) = self.holder(s, part) else { continue };
+                    let part = &part;
+                    let Some(ty) = h.ty.part(part).and_then(|p| self.root.objects.iter().find(|o| o.id == p.object)) else {
                         self.err("MK-E26", format!("unknown part `{part}`"));
                         continue;
                     };
                     if !ty.ends.is_empty() {
-                        self.err("MK-E26", format!("`{}` holds relations: they are made with `connect`", part_name(s.ty, part)));
+                        self.err("MK-E26", format!("`{}` holds relations: they are made with `connect`", part_name(h.ty, part)));
                         continue;
                     }
                     let values = self.starting(s, ty, overrides, "create");
-                    self.make(s, part, values, &mut made, &mut out);
+                    self.make(&h, part, values, &mut made, &mut out);
                 }
                 Op::Connect { part, ends, overrides } => {
-                    let Some(ty) = s.ty.part(part).and_then(|p| self.root.objects.iter().find(|o| o.id == p.object)) else {
+                    let Some((h, part)) = self.holder(s, part) else { continue };
+                    let part = &part;
+                    let Some(ty) = h.ty.part(part).and_then(|p| self.root.objects.iter().find(|o| o.id == p.object)) else {
                         self.err("MK-E26", format!("unknown part `{part}`"));
                         continue;
                     };
                     if ty.ends.is_empty() {
-                        self.err("MK-E26", format!("`{}` holds objects: they are made with `create`", part_name(s.ty, part)));
+                        self.err("MK-E26", format!("`{}` holds objects: they are made with `create`", part_name(h.ty, part)));
                         continue;
                     }
                     if ends.len() != ty.ends.len() {
@@ -711,17 +733,16 @@ impl<'a> Cx<'a> {
                     }
                     let mut values = vec![];
                     for (e, x) in ty.ends.iter().zip(ends) {
-                        if let Some(v) = self.end_value(s, e, x) {
+                        if let Some(v) = self.end_value(s, &h, e, x) {
                             values.push((e.id.clone(), v));
                         }
                     }
                     values.extend(self.starting(s, ty, overrides, "connect"));
-                    self.make(s, part, values, &mut made, &mut out);
+                    self.make(&h, part, values, &mut made, &mut out);
                 }
             }
         }
-        for (part, n) in made {
-            let counter = created(&part, &s.path);
+        for (counter, n) in made {
             out.push(Op::Set { target: Target::of(counter.clone()), value: Expr::bin(BinOp::Add, Expr::Ref { r#ref: counter }, num(n as f64)) });
         }
         out
@@ -740,12 +761,14 @@ impl<'a> Cx<'a> {
         values
     }
 
-    /// The number, in the endpoint's collection, of the member `x` given for the endpoint `e`.
-    fn end_value(&mut self, s: &Scope<'a>, e: &crate::End, x: &Expr) -> Option<Expr> {
+    /// The number, in the endpoint's collection, of the member `x` given for the endpoint `e`:
+    /// `x` is read in the handler's scope `s`, the endpoint's collection in the scope `h` that
+    /// holds the relation set (D-074).
+    fn end_value(&mut self, s: &Scope<'a>, h: &Scope<'a>, e: &crate::End, x: &Expr) -> Option<Expr> {
         let sel = self.select(s, x)?;
         let (k, idx) = Self::key(&sel);
-        if Some(k) != self.coll_of(s, &e.over) {
-            self.err("MK-E26", format!("the endpoint `{}` is a member of `{}`", e.name, part_name(s.ty, &e.over)));
+        if Some(k) != self.coll_of(h, &e.over) {
+            self.err("MK-E26", format!("the endpoint `{}` is a member of `{}`", e.name, part_name(h.ty, &e.over)));
             return None;
         }
         Some(idx)
@@ -759,17 +782,18 @@ impl<'a> Cx<'a> {
             return;
         };
         let start = p.count.unwrap_or(0);
-        let j = match made.iter_mut().find(|(id, _)| id == part) {
+        let counter = created(part, &s.path);
+        // Creates of one collection in one handler are counted together, wherever written.
+        let j = match made.iter_mut().find(|(id, _)| *id == counter) {
             Some((_, n)) => {
                 *n += 1;
                 *n - 1
             }
             None => {
-                made.push((part.clone(), 1));
+                made.push((counter.clone(), 1));
                 0
             }
         };
-        let counter = created(part, &s.path);
         // The member made is the next one: `created` members exist before it.
         for k in (start + j + 1)..=cap {
             let path = join(&s.path, &format!("{}[{k}]", p.name));
@@ -1063,7 +1087,7 @@ impl<'a> Cx<'a> {
                 for o in &p.overrides {
                     match inst.ty.ends.iter().find(|e| e.id == o.binding) {
                         Some(e) => {
-                            if let Some(v) = self.end_value(&outer, e, &o.value) {
+                            if let Some(v) = self.end_value(&outer, &outer, e, &o.value) {
                                 ov.push((o.binding.clone(), v));
                             }
                         }
