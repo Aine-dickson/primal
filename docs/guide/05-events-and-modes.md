@@ -4,6 +4,9 @@ Flows describe smooth change. **Events** describe sudden change: a ball bounces,
 
 ## A pumped tank
 
+**Goal.** A tank that a pump keeps between two levels: the learner sees the level rise and fall in a zigzag and counts the times it was full.
+**How it is built.** The level is `state` with a `flow`. Whether the pump runs is a `discrete` Boolean, used in the flow with `if pumping then ... else ...`. Two `event`s with crossing triggers (`rising(level - high)`, `falling(level - low)`) switch it with `set`. A third event, triggered by the first, counts. The presentation plots the level against time and shows the count.
+
 A tank drains steadily. A pump fills it; a controller switches the pump off when the level reaches `high` and on again when it falls to `low`.
 
 ```text

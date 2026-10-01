@@ -29,6 +29,9 @@ An **equation** states a relation between the model's values. It does not comput
 
 ## A program
 
+**Goal.** Make sure a model of a falling skydiver is right, without drawing anything.
+**How it is built.** The presentation only has `observe` (values recorded at chosen times and events). `run` cases compare them with values from the known formula, each `within` a tolerance. In the model, an `equation ... checked` and a `constraint` are checked at every step while the model runs.
+
 A skydiver falling with air resistance proportional to the square of the speed. The speed approaches the terminal speed `vt = sqrt(m g / c)`; the closed-form solution is `v(t) = vt tanh(g t / vt)` and the distance fallen `d(t) = (vt² / g) ln(cosh(g t / vt))`.
 
 ```text

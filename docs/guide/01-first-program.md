@@ -4,6 +4,13 @@ This chapter writes a complete program: a model of a wave `y(x) = A sin(k x)`, a
 
 In plain words: `sin` draws a smooth wave that goes up and down between -1 and 1. Multiplying by `A` (the **amplitude**) makes the wave taller or flatter. `k` (the **wave number**) says how tightly the wave is packed: a larger `k` gives more waves in the same width. The program lets the learner move both and watch the shape change. Readers new to these ideas may want to read [Start here](00-start-here.md) first.
 
+**Goal.** A learner sees a wave and reshapes it with two sliders.
+**How it is built.** Each part of the goal is one combination:
+
+- *a wave to look at*: a derived function `y(x)` in the model, drawn by `function_graph(y)` in a `plot` view;
+- *two things to change*: parameters `A` and `k` in the model's `param` block, each moved by a `slider` in the presentation's `panel`;
+- *proof that it is right*: an observation in `observe` and an expectation in a `run`.
+
 ## The model
 
 ```text

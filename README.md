@@ -108,6 +108,8 @@ New to simulations and mathematical programming? Read [Start here](docs/guide/00
 | Page | For |
 |---|---|
 | [Start here](docs/guide/00-start-here.md) | the ideas behind every program, in plain words, for readers new to simulation: quantities, rates of change, events, tests |
+| [What goes where](docs/guide/00-structure.md) | every block of a program labelled by its purpose: keep it open while reading examples |
+| [I want to...](docs/guide/14-i-want-to.md) | a goal, and the words to combine for it, with the block each goes in |
 | [A tour](docs/guide/00-tour.md) | one program in four steps: a model, a test, a lab, a narrated lesson and its video; ten minutes |
 | [The guide](docs/guide/README.md) | the language chapter by chapter: units, space, motion, events, tests, presentations, lessons, systems of objects |
 | [Recipes](docs/guide/12-recipes.md) | short answers to "how do I ...": graphs, time plots, dragging, many objects, exports, embedding |

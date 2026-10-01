@@ -32,6 +32,9 @@ A number followed by a unit is a quantity: `120 km`, `1.5 h`, `9.81 m/s^2`, `4 N
 - A declared type is checked: `speed: Velocity = distance / duration` compiles only if the right side is a length per time.
 - A bare number where a quantity is required is an error, with one exception: `0` stands for zero of any dimension (and for the zero vector, chapter 3). Write `5 m`, not `5`.
 
+**Goal.** A learner sets a car trip's distance, time and slope, and reads the speed, energy and power that follow.
+**How it is built.** Inputs are `param` values with units (moved by `slider`s in one `panel`); results are `derived` values (shown by `label`s in another `panel`). Gravity never changes, so it is a `const`. Units are checked everywhere: a mistake such as dividing a time by a length is refused before anything runs.
+
 ## A program
 
 ```text

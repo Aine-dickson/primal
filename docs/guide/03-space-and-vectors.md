@@ -28,6 +28,9 @@ declares a two-dimensional Euclidean space named `Plane`, with axes `x` and `y` 
 
 ## A program
 
+**Goal.** A learner drags the corners of a triangle and watches its centre, perimeter and area follow.
+**How it is built.** The corners are `Point` parameters (`param`); the centre and measures are `derived`. In a `spatial` view, each corner is a `marker` with `on drag as p { propose A = p }`, which turns a drag into a new value of the parameter; `segment`s draw the sides; `label`s in a `panel` show the measures.
+
 A triangle whose vertices the learner can drag; the centroid, side lengths and area follow.
 
 ```text

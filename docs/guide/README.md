@@ -1,6 +1,6 @@
 # Learn Prismal
 
-A guide to writing Prismal programs in the working syntax (D-028), from a first formula to a narrated lesson. New to simulations and mathematical programming? Read [Start here](00-start-here.md) first. New to Prismal only? Start with [the tour](00-tour.md). Each chapter introduces a few forms, shows a complete program that uses them, and ends with exercises. After the last chapter, `10-reference.md` lists every form on one page.
+A guide to writing Prismal programs in the working syntax (D-028), from a first formula to a narrated lesson. New to simulations and mathematical programming? Read [Start here](00-start-here.md) first. New to Prismal only? Start with [the tour](00-tour.md). Two pages help at any point: [What goes where](00-structure.md) (which block holds what) and [I want to...](14-i-want-to.md) (which words to combine for a goal). Each chapter introduces a few forms, shows a complete program that uses them, and ends with exercises. After the last chapter, `10-reference.md` lists every form on one page.
 
 - **Status:** living. Written 2026-09-30 against the prototype (`crates/`). The syntax is the working syntax: usable and implemented, not yet frozen.
 - **Checked:** every program in the guide is compiled and every case in it is run by `cargo test` (`crates/prismal-web/tests/guide.rs`). A program that fails, or an example error that is not reported as stated, fails the test suite.
@@ -10,6 +10,7 @@ A guide to writing Prismal programs in the working syntax (D-028), from a first 
 | Chapter | Introduces |
 |---|---|
 | [Start here](00-start-here.md) | the ideas before the code, in plain words: models, quantities, rates of change, simulation, events, tests, and a glossary |
+| [What goes where](00-structure.md) | one program with every block labelled by its purpose, and a table of what each block holds |
 | [0. A tour](00-tour.md) | one program in four steps: a model, a test, a lab and a narrated lesson, with its video |
 | [1. A first program](01-first-program.md) | models, parameters, derived values, functions, a plot, a slider, a formula, a test case |
 | [2. Quantities and units](02-quantities-and-units.md) | dimensions, units, named types, ranges, how unit errors are reported |
@@ -24,6 +25,7 @@ A guide to writing Prismal programs in the working syntax (D-028), from a first 
 | [11. Solutions](11-solutions.md) | worked answers to the chapters' exercises, each checked by the tests |
 | [12. Recipes](12-recipes.md) | short programs for common tasks, and how to test, export and embed |
 | [13. Common mistakes](13-common-mistakes.md) | the errors met first, what they mean and how to fix them |
+| [14. I want to...](14-i-want-to.md) | goals, and the combination of words that achieves each, with the block each word goes in |
 
 ## Running a program
 

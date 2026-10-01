@@ -1,0 +1,330 @@
+# I Want To...
+
+Each entry is a goal, the **combination** of words that achieves it, and the block each word goes in. Most goals need two or three words working together, often in different blocks: a value declared in the model and a control or drawing in the presentation. The snippets are fragments; each entry links to a chapter with a complete program that uses them. [What goes where](00-structure.md) shows every block in one program.
+
+Notation: **model / param** means "inside the model, in its `param` block"; **presentation / panel** means "inside the presentation, in a `panel`".
+
+## Make things change
+
+### Give the learner a setting to change
+
+Combine a **parameter** with a **slider**.
+
+```prismal
+// model / param
+k: Quantity<M/T^2> = 4 N/m   in [1 N/m, 20 N/m]
+// presentation / panel
+slider(k, range: [1 N/m, 20 N/m])
+```
+
+The slider names the parameter it moves. The `in [...]` range stops any value outside it, from a slider or a test. See [chapter 1](01-first-program.md).
+
+### Make a value change over time
+
+Combine a **state** value (its start) with a **flow** (its rate of change).
+
+```prismal
+// model / state
+x: Length = 0.1 m
+// model / flow
+der(x) = v
+```
+
+A state value with no flow stays constant. See [Start here](00-start-here.md) and [chapter 4](04-motion.md).
+
+### Make something move in the plane
+
+Combine a **space**, a model `in` that space, a **Point** and a **Vector** in state, and two flows.
+
+```prismal
+space Plane = euclidean(2)                       // top level
+model Ball in Plane {                            // `in Plane` gives Point and Vector a meaning
+  state { pos: Point = origin + (0 m, 1 m); vel: Vector<Velocity> = (3 m/s, 4 m/s) }
+  flow  { der(pos) = vel; der(vel) = (0 m/s^2, -9.81 m/s^2) }
+}
+```
+
+See [chapter 3](03-space-and-vectors.md) and [chapter 4](04-motion.md).
+
+### Add up several influences on one rate
+
+Write each influence as a **contribution** with `+=`, usually in a named **process**.
+
+```prismal
+// model
+process spring  { flow der(v) += -(k / m) * x }
+process damping { flow der(v) += -(c / m) * v }
+```
+
+The rate is the sum of the contributions. See [chapter 4](04-motion.md).
+
+### Compute a value from others
+
+Use **derived**.
+
+```prismal
+// model / derived
+energy: Energy = 0.5 * m * v^2 + 0.5 * k * x^2
+```
+
+A derived value is always up to date; it never needs a flow. See [chapter 1](01-first-program.md).
+
+### Make something happen when a value crosses a threshold
+
+Combine an **event** with a **crossing trigger** and **set**.
+
+```prismal
+// model
+event full on rising(level - high) { set pumping = false }
+```
+
+`rising(g)` fires when `g` crosses zero going up, so `level - high` fires when `level` passes `high`. `falling` is the downward crossing. The value changed is usually **discrete**. See [chapter 5](05-events-and-modes.md).
+
+### Switch between behaviors (on/off, modes)
+
+Combine a **discrete** value, **if ... then ... else** in the flow, and **events** that switch it.
+
+```prismal
+// model / discrete
+pumping: Boolean = true
+// model / flow
+der(level) = if pumping then inflow else -outflow
+// model
+event full  on rising(level - high) { set pumping = false }
+event empty on falling(level - low) { set pumping = true }
+```
+
+For more than two modes use an `enum` with `match`. See [chapter 5](05-events-and-modes.md).
+
+### Let the learner trigger something with a button
+
+Combine an **event `on request`** in the model with a **button** in the presentation.
+
+```prismal
+// model
+event again on request { set pos = origin + (0 m, h); set vel = 0 }
+// presentation / panel
+button(again)
+```
+
+See [What goes where](00-structure.md) and [chapter 7](07-presentations.md).
+
+### Let the learner drag a point to set a value
+
+Combine a **marker** with an **inverse**: `on drag as p { propose ... }`.
+
+```prismal
+// presentation / view (spatial)
+marker(A) as a { on drag as p { propose A = p } }
+```
+
+`A` must be a parameter (or state marked `intervenable`). See [chapter 3](03-space-and-vectors.md).
+
+### Model many similar objects
+
+Combine an **object** type, a **collection** in `parts`, and a flow **for each member**.
+
+See [chapter 9](09-objects.md): the combination has several parts, and the chapter builds it step by step.
+
+## Show things
+
+### Plot a formula and change it live
+
+Combine a **derived function**, a **plot view** and **function_graph**, plus sliders for its parameters.
+
+```prismal
+// model / derived
+y(x: Real): Real = A * sin(k * x)
+// presentation
+view graph: plot(x: [-6, 6], y: [-3, 3]) { function_graph(y) }
+panel controls { slider(A, range: [0, 3]) }
+```
+
+See [chapter 1](01-first-program.md).
+
+### Plot a value against time
+
+Combine a **plot view whose x axis is a time range** with **series_plot ... every**.
+
+```prismal
+// presentation
+view position: plot(x: [0 s, 20 s], y: [-0.12 m, 0.12 m]) { series_plot(x every 0.02 s) }
+```
+
+The `x` range must be a time (`[0 s, 20 s]`), and `every` sets how often a point is recorded. See [chapter 4](04-motion.md).
+
+### Keep a curve in view when it grows past the axes
+
+Add **follow** to the plot, or **window** for long runs.
+
+```prismal
+view position: plot(x: [0 s, 5 s], y: [-5 cm, 5 cm], follow: (x, y)) { series_plot(x every 0.02 s) }
+view recent:   plot(x: [0 s, 10 s], y: [-1 m, 1 m], window: 10 s)   { series_plot(x every 0.02 s) }
+```
+
+See [chapter 7](07-presentations.md), Plots that grow, zoom and pan.
+
+### Let the learner zoom and scroll a view
+
+Add **permit learner { zoom; pan }** to the presentation.
+
+```prismal
+// presentation
+permit learner { zoom; pan }
+```
+
+This works for spatial views and plots alike. See [chapter 7](07-presentations.md).
+
+### Show where something has been
+
+Combine a **spatial view** with **trace ... every**.
+
+```prismal
+// presentation / view (spatial)
+trace(pos every 0.02 s) as path
+marker(pos) as ball
+```
+
+See [the tour](00-tour.md).
+
+### Show a vector as an arrow
+
+Use **arrow** with **from** (where it starts) and **scale** (how long it is drawn).
+
+```prismal
+// presentation / view (spatial)
+arrow(vel, from: pos, scale: 1 m/s -> 15 px) as velocity
+```
+
+See [chapter 3](03-space-and-vectors.md).
+
+### Show a number as it changes
+
+Use **label** in a panel. For a formula with its current values, use **formula**.
+
+```prismal
+// presentation / panel
+label(energy)
+formula("speed", |vel|, live: true)
+```
+
+See [chapter 4](04-motion.md) and [the tour](00-tour.md).
+
+### Show a value in other units
+
+On a model value, add **unit** to its declaration; on a plot axis, use **x_unit** or **y_unit**.
+
+```prismal
+// model / param
+slope: Angle = 3 deg   in [0 deg, 30 deg]   unit deg
+// presentation
+view h: plot(x: [0 s, 5 s], y: [0 m, 1 m], y_unit: cm) { series_plot(height every 0.1 s) }
+```
+
+See [chapter 2](02-quantities-and-units.md).
+
+### Put views side by side
+
+Use **layout** with **row** and **column**.
+
+```prismal
+// presentation
+layout row(scene, column(controls, readout))
+```
+
+See [chapter 7](07-presentations.md).
+
+## Teach with it
+
+### Narrate a lesson that plays the model
+
+Add a **timeline** to a presentation, with **scene**, **beat**, **narrate** and **run**.
+
+```prismal
+// presentation
+timeline {
+  scene throw {
+    beat intro  { narrate "A ball is thrown." for 3 s }
+    beat flight { run rate 1 until bounce }
+  }
+}
+```
+
+A presentation with a timeline is a lesson; one without is a lab. See [chapter 8](08-lessons.md).
+
+### Pause a lesson and let the learner try things
+
+Use an **explore** beat with the controls the learner may use.
+
+```prismal
+// presentation / timeline / scene
+beat choose { hold; explore limit 30 s keep h { slider(h, range: [1 m, 50 m]) } }
+```
+
+See [chapter 8](08-lessons.md).
+
+### Export a lesson as a video
+
+Use the command line, not the program:
+
+```sh
+cargo run --release -p prismal-media -- lesson.prismal Story lesson.mp4
+```
+
+See [Recipes](12-recipes.md).
+
+## Check it
+
+### Check a value at a given time
+
+Combine an **observation** in the presentation with an **expectation** in a run.
+
+```prismal
+// presentation
+observe { x5 = x at t0 + 5 s }
+// top level
+run damped of Oscillator with OscillatorLab {
+  until t0 + 10 s
+  expect { x5 == -0.0336851680590413 m within 1e-6 m }
+}
+```
+
+See [chapter 6](06-checks-and-tests.md).
+
+### Check when an event happens
+
+Observe **elapsed on** the event, then index the list.
+
+```prismal
+// presentation
+observe { bounces = elapsed on bounce }
+// run / expect
+bounces[1] == 1.42784312292706 s within 1e-9 s
+```
+
+See [the tour](00-tour.md).
+
+### Test a different setting without changing the model
+
+Put **param** in the **run**, with values only (no types).
+
+```prismal
+run softer of Throw with Measure {
+  param { e = 0.5 }
+  until t0 + 3 s
+  expect { bounces[2] == 1.624515662498 s within 1e-9 s }
+}
+```
+
+See [chapter 6](06-checks-and-tests.md).
+
+### Make sure a value never goes out of bounds
+
+Use a **constraint** in the model.
+
+```prismal
+// model
+constraint above_ground: pos.y >= 0 m
+```
+
+See [chapter 6](06-checks-and-tests.md).

@@ -90,6 +90,9 @@ What the learner may change: **parameters**, by default; **state**, only when th
 
 ## A program
 
+**Goal.** A learner aims a cannon: changes speed and angle, switches to the Moon's gravity, and drags the landing point to find the speed that reaches it.
+**How it is built.** Every control is a different kind for a different value type: `number_input` for a speed, `slider` for an angle, `toggle` for a Boolean. The path is a derived function drawn by `function_graph`; the landing point is a `marker` whose drag `propose`s a new speed (computed back from where it was dropped). `formula(..., live: true)` shows the range formula with current numbers.
+
 A cannon on flat ground, with gravity switchable to the Moon's. The trajectory is drawn as a function of horizontal distance; dragging the landing point along the ground sets the launch speed.
 
 ```text
