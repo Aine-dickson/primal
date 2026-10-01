@@ -994,6 +994,7 @@ impl<'a> Cx<'a> {
                 display: Display::default(),
                 notes: vec![],
                 when: None,
+            combine: None,
             });
         }
         for f in &ty.functions {
@@ -1107,6 +1108,7 @@ impl<'a> Cx<'a> {
             display: Display::default(),
             notes: vec![],
             when: None,
+            combine: None,
         };
         let counter = created(&p.id, &s.path);
         out.bindings.push(hidden(counter.clone(), join(&s.path, &format!("{}.created", p.name)), Type::real(), num(start as f64)));

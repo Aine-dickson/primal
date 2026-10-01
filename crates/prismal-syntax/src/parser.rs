@@ -25,7 +25,7 @@ pub const CONTEXTUAL: &[&str] = &[
     "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "click", "propose", "permit",
     "timeline", "layout", "row", "column", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
     "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "reveal", "zoom", "animate", "camera", "bind", "release", "config",
-    "expect", "exactly", "rel", "of", "with", "learner", "continue", "press", "undo", "redo",
+    "expect", "exactly", "rel", "of", "with", "learner", "continue", "press", "undo", "redo", "combine",
 ];
 
 pub fn is_reserved(w: &str) -> bool {
@@ -521,6 +521,9 @@ impl<'a> Parser<'a> {
                 modifiers.push(Modifier::Intervenable);
             } else if self.eat_word("private") {
                 modifiers.push(Modifier::Private);
+            } else if self.eat_word("combine") {
+                // `combine sum`: how contributions combine (MK-14.9, D-073).
+                modifiers.push(Modifier::Combine(self.any_name("a combination (`sum`, `max`, ...)")?));
             } else if self.eat_word("symbol") {
                 match self.peek().clone() {
                     Tok::Str(s) => {

@@ -156,6 +156,10 @@ pub struct Binding {
     /// while this holds; otherwise it has no value (D-058). Made by elaboration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<Expr>,
+    /// How `contribute` operations combine into this discrete binding: `sum`, `product`,
+    /// `min`, `max`, `any` or `all` (MK-14.9, D-073).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combine: Option<String>,
 }
 
 impl Binding {

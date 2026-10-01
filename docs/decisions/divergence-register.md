@@ -1331,3 +1331,37 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** PK-10.9a, RC-10.3a; 04-ir (`inverse.live`); parser, lowering, formatter; `Interactive::seek` commits live drags, `Interactive::drag_live`; the host's `pointer_down` answers `live`, `session` answers `status` and `failure`; the web player; `Run::fail_in_step`; guide chapters 7, 10 and 14; `prismal-host/tests/live_and_pause.rs`.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-072: Buttons whose event takes a payload
+
+- **Status:** Accepted
+- **Original position:** D-069 left "buttons whose event takes a payload (a button supplies none)" for later; a button for an event declared `on request(j: Momentum)` could not be written.
+- **Raised by:** D-069, "Not yet"; PROJECT-STATE, next steps.
+- **Builds on:** PK-6.3, PK-6.3d, D-050, D-059, D-069.
+- **Question:** How does a button give the value its event takes?
+- **Options considered:**
+  1. **The event written as a call:** `button(kick(2 kg*m/s))`, as a timeline writes `request kick(2 kg*m/s)`. Several values are written as several arguments.
+  2. **A named property:** `button(kick, value: 2 kg*m/s)`. Explicit, but a second way to write what a request already writes.
+  3. **A value read from a control** (a number input beside the button). Useful, but a different feature: a form, not a button.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. The IR keeps the event as the button's `element` source and the value as its `payload` property, an expression in the model's scope evaluated when pressed. A button gives a value exactly when its event takes one, of the declared type (PK-E05, PK-E04); an event that takes a member is requested by clicking the member (D-059), not by a button. In a lesson, an explore beat's button requests its event with its value on the branch.
+- **Reason:** the same form as a request keeps one way to write "this event with this value"; the IR needs no new argument kind.
+- **Consequences:** lowering, formatter; `CKind::Button { payload }`; `Interactive::press` and lesson presses request with the value; guide chapters 5, 7, 10 and 14; `prismal-host/tests/payload_buttons.rs`, `prismal-syntax/tests/glossary.rs`. Not yet: option 3.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-073: Contributions to discrete state
+
+- **Status:** Accepted
+- **Original position:** MK-14.9 and MK-16.4 define `contribute(target, value)` for discrete targets whose type or binding declares a combination, with any number of contributions combining and a `set` on the same target conflicting. No type or binding could declare a combination, so the prototype rejected every contribution (MK-E11).
+- **Raised by:** PROJECT-STATE, next steps; `docs/prototype.md`, "Not implemented".
+- **Builds on:** MK-14.9, MK-16.3, MK-16.4, D-005.
+- **Question:** How does a binding declare its combination, which combinations exist, and with what does a contribution combine?
+- **Options considered:**
+  1. **A binding modifier, `combine sum`,** among a fixed set: `sum` and `product` (numbers; `sum` also vectors), `min`, `max` (numbers and quantities), `any`, `all` (Booleans). The contributions of one transition combine with the value before it: `contribute total += 1` adds one.
+  2. **Combinations on types** (D-005's type-supplied default). Needs declared quantity types with combinations, which v0 does not have; a binding modifier works now and a type default can be added later.
+  3. **Contributions replacing the value** (combined only with each other). Then `contribute n += 1` would set `n` to 1, against the `+=` written.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. `combine` is a contextual word, accepted only on discrete state (SX-E06). A contribution to a binding without a combination, or of a type its combination does not apply to, is MK-E11; a `set` and a `contribute` of one binding in one handler are MK-E19, and across handlers of one transition a conflict at run time (MK-16.4). Contributions to components are not allowed.
+- **Reason:** a modifier is where a binding already declares how it is shown and changed; reading `+=` as "combine with the current value" is what authors expect from a score or a counter.
+- **Consequences:** working syntax (modifier, contextual word); IR `Binding.combine`; parser, lowering, formatter; `COp::Contribute`, the runtime's `combine`; guide chapters 5, 10 and 14. Not yet: combinations supplied by types (option 2).
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

@@ -1030,6 +1030,9 @@ impl<'a> Engine<'a> {
         let mut destroyed: Vec<usize> = vec![];
         let mut proposed = self.vals.clone();
         let mut emitted = vec![];
+        // `contribute` operations by binding: combined after all operations are read
+        // (MK-14.9, MK-16.4, D-073).
+        let mut contributions: Vec<(usize, String, Vec<Value>)> = vec![];
         // Conditional operations are read on the state before the transition (D-057).
         let mut flat: Vec<&COp> = vec![];
         fn performed<'o>(s: &Engine, ops: &'o [COp], out: &mut Vec<&'o COp>) -> Result<(), RunDiag> {
@@ -1060,7 +1063,20 @@ impl<'a> Engine<'a> {
                     }
                     proposed[*binding] = Value::Bool(false);
                 }
+                COp::Contribute { binding, value, combine } => {
+                    if destroyed.contains(binding) || targets.iter().any(|(b, _)| b == binding) {
+                        return Err(conflict(self, *binding));
+                    }
+                    let v = value.eval(&self.ctx(&self.vals)).map_err(|s| self.diag(Category::Model, s.cause, None))?;
+                    match contributions.iter_mut().find(|c| c.0 == *binding) {
+                        Some(c) => c.2.push(v),
+                        None => contributions.push((*binding, combine.clone(), vec![v])),
+                    }
+                }
                 COp::Set { binding, component, value } => {
+                    if contributions.iter().any(|c| c.0 == *binding) {
+                        return Err(conflict(self, *binding));
+                    }
                     if destroyed.contains(binding) || targets.iter().any(|(b, c)| b == binding && (c.is_none() || component.is_none() || c == component)) {
                         return Err(conflict(self, *binding));
                     }
@@ -1086,6 +1102,9 @@ impl<'a> Engine<'a> {
                     emitted.push((*event, p));
                 }
             }
+        }
+        for (b, how, vs) in contributions {
+            proposed[b] = combine(&how, &self.vals[b], &vs);
         }
         // MK-16.5: an operation on a member destroyed in the same transition is a conflict. A
         // member's bindings have the identity `declaration@path` of its liveness binding's
@@ -1425,3 +1444,33 @@ mod tests {
         assert_eq!(out.committed.last().unwrap().n, 0, "no partial commit (RC-10.1)");
     }
 }
+
+/// Contributions combined with the value before the transition (MK-14.9, D-073): `sum`
+/// and `product` of numbers (`sum` of vectors by component), `min` and `max` of numbers,
+/// `any` and `all` of Booleans. The checker has matched each combination to its type.
+fn combine(how: &str, before: &Value, vs: &[Value]) -> Value {
+    match (how, before) {
+        ("sum", Value::Vec(a)) => {
+            let mut a = *a;
+            for v in vs {
+                let b = v.arr();
+                for k in 0..a.n as usize {
+                    a.v[k] += b.v[k];
+                }
+            }
+            Value::Vec(a)
+        }
+        ("any", _) => Value::Bool(before.boolean() || vs.iter().any(|v| v.boolean())),
+        ("all", _) => Value::Bool(before.boolean() && vs.iter().all(|v| v.boolean())),
+        _ => {
+            let f = |x: f64, y: f64| match how {
+                "sum" => x + y,
+                "product" => x * y,
+                "min" => x.min(y),
+                _ => x.max(y),
+            };
+            Value::Num(vs.iter().fold(before.num(), |acc, v| f(acc, v.num())))
+        }
+    }
+}
+

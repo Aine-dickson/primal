@@ -249,9 +249,12 @@ impl Interactive {
     pub fn press(&mut self, rep: &str) -> Result<(), Report> {
         let Some((_, r)) = self.rep(rep) else { return self.report(Why::Refused, format!("no button `{rep}`")) };
         match &r.kind {
-            CKind::Button { event, .. } => {
+            CKind::Button { event, payload, .. } => {
                 let e = event.clone();
-                self.commit(Action::Request(e))
+                self.commit(match payload {
+                    Some(v) => Action::RequestWith(e, v.clone()),
+                    None => Action::Request(e),
+                })
             }
             // A runtime control (D-069).
             CKind::RunButton { control, .. } => {

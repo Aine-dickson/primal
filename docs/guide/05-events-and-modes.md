@@ -254,6 +254,57 @@ run toss of Toss with TossLab {
 }
 ```
 
+## Several events adding to one value
+
+**Goal.** Several events that happen at the same instant each add to a score, without one overwriting the other.
+**How it is built.** The score is `discrete` state declared with `combine sum`; each event's handler uses `contribute total += ...` instead of `set`.
+
+Two `set` operations on one value at the same instant are a conflict, even when they write the same value: the run cannot know which should win (MK-16.4). `contribute` says that the values are meant to be combined. The binding declares how, with `combine`: `sum` adds, `product` multiplies, `min` and `max` keep the smallest or largest, `any` and `all` combine Booleans. The contributions combine with the value before the instant, so `contribute total += 1` adds one, whatever else happens at that instant (MK-14.9, D-073).
+
+```text
+model Score {
+  discrete {
+    total: Real    = 0      combine sum
+    best:  Length  = 0 m    combine max
+    hit:   Boolean = false  combine any
+  }
+  event small on every 1 s { contribute total += 1;  contribute best += 2 m }
+  event large on every 1 s { contribute total += 10; contribute best += 0.5 m; contribute hit += true }
+}
+
+presentation ScoreChecks for Score {
+  observe {
+    total2 = total at t0 + 2.5 s
+    best2  = best  at t0 + 2.5 s
+    hit2   = hit   at t0 + 2.5 s
+  }
+}
+```
+
+```cases
+run three_rounds of Score with ScoreChecks {
+  until t0 + 3 s
+  expect {
+    total2 == 33 exactly     // both events at 0 s, 1 s and 2 s: 3 times 11
+    best2  == 2 m exactly    // the largest contribution
+    hit2   == true
+  }
+}
+```
+
+- A `set` and a `contribute` on the same value at the same instant are still a conflict: in one handler the program is rejected (MK-E19); in two events at one instant, the run stops (or pauses in a lab) with a conflict.
+- `combine` goes only on discrete state. Continuous state already sums its contributions through `der(x) += ...` (chapter 4).
+
+A contribution to a value with no combination:
+
+```error
+// error: MK-E11
+model Tally {
+  discrete { n: Real = 0 }
+  event tick on every 1 s { contribute n += 1 }
+}
+```
+
 ## Events that carry values, and values from outside
 
 An event can carry a value, its **payload** (MK-15.1, D-050). And a model can receive values from its environment while it runs: a sensor, a game controller, a host application. These are **inputs** (RC-11.6, D-051).
@@ -317,6 +368,20 @@ run push of Cart with CartChecks {
 ```
 
 A host supplies inputs through its interface (`set_input`, `docs/spec/05-host-interface.md`), at the instant it shows.
+
+A learner requests an event with a payload by pressing a button that gives the value: the event's name with the value after it, as in a timeline's `request` (D-072).
+
+```text
+presentation CartLab for Cart {
+  panel controls {
+    button(kick(2 kg*m/s), label: "Small kick")
+    button(kick(6 kg*m/s), label: "Big kick")
+    label(v)
+  }
+}
+```
+
+A button for an event that takes a value must give one of the right type (`button(kick)` and `button(kick(2 m))` are rejected, PK-E05 and PK-E04), and a button for an event that takes none gives none.
 
 A payload with no source:
 

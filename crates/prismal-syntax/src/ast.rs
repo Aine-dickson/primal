@@ -145,6 +145,8 @@ pub enum Modifier {
     Private,
     Symbol(String),
     Unit(UnitExpr),
+    /// `combine sum` (MK-14.9, D-073).
+    Combine(Name),
 }
 
 #[derive(Clone, Debug, PartialEq)]

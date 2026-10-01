@@ -998,6 +998,9 @@ fn const_value(c: &CExpr) -> Option<f64> {
 fn check_ops(tc: &mut Tc, model: &Model, index: &HashMap<Id, usize>, ops: &[Op], intervention: bool) -> Vec<COp> {
     let mut out = vec![];
     let mut targets: Vec<(usize, Option<usize>)> = vec![];
+    // Bindings contributed to in this handler: contributions combine with each other, and
+    // conflict with a `set` of the same binding (MK-16.4, D-073).
+    let mut contributed: Vec<usize> = vec![];
     for op in ops {
         match op {
             Op::Set { target, .. } | Op::Contribute { target, .. } if target.member.is_some() => {
@@ -1065,8 +1068,37 @@ fn check_ops(tc: &mut Tc, model: &Model, index: &HashMap<Id, usize>, ops: &[Op],
                     }
                     _ => {}
                 }
-                if matches!(op, Op::Contribute { .. }) {
-                    tc.err("MK-E11", format!("contribution to `{}`, which has no combination", b.name));
+                if let Op::Contribute { .. } = op {
+                    // `contribute x += e` (MK-14.9, D-073): into a binding that declares how
+                    // contributions combine, of a type the combination applies to.
+                    let Some(comb) = b.combine.clone() else {
+                        tc.err("MK-E11", format!("contribution to `{}`, which has no combination: declare one, `{}: ... combine sum`", b.name, b.name));
+                        continue;
+                    };
+                    let fits = match comb.as_str() {
+                        "sum" => matches!(b.ty, Type::Quantity { .. } | Type::Vector { .. }),
+                        "product" => matches!(&b.ty, Type::Quantity { dim } if dim.is_none()),
+                        "min" | "max" => matches!(b.ty, Type::Quantity { .. }),
+                        _ => b.ty == Type::Boolean,
+                    };
+                    if !fits {
+                        tc.err("MK-E11", format!("`{}` cannot combine by `{comb}`: {} (sum: numbers, quantities, vectors; product: plain numbers; min, max: numbers and quantities; any, all: Booleans)", b.name, show(&b.ty)));
+                        continue;
+                    }
+                    if target.component.is_some() || targets.iter().any(|(ob, _)| *ob == bi) {
+                        tc.err("MK-E19", format!("`{}` is both set and contributed to in one handler", b.name));
+                        continue;
+                    }
+                    if !contributed.contains(&bi) {
+                        contributed.push(bi);
+                    }
+                    if let Some(v) = tc.expect(value, &b.ty) {
+                        out.push(COp::Contribute { binding: bi, value: v, combine: comb });
+                    }
+                    continue;
+                }
+                if contributed.contains(&bi) {
+                    tc.err("MK-E19", format!("`{}` is both set and contributed to in one handler", b.name));
                     continue;
                 }
                 let want = match (target.component, &b.ty) {

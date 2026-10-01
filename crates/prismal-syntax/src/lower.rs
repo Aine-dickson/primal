@@ -781,11 +781,21 @@ impl<'a> ModelCx<'a> {
             display: Display::default(),
             notes: d.notes.clone(),
             when: None,
+            combine: None,
         };
         for m in &d.modifiers {
             match m {
                 Modifier::Intervenable => b.intervenable = Some(true),
                 Modifier::Private => b.private = true,
+                Modifier::Combine(c) => {
+                    if !["sum", "product", "min", "max", "any", "all"].contains(&c.text.as_str()) {
+                        self.err("SX-E02", format!("unknown combination `{}`: `sum`, `product`, `min`, `max`, `any` or `all`", c.text), c.span);
+                    } else if role != Role::Discrete {
+                        self.err("SX-E06", "a combination is declared on discrete state, which `contribute` changes at events (MK-14.9)", c.span);
+                    } else {
+                        b.combine = Some(c.text.clone());
+                    }
+                }
                 Modifier::Symbol(s) => b.display.symbol = Some(s.clone()),
                 Modifier::Unit(u) => match Unit::parse(&u.text) {
                     Ok(_) => b.display.unit = Some(u.text.clone()),

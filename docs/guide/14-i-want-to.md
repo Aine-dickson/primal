@@ -80,6 +80,20 @@ event full on rising(level - high) { set pumping = false }
 
 `rising(g)` fires when `g` crosses zero going up, so `level - high` fires when `level` passes `high`. `falling` is the downward crossing. The value changed is usually **discrete**. See [chapter 5](05-events-and-modes.md).
 
+### Let several events add to one value at the same instant
+
+Combine **discrete** state declared with **combine** and **contribute** in each handler.
+
+```prismal
+// model / discrete
+total: Real = 0   combine sum
+// model
+event small on every 1 s { contribute total += 1 }
+event large on every 1 s { contribute total += 10 }
+```
+
+Two `set`s of one value at one instant are a conflict; contributions are not. See [chapter 5](05-events-and-modes.md).
+
 ### Switch between behaviors (on/off, modes)
 
 Combine a **discrete** value, **if ... then ... else** in the flow, and **events** that switch it.
@@ -108,6 +122,20 @@ button(again)
 ```
 
 See [What goes where](00-structure.md) and [chapter 7](07-presentations.md).
+
+### Let a button give a value to the event it requests
+
+Combine an **event `on request(name: Type)`** with **button(event(value))**.
+
+```prismal
+// model
+event kick on request(j: Momentum) { set v = v + j / m }
+// presentation / panel
+button(kick(2 kg*m/s), label: "Small kick")
+button(kick(6 kg*m/s), label: "Big kick")
+```
+
+See [chapter 5](05-events-and-modes.md).
 
 ### Let the learner drag a point to set a value
 
