@@ -167,6 +167,19 @@ Combine an **object** type, a **collection** in `parts`, and a flow **for each m
 
 See [chapter 9](09-objects.md): the combination has several parts, and the chapter builds it step by step.
 
+### Join two members at most once
+
+Combine an event **on request** with a **condition** that no relation already has both members.
+
+```prismal
+// model
+event join on request(x in balls, y in balls) if not any(s.has(x) and s.has(y) for s in links) {
+  connect links(x, y)
+}
+```
+
+A second request for the same pair, in either order, is refused. See [chapter 9](09-objects.md).
+
 ## Show things
 
 ### Plot a formula and change it live
