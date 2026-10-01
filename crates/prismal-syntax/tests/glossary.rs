@@ -56,3 +56,18 @@ fn word_lists_match_the_parser() {
     assert_eq!(r, reserved, "reserved words differ: doc-only {:?}, parser-only {:?}", r.difference(&reserved).collect::<Vec<_>>(), reserved.difference(&r).collect::<Vec<_>>());
     assert_eq!(c, contextual, "contextual words differ: doc-only {:?}, parser-only {:?}", c.difference(&contextual).collect::<Vec<_>>(), contextual.difference(&c).collect::<Vec<_>>());
 }
+
+/// A word in the wrong block is reported with where it belongs (guide, What goes where).
+#[test]
+fn misplaced_words_say_where_they_belong() {
+    let cases = [
+        ("model M {\n  param { k: Real = 1 }\n  slider(k, range: [0, 2])\n}\n", "belongs in a presentation, inside `panel"),
+        ("model M {\n  state { x: Real = 1; der(x) = -x }\n}\n", "belongs in the model's `flow { ... }` block"),
+        ("model M {\n  state { x: Real = 1 }\n  set x = 1\n}\n", "belongs in an event's braces"),
+        ("model M {\n  state { x: Real = 1 }\n}\npresentation P for M {\n  marker(x)\n}\n", "belongs inside `view name: plot(...)"),
+    ];
+    for (src, hint) in cases {
+        let (_, ds) = prismal_syntax::parse(src);
+        assert!(ds.iter().any(|d| d.message.contains(hint)), "{src}: {:?}", ds.iter().map(|d| &d.message).collect::<Vec<_>>());
+    }
+}

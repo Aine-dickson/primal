@@ -137,11 +137,19 @@ impl<'a> Parser<'a> {
         }
     }
     fn unexpected(&self, wanted: &str) -> Diag {
-        Diag::new("SX-E02", format!("expected {wanted}, found {}", Self::describe(self.peek())), self.span())
+        let hint = match self.peek() {
+            Tok::Ident(w) => belongs(w).map(|b| format!(". {b}")).unwrap_or_default(),
+            _ => String::new(),
+        };
+        Diag::new("SX-E02", format!("expected {wanted}, found {}{hint}", Self::describe(self.peek())), self.span())
     }
 
     /// A declared name: an identifier that is not a reserved word.
     fn name(&mut self, what: &str) -> P<Name> {
+        // `der(x) = ...` among declarations: a flow written in the wrong block.
+        if matches!(self.peek(), Tok::Ident(s) if s == "der") && matches!(self.peek_at(1), Tok::Punct("(")) {
+            return Err(Diag::new("SX-E02", format!("expected {what}, found `der(...)`. {}", belongs("der").unwrap_or_default()), self.span()));
+        }
         match self.peek() {
             Tok::Ident(s) if is_reserved(s) => Err(Diag::new(
                 "SX-E07",
@@ -1765,4 +1773,29 @@ impl<'a> Parser<'a> {
         };
         Ok(Expect::Compare { lhs, rhs, tol, span: self.since(start) })
     }
+}
+
+/// Where a word that starts a declaration, an operation, a control or a representation
+/// belongs, for diagnostics on a word found in the wrong block: the question a reader new to
+/// the language most often has.
+fn belongs(word: &str) -> Option<&'static str> {
+    Some(match word {
+        "param" | "state" | "derived" | "discrete" | "flow" | "event" | "process" | "constraint" | "collection" | "relation" | "contains" | "object" => {
+            "This declaration belongs directly inside a `model Name { ... }`"
+        }
+        "der" => "`der(x) = ...` gives a rate of change: it belongs in the model's `flow { ... }` block, and `x` is declared in `state { ... }`",
+        "set" | "create" | "destroy" | "connect" | "disconnect" => {
+            "An operation like this happens at an instant: it belongs in an event's braces, `event name on falling(...) { set x = 1 }`"
+        }
+        "slider" | "number_input" | "toggle" | "button" | "label" => {
+            "A control belongs in a presentation, inside `panel name { ... }` (or inside a view's braces)"
+        }
+        "marker" | "arrow" | "segment" | "polyline" | "polygon" | "circle" | "ellipse" | "arc" | "trace" | "function_graph" | "series_plot" | "axes" | "grid"
+        | "formula" | "equation" | "table" | "group" => "A representation is drawn in a view: it belongs inside `view name: plot(...) { ... }` or `view name: spatial(...) { ... }` of a presentation",
+        "view" | "panel" | "observe" | "permit" | "timeline" | "layout" => "This belongs directly inside a `presentation Name for Model { ... }`",
+        "scene" | "beat" | "narrate" | "explore" | "hold" => "This belongs in a presentation's `timeline { ... }` (a lesson)",
+        "expect" | "until" | "config" => "This belongs in a test case, `run name of Model with Presentation { ... }`",
+        "model" | "presentation" | "run" | "space" => "This starts a new top-level item: close the braces of the item before it first",
+        _ => return None,
+    })
 }

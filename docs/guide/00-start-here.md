@@ -172,6 +172,7 @@ run drains of Bathtub with BathLab {
 
 ## Where to go next
 
+- [What goes where](00-structure.md) labels every block of a program by its purpose; [I want to...](14-i-want-to.md) answers "which words do I combine to get this?".
 - [The tour](00-tour.md) builds a bouncing ball in four steps, up to a narrated lesson exported as a video.
 - [Chapter 1](01-first-program.md) starts the step-by-step guide.
 - [Chapter 13](13-common-mistakes.md) lists the errors met first and how to fix them.

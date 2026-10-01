@@ -281,7 +281,10 @@ pub enum ViewCtx {
     Spatial { space: Id, px_per_m: f64, y_up: bool },
     /// Ranges in coherent SI units, and the dimension of each axis (PK-7.3); the axes that
     /// follow the data and each axis's display unit (D-070).
-    Plot { x: (f64, f64), y: (f64, f64), dims: (Dim, Dim), follow: [bool; 2], units: [Option<prismal_ir::Unit>; 2] },
+    /// `sample_x`: the `x` range a host shows when the learner has zoomed or panned, over
+    /// which function graphs are drawn instead of the declared range.
+    /// `window`: the length of the latest span the `x` axis shows (D-070).
+    Plot { x: (f64, f64), y: (f64, f64), dims: (Dim, Dim), follow: [bool; 2], units: [Option<prismal_ir::Unit>; 2], window: Option<f64>, sample_x: Option<(f64, f64)> },
     Panel,
 }
 
@@ -299,7 +302,7 @@ impl ViewCtx {
                 };
                 Ok(ViewCtx::Spatial { space: space.clone(), px_per_m: scale.px / q, y_up: *y_up })
             }
-            ViewKind::Plot { x, y, follow, units } => {
+            ViewKind::Plot { x, y, follow, units, window } => {
                 let n = |e: &Expr| number(cm, e).map_err(|m| err("PK-E02", m));
                 let dim = |e: &Expr| match compile_expr(cm, e, None) {
                     Ok((_, Type::Quantity { dim })) => Ok(dim),
@@ -318,7 +321,15 @@ impl ViewCtx {
                     }
                 };
                 let units = [unit(&units[0], &dx)?, unit(&units[1], &dy)?];
-                Ok(ViewCtx::Plot { x: (n(&x[0])?, n(&x[1])?), y: (n(&y[0])?, n(&y[1])?), dims: (dx, dy), follow: *follow, units })
+                let window = match window {
+                    Some(w) if dim(w)? != dx => return Err(err("PK-E04", "a plot's window is a span of its `x` axis: `window: 10 s` on a time axis (D-070)".into())),
+                    Some(w) => match n(w)? {
+                        v if v > 0.0 => Some(v),
+                        _ => return Err(err("PK-E05", "a plot's window is positive (D-070)".into())),
+                    },
+                    None => None,
+                };
+                Ok(ViewCtx::Plot { x: (n(&x[0])?, n(&x[1])?), y: (n(&y[0])?, n(&y[1])?), dims: (dx, dy), follow: *follow, units, window, sample_x: None })
             }
             ViewKind::Panel => Ok(ViewCtx::Panel),
         }
@@ -959,6 +970,11 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
         },
         CKind::Graph { f, lo, hi, label } => match eval(f) {
             Ok(Value::Func(body)) => {
+                // Over the range the learner has zoomed or panned to, where a host says so.
+                let (lo, hi) = match ctx {
+                    ViewCtx::Plot { sample_x: Some(s), .. } => (&s.0, &s.1),
+                    _ => (lo, hi),
+                };
                 let n = 100;
                 let mut pts = Vec::with_capacity(n + 1);
                 for i in 0..=n {
@@ -1194,6 +1210,20 @@ pub struct Projector {
     pub clicks: Vec<(Id, prismal_ir::present::Click, String)>,
 }
 
+impl Projector {
+    /// Draws the function graphs of plot view `view` over `x` (`None`: the declared range),
+    /// the range a host shows after the learner's zoom and pan (D-070).
+    pub fn set_sample_x(&mut self, view: &str, x: Option<(f64, f64)>) {
+        for (id, ctx, _) in &mut self.views {
+            if let ViewCtx::Plot { sample_x, .. } = ctx {
+                if id == view {
+                    *sample_x = x;
+                }
+            }
+        }
+    }
+}
+
 /// Checks a view's `on click as p request E(p)` (D-060): the event is declared `on request`
 /// and the payload, read with the point clicked, has the type the event declares.
 fn compile_view_click(cm: &CModel, ctx: &ViewCtx, v: &prismal_ir::present::View, c: &prismal_ir::present::Click) -> Result<String, PDiag> {
@@ -1316,7 +1346,7 @@ mod tests {
         // Atoms drawn at 1e11 px/m keep a length of 1e-10 m.
         let atoms = ViewCtx::Spatial { space: "S".into(), px_per_m: 1e11, y_up: true };
         assert_eq!(atoms.shown(&[1e-10, 0.0]), vec![1e-10, 0.0]);
-        let plot = ViewCtx::Plot { x: (0.0, 10.0), y: (-1.0, 1.0), dims: (Dim::default(), Dim::default()), follow: [false; 2], units: [None, None] };
+        let plot = ViewCtx::Plot { x: (0.0, 10.0), y: (-1.0, 1.0), dims: (Dim::default(), Dim::default()), follow: [false; 2], units: [None, None], window: None, sample_x: None };
         assert_eq!(plot.shown(&[1e-12, 0.25]), vec![0.0, 0.25]);
     }
 }

@@ -53,6 +53,9 @@ The model declares its objects in a `parts` block:
 
 ## A row of balls
 
+**Goal.** Several bouncing balls that each behave the same way, written once, plus summary values across all of them (the highest ball, how many have landed).
+**How it is built.** One `object Ball { ... }` holds everything a single ball needs (it is written like a small model). The model's `parts` block makes three of them as a collection `row: Ball[3]` and one more, `moon`. `derived` values with `max(... for b in row)` and `count(...)` combine the members.
+
 Three balls dropped from different heights bounce on a floor at their own radius; a fourth ball bounces on the Moon.
 
 ```text

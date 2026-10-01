@@ -83,7 +83,7 @@ enum Gesture {
     /// second came down, `p` where they are, over the framing `shown` drawn at `scale`
     /// pixels per view unit; `before` is the learner's framing to restore on cancel.
     /// `q0` is the view point under the touches' first midpoint.
-    Pinch { view: usize, ids: [Option<u64>; 2], p0: [[f64; 2]; 2], p: [[f64; 2]; 2], q0: [f64; 2], shown: [f64; 4], scale: f64, before: Option<[f64; 4]> },
+    Pinch { view: usize, ids: [Option<u64>; 2], p0: [[f64; 2]; 2], p: [[f64; 2]; 2], q0: [f64; 2], shown: [f64; 4], map: Map, before: Option<[f64; 4]> },
     /// A press on an empty point of a view that requests an event when clicked, and that
     /// does not pan: a release within `tol` pixels of `from` clicks the point (D-060).
     Point { view: usize, from: [f64; 2], tol: f64 },
@@ -218,10 +218,11 @@ impl Instance {
                         v["axes"] = json!(axes);
                         v["extent"] = json!(extent(frames.iter().flat_map(|f| f.views.iter().filter(|x| &x.id == id)).flat_map(|x| x.reps.iter()).map(|r| &r.shape)));
                     }
-                    ViewCtx::Plot { x, y, dims, follow, units } => {
+                    ViewCtx::Plot { x, y, dims, follow, units, window, .. } => {
                         v["x"] = json!([x.0, x.1]);
                         v["y"] = json!([y.0, y.1]);
                         v["follow"] = json!(follow);
+                        v["window"] = json!(window);
                         // Each axis in its display unit (D-070): its text, and the value of one
                         // unit in coherent SI units, by which a renderer divides tick values.
                         let shown = |u: &Option<prismal_ir::Unit>, d| u.as_ref().map(|u| (u.text.clone(), u.scale)).unwrap_or_else(|| (unit_text(d), 1.0));
@@ -608,6 +609,27 @@ impl Instance {
     /// grabbed. Answers `handled`, the `action` (`drag`, `pan`, `cancel` or null), the
     /// `target`, and for a drag its outcome as the semantic inputs answer it.
     pub fn pointer(&mut self, e: &PointerEvent) -> Json {
+        let out = self.pointer_event(e);
+        self.sync_sample();
+        out
+    }
+
+    /// Function graphs follow the learner's zoom and pan of their plot (D-070): each plot's
+    /// projector draws them over the `x` range shown.
+    fn sync_sample(&mut self) {
+        let plots: Vec<(String, Option<(f64, f64)>)> =
+            self.views.iter().filter(|v| matches!(v.kind, ViewKind::Plot { .. })).map(|v| (v.id.clone(), v.user.map(|b| (b[0], b[0] + b[2])))).collect();
+        let pj = match &mut self.mode {
+            Mode::Closed => return,
+            Mode::Interactive(i) => &mut i.projector,
+            Mode::Lesson(l) => &mut l.pb.projector,
+        };
+        for (id, x) in plots {
+            pj.set_sample_x(&id, x);
+        }
+    }
+
+    fn pointer_event(&mut self, e: &PointerEvent) -> Json {
         let Some(vi) = self.view_index(e.view) else { return merge(unhandled(), json!({ "message": format!("no view `{}`", e.view) })) };
         if let Some(size) = e.size {
             self.views[vi].size = Some(size);
@@ -623,9 +645,9 @@ impl Instance {
                 // A second touch during a pan pinches the view, where zoom is permitted.
                 if let Some(Gesture::Pan { view, id, at, before, .. }) = self.gesture.clone() {
                     if view == vi && e.pointer == "touch" && e.id.is_some() && e.id != id && self.permits("zoom") {
-                        if let Viewport::Spatial { shown, .. } = vp {
+                        if let Some(shown) = vp.shown() {
                             let q0 = map.to_view([(at[0] + p[0]) / 2.0, (at[1] + p[1]) / 2.0]);
-                            self.gesture = Some(Gesture::Pinch { view, ids: [id, e.id], p0: [at, p], p: [at, p], q0, shown, scale: map.scale(), before });
+                            self.gesture = Some(Gesture::Pinch { view, ids: [id, e.id], p0: [at, p], p: [at, p], q0, shown, map, before });
                             return json!({ "handled": true, "action": "pinch" });
                         }
                     }
@@ -684,10 +706,10 @@ impl Instance {
                     json!({ "handled": true, "action": "click", "ok": true })
                 }
                 // Within the tolerance of the press, a clickable view is not panned (D-060).
-                Some(Gesture::Pinch { view, ids, p0, p: mut at, q0, shown, scale, before }) if view == vi => {
+                Some(Gesture::Pinch { view, ids, p0, p: mut at, q0, shown, map, before }) if view == vi => {
                     let Some(k) = ids.iter().position(|i| *i == e.id) else { return unhandled() };
                     at[k] = p;
-                    self.gesture = Some(Gesture::Pinch { view, ids, p0, p: at, q0, shown, scale, before });
+                    self.gesture = Some(Gesture::Pinch { view, ids, p0, p: at, q0, shown, map, before });
                     // The box grows as the touches close in; the view point under the first
                     // midpoint stays under the midpoint.
                     let (d0, d) = (dist(p0[0], p0[1]), dist(at[0], at[1]));
@@ -697,8 +719,10 @@ impl Instance {
                     let f = d0 / d;
                     let m0 = [(p0[0][0] + p0[1][0]) / 2.0, (p0[0][1] + p0[1][1]) / 2.0];
                     let m = [(at[0][0] + at[1][0]) / 2.0, (at[0][1] + at[1][1]) / 2.0];
-                    let bx = q0[0] - f * (m[0] - m0[0]) / scale - f * (q0[0] - shown[0]);
-                    let by = q0[1] - f * (m[1] - m0[1]) / scale - f * (q0[1] - shown[1]);
+                    // In view coordinates with the mapping the pinch began with (spatial or plot).
+                    let (qm0, qm) = (map.to_view(m0), map.to_view(m));
+                    let bx = q0[0] - f * (qm[0] - qm0[0]) - f * (q0[0] - shown[0]);
+                    let by = q0[1] - f * (qm[1] - qm0[1]) - f * (q0[1] - shown[1]);
                     self.views[vi].user = Some([bx, by, shown[2] * f, shown[3] * f]);
                     json!({ "handled": true, "action": "pinch", "zoom": 1.0 / f })
                 }
@@ -780,6 +804,7 @@ impl Instance {
         let q = vp.map(self.views[vi].size.unwrap_or(vp.natural_size())).to_view([x, y]);
         let k = (delta * 0.0015).exp();
         self.views[vi].user = Some([q[0] - (q[0] - shown[0]) * k, q[1] - (q[1] - shown[1]) * k, shown[2] * k, shown[3] * k]);
+        self.sync_sample();
         json!({ "handled": true, "action": "zoom" })
     }
 
@@ -788,6 +813,7 @@ impl Instance {
         match self.view_index(view) {
             Some(vi) => {
                 self.views[vi].user = None;
+                self.sync_sample();
                 json!({ "handled": true, "action": "view_reset" })
             }
             None => unhandled(),
@@ -1024,7 +1050,7 @@ fn view_state(v: &Json) -> ViewState {
         Some("spatial") => return ViewState::spatial(id, name, [n("extent", 0), n("extent", 1), n("extent", 2), n("extent", 3)]),
         Some("plot") => {
             let f = |i: usize| v["follow"][i].as_bool().unwrap_or(false);
-            ViewKind::Plot { x: (n("x", 0), n("x", 1)), y: (n("y", 0), n("y", 1)), follow: [f(0), f(1)] }
+            ViewKind::Plot { x: (n("x", 0), n("x", 1)), y: (n("y", 0), n("y", 1)), follow: [f(0), f(1)], window: v["window"].as_f64() }
         }
         _ => ViewKind::Panel,
     };

@@ -912,7 +912,7 @@ impl<'a> Printer<'a> {
                     number(scale.px),
                     if *y_up { "up" } else { "down" }
                 ),
-                ViewKind::Plot { x, y, follow, units } => {
+                ViewKind::Plot { x, y, follow, units, window } => {
                     // `follow: y` or `follow: (x, y)`, and display units, after the ranges (D-070).
                     let mut extra = String::new();
                     match follow {
@@ -920,6 +920,9 @@ impl<'a> Printer<'a> {
                         [true, false] => extra += ", follow: x",
                         [false, true] => extra += ", follow: y",
                         [false, false] => {}
+                    }
+                    if let Some(w) = window {
+                        extra += &format!(", window: {}", self.expr(w));
                     }
                     for (axis, u) in ["x", "y"].iter().zip(units) {
                         if let Some(u) = u {

@@ -71,6 +71,7 @@ Operators: `+ - * / ^`, `== != < <= > >=`, `and or not`. Units: `m cm mm km s ms
 | `view n: plot(x: [a, b], y: [c, d]) { reps }` | plot view; ranges give the axes their dimensions | 1, 4 |
 | `plot(..., follow: y)`, `follow: (x, y)` | those axes grow to keep the data in view | 7 |
 | `plot(..., x_unit: ms, y_unit: cm)` | display units for the axes | 7 |
+| `plot(..., window: 10 s)` | the `x` axis shows the latest 10 s once the data passes its range | 7 |
 | `panel n { reps }` | region for controls and text | 1 |
 | `permit learner { zoom; pan; timeline_controls }` | what the learner may do with views and time | 7, 8 |
 | `observe { n = e schedule }` | observations | 1, 6 |

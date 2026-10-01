@@ -90,6 +90,9 @@ What the learner may change: **parameters**, by default; **state**, only when th
 
 ## A program
 
+**Goal.** A learner aims a cannon: changes speed and angle, switches to the Moon's gravity, and drags the landing point to find the speed that reaches it.
+**How it is built.** Every control is a different kind for a different value type: `number_input` for a speed, `slider` for an angle, `toggle` for a Boolean. The path is a derived function drawn by `function_graph`; the landing point is a `marker` whose drag `propose`s a new speed (computed back from where it was dropped). `formula(..., live: true)` shows the range formula with current numbers.
+
 A cannon on flat ground, with gravity switchable to the Moon's. The trajectory is drawn as a function of horizontal distance; dragging the landing point along the ground sets the launch speed.
 
 ```text
@@ -386,7 +389,8 @@ run compare of Cannon2 with Compare {
 A plot's ranges say what part of the curve is drawn. A curve that leaves them is cut off at the frame. Two things help when the curve does not stay where the author expected (D-070):
 
 - `follow: y` lets the `y` axis grow to hold everything the view draws; `follow: x` does the same for `x`, and `follow: (x, y)` for both. The declared range is where the axis starts and the least it shows: it grows, it never shrinks.
-- `permit learner { zoom; pan }` lets the learner scroll the wheel over a plot to zoom about the pointer and drag it to look beyond its ranges, as in a spatial view. `Reset view` returns to the author's framing.
+- `window: 10 s` suits long runs: once the data passes the declared `x` range, the axis shows the latest 10 s and moves along with the data, like a heart monitor. Growing with `follow: x` instead keeps the whole run visible, squeezed into the same width.
+- `permit learner { zoom; pan }` lets the learner scroll the wheel over a plot to zoom about the pointer, pinch it with two fingers, and drag it to look beyond its ranges, as in a spatial view. A function graph is drawn over whatever range is shown. `Reset view` returns to the author's framing.
 
 `x_unit` and `y_unit` choose the unit the axis is labelled in. The axis keeps its dimension: `y_unit: cm` on a length axis shows `5` where the value is `0.05 m`.
 

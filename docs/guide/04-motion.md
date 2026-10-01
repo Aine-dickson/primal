@@ -2,6 +2,9 @@
 
 So far every value was fixed or computed from fixed values. This chapter adds **state**: values that evolve in time according to **flows**, which say how fast each state variable changes. The runtime integrates the flows with a numerical solver.
 
+**Goal of this chapter's program.** A mass on a spring swings back and forth while friction slowly stops it; the learner changes the stiffness and friction and watches the position and energy over time.
+**How it is built.** What moves is `state` (`x`, `v`); how fast it moves is `flow` (`der(x) = v`), with each force as a contribution (`der(v) += ...`) in a named `process`. Over time is shown with `series_plot(... every ...)` in a `plot` view whose `x` axis is a time range. Tests compare `observe`d values with the formula for a damped oscillator.
+
 ## State and flows
 
 ```text
