@@ -796,7 +796,8 @@ impl<'a> Parser<'a> {
         }
         // `create drops`, `create drops { pos = p }` (D-057).
         if self.eat_word("create") {
-            let part = self.name("a collection")?;
+            // `create left.atoms { ... }`: a collection of a contained object (D-074).
+            let part = self.part_path()?;
             let overrides = if self.is_punct("{") {
                 self.block(|p| {
                     let n = p.name("a binding of the object")?;
@@ -814,7 +815,7 @@ impl<'a> Parser<'a> {
         }
         // `connect springs(x, y)`, `connect springs(x, y) { k = e }` (D-058).
         if self.eat_word("connect") {
-            let part = self.name("a set of relations")?;
+            let part = self.part_path()?;
             self.expect_punct("(")?;
             let mut ends = vec![];
             loop {

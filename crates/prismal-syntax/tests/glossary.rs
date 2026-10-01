@@ -97,3 +97,21 @@ presentation P for M {
     let again = prismal_syntax::compile(&out).unwrap_or_else(|ds| panic!("{:?}\n{out}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
     assert_eq!(prismal_syntax::format::format(&again.doc), out);
 }
+
+/// `create` through a part path prints back as written (D-074).
+#[test]
+fn create_through_a_path_prints_back() {
+    let src = "space Plane = euclidean(2)
+model Feed in Plane {
+  object Atom { state { pos: Point = origin } }
+  object Cell { parts { atoms: Atom[1, max 4] { pos = origin } } }
+  parts { left: Cell }
+  event add on request { create left.atoms { pos = origin + (1 m, 0 m) } }
+}
+";
+    let compiled = prismal_syntax::compile(src).unwrap_or_else(|ds| panic!("{:?}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
+    let out = prismal_syntax::format::format(&compiled.doc);
+    assert!(out.contains("create left.atoms"), "{out}");
+    let again = prismal_syntax::compile(&out).unwrap_or_else(|ds| panic!("{:?}\n{out}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
+    assert_eq!(prismal_syntax::format::format(&again.doc), out);
+}
