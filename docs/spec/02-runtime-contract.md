@@ -229,6 +229,7 @@ At an event time `t`, starting from `(t, 0)`:
   - `stop`: the run ends with status `stopped`.
   - `pause`: the run pauses at the last committed state with the diagnostic shown, so a learner or author can inspect it. It can be resumed only after an intervention changes the state, or stopped.
 - **RC-10.4** Defaults: `stop` for headless runs (tests, export); `pause` for interactive runs. `environment` failures always end the run with status `failed`.
+- **RC-10.3a** In v0 policies are not chosen per category: headless runs stop, interactive runs pause. A paused session reports its failure (message, category, instant) to its host and is resumed by an intervention at the paused instant. A step whose end breaks a `reject` or `stop` constraint is cut at the last instant found valid, by bisection to the time tolerance; the failure is reported at the first instant found broken (D-071).
 - **RC-10.5** A rejected **intervention** is not a run failure. It is reported to its source (the presentation kernel), and the run continues from the unchanged state.
 
 ---

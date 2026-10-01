@@ -219,6 +219,10 @@ pub struct Inverse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub part: Option<String>,
     pub proposals: Vec<Proposal>,
+    /// Drag mode `live` (PK-10.9, D-071): each valid proposal is committed while the run
+    /// advances, instead of once on release with the run held.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub live: bool,
 }
 
 /// The event a click on a representation requests, with its payload: in a representation

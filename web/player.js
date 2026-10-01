@@ -738,11 +738,21 @@ function commitControl(id, value) {
 /// The run changes after an intervention: its span and diagnostics are read again.
 function afterSessionAction() {
   if (st.sess) {
+    const wasPaused = st.sess.status === 'paused';
     st.sess = JSON.parse(st.player.session());
     const d = st.sess.diagnostics;
-    if (d.length && !$('#status').classList.contains('bad')) status(`Run: ${d[0]}${d.length > 1 ? ` (and ${d.length - 1} more)` : ''}`, true);
+    if (st.sess.status === 'paused') pausedNote();
+    else if (wasPaused) status('The run continues: the change cleared the failure.');
+    else if (d.length && !$('#status').classList.contains('bad')) status(`Run: ${d[0]}${d.length > 1 ? ` (and ${d.length - 1} more)` : ''}`, true);
   }
   refresh();
+}
+
+/// A failed interactive run pauses at its last committed state (RC-10.3): say why, and how
+/// to go on.
+function pausedNote() {
+  const f = st.sess.failure;
+  status(`Paused at t = ${fmt(f.t)} s: ${f.message}. Change a value (a slider, a drag, a button) to continue from here, or Reset.`, true);
 }
 
 function report(res) {
@@ -923,8 +933,10 @@ function setupPointer(v) {
     e.preventDefault();
     if (res.action === 'drag' && !res.ok) { report(res); return; }
     // Drag mode `hold`: the run pauses while dragging and resumes after the commit (PK-10.9).
-    st.gesture = { action: res.action, view: v, ids: [e.pointerId], resume: res.action === 'drag' && st.playing };
-    if (res.action === 'drag') stop();
+    // Drag mode `live`: the run keeps going and the drag steers it (D-071).
+    const hold = res.action === 'drag' && !res.live;
+    st.gesture = { action: res.action, view: v, ids: [e.pointerId], resume: hold && st.playing };
+    if (hold) stop();
     v.svg.setPointerCapture(e.pointerId);
   });
   v.svg.addEventListener('pointermove', (e) => {
@@ -1217,6 +1229,7 @@ function tick(now) {
     stop();
     updateTransport();
     renderObservations();
+    if (st.sess && st.sess.status === 'paused') pausedNote();
     return;
   }
   requestAnimationFrame(tick);

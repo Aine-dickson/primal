@@ -449,6 +449,8 @@ pub struct Rep {
 pub struct Interaction {
     pub gesture: Name,
     pub part: Option<Name>,
+    /// `on drag live as p`: drag mode `live` (PK-10.9, D-071).
+    pub live: bool,
     pub bind: Name,
     /// `propose x = e`, or a member's binding `propose b.pos = e` (D-059).
     pub proposals: Vec<(Path, Expr)>,

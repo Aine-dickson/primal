@@ -1314,3 +1314,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
   - 2026-10-01 window, function graphs over the range shown, pinch zoom on plots.
+
+## D-071: Drag mode `live`, the interactive failure policy `pause`, and failures located inside a step
+
+- **Status:** Accepted
+- **Original position:** PK-10.9 lets a presentation choose drag mode `live`, "where each proposed value is committed as a separate intervention while the run advances", without a syntax. RC-10.3 and RC-10.4 make `pause` the failure policy of interactive runs. The prototype had only `hold` drags; a failed interactive run ended where the failing step ended, with no status for hosts; and a step whose end broke a `reject` or `stop` constraint was kept whole, so the run showed states past the failure, against RC-10.1.
+- **Raised by:** PROJECT-STATE, next steps; `docs/prototype.md`, "Not implemented"; the pause test, which found the failure 9 s late with a constant-rate flow.
+- **Builds on:** PK-10.5 to PK-10.9, RC-10.1 to RC-10.4, RC-11.1, HI-4.2.
+- **Question:** How does an author choose `live`, what does a live drag commit and when, and what do hosts see when an interactive run fails?
+- **Options considered:**
+  1. **Per representation, `on drag live as p`; commits at each instant the clock passes.** While the pointer is held, the proposal pending at the instant shown is committed when the clock moves on, and the last pointer position is proposed again at the new instant. A pointer held still keeps the value pinned; moves at one instant replace each other before the commit, so the log has one intervention per instant shown.
+  2. **Per presentation** (`permit learner { live_drag }`). Simpler, but one presentation may hold some drags (placing) and steer with others.
+  3. **Commit on every pointer move.** Ties the log to the pointer's event rate and leaves a still pointer without effect while the model moves the value away.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. The web player keeps its clock running during a live drag. An interactive session reports `status` (`running`, `paused`, `failed`) and `failure` (message, category, instant); a paused run is resumed by any intervention at the paused instant, which recomputes it from there. A step whose end breaks a `reject` or `stop` constraint is cut, by bisection to the time tolerance, at the last instant found valid; that state is committed and the failure is reported at the first instant found broken. Failure policies chosen per category in a run's configuration (RC-10.3) are not given a syntax: headless runs stop, interactive runs pause (RC-10.4).
+- **Reason:** steering is a property of one gesture, like its part; committing per instant matches how a run is computed and logged (RC-11.1) and keeps undo meaningful. Cutting the failing step is what RC-10.1 requires, and it makes the paused instant the one the learner needs to see.
+- **Consequences:** PK-10.9a, RC-10.3a; 04-ir (`inverse.live`); parser, lowering, formatter; `Interactive::seek` commits live drags, `Interactive::drag_live`; the host's `pointer_down` answers `live`, `session` answers `status` and `failure`; the web player; `Run::fail_in_step`; guide chapters 7, 10 and 14; `prismal-host/tests/live_and_pause.rs`.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

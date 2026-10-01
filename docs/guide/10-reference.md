@@ -78,7 +78,7 @@ Operators: `+ - * / ^`, `== != < <= > >=`, `and or not`. Units: `m cm mm km s ms
 | `timeline { scene s { beat b { actions } } }` | a lesson | 8 |
 | `layout row(a, column(b, c))` | where views go on the page | 7 |
 
-**Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `circle(P, r)`, `ellipse(P, a, b, rotate: θ)`, `arc(P, r, from: θ1, to: θ2)`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)`, `button(reset|undo|redo)`, `group(at: P, rotate: θ, scale: k) { members }` (chapter 7). `color: red|orange|yellow|green|teal|blue|purple|pink|gray|ink` and `line: solid|dashed|dotted` style drawn kinds (chapter 7); `as name` names one; `{ on drag [head] as p { propose x = e } }` declares its inverse, and `{ on click request E(v) }` the event a click requests; in `for b in c { ... }`, `propose b.x = e` and `request E(b)` act on that member (chapter 9). A view's `on click as q request E(q)` requests `E` with an empty point clicked (chapter 9).
+**Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `circle(P, r)`, `ellipse(P, a, b, rotate: θ)`, `arc(P, r, from: θ1, to: θ2)`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)`, `button(reset|undo|redo)`, `group(at: P, rotate: θ, scale: k) { members }` (chapter 7). `color: red|orange|yellow|green|teal|blue|purple|pink|gray|ink` and `line: solid|dashed|dotted` style drawn kinds (chapter 7); `as name` names one; `{ on drag [head] [live] as p { propose x = e } }` declares its inverse (`live`: the run keeps going while dragging), and `{ on click request E(v) }` the event a click requests; in `for b in c { ... }`, `propose b.x = e` and `request E(b)` act on that member (chapter 9). A view's `on click as q request E(q)` requests `E` with an empty point clicked (chapter 9).
 
 **Observation schedules:** `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over [a, b]`. **Sources:** any expression, `event_log [of E] [where zeno_applied]`, `diagnostics [of element]`, `intervention_log`.
 
@@ -148,7 +148,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `intervenable` | state the learner may change | 3 |
 | `layout`, `row`, `column` | a presentation's page layout: views side by side or one below the other | 7 |
 | `learner` | a run's scripted learner inputs; `wait learner`, a continue point | 8 |
-| `live`, `over`, `microstep` | observation schedules: current value, over an interval, at a microstep | 6 |
+| `live`, `over`, `microstep` | observation schedules: current value, over an interval, at a microstep; `on drag live`: a drag that steers the running model | 6, 7 |
 | `max` | the capacity of a collection whose members come and go (`Drop[max 40]`, or `Drop[max inf]` for no limit); also the aggregate `max(...)` | 9 |
 | `model` | what exists and how it behaves | 1 |
 | `narrate`, `scene`, `sequence`, `timeline` | a lesson's narration, scenes, ordered actions and timeline | 8 |
