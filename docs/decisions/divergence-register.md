@@ -82,6 +82,7 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-060 | Clicks on an empty point of a view: `on click as q request E(q)` in the view, the point as payload | Accepted |
 | D-062 | Drags on members of a group: the gesture's value is the pointer in the group's frame | Accepted |
 | D-061 | Author styles: `color:` from a named palette each medium maps to its theme; `line:` solid, dashed or dotted | Accepted |
+| D-063 | Page layout: `layout` places views in nested rows and columns; views left out follow it; media adapt it to their size | Accepted |
 
 ---
 
@@ -1168,5 +1169,22 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. Nested groups compose; the transform is evaluated on the committed state at the instant shown, so a drag that moves the group does not move the frame under the pointer while it is in progress. Hit testing, the focus order and keyboard steps include members of groups.
 - **Reason:** a member's geometry and its inverse are then written in one frame, which is the point of a group; option 2 would make every inverse in a group restate the group's transform, and break when the group changes.
 - **Consequences:** PK-6.3b amended; `Tf::of_groups`, `Tf::unapply`, `ViewCtx::pointer_in`; `Interactive` finds representations inside groups with their enclosing groups (drags, keys); the host's `hit` and `focus_order` recurse into groups; guide chapter 7 (a dial in a turned group); tests `prismal-present/tests/group_drags.rs`, the raw input test `drags_on_members_of_groups`, and `web/check-input.mjs` in a browser.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-063: Page layout of views
+
+- **Status:** Accepted
+- **Original position:** PK-7.4 says layout "places views in the presentation and adapts them to the output's size and orientation", and PK-2.1 lists "a layout of views" among a presentation's contents, but no form for it existed: the web player filled a grid in declaration order, putting a wide scene on a row of its own, and the SVG renderer and video export stacked views one below the other. An author could not put a plot beside a scene or a panel beside a plot. D-052 listed it as not done.
+- **Raised by:** PROJECT-STATE next steps, item 2 (media follow-ups); the owner's list of 2026-10-01.
+- **Builds on:** PK-2.1, PK-2.4, PK-7.4, PK-12.2, D-040, D-052.
+- **Question:** How does an author say where views go, and how much of the arrangement belongs to the program rather than to the medium?
+- **Options considered:**
+  1. **Nested rows and columns of view names.** `layout row(scene, column(plot, controls))`: a tree that says which views are side by side and which are one below the other. Sizes stay the views' own (a spatial view's extent and scale, a plot's size), and each medium adapts the tree to its page: a browser turns a row into a column on a narrow screen.
+  2. **A grid with areas.** Named cells in rows and columns, spans, and fractions of the width, as CSS grid areas. Precise for one page size, but sizes and spans are a medium's business (PK-7.4: layout never changes what a view shows), and a grid written for a wide screen has no meaning on a phone or in a video frame of another shape.
+  3. **Positions and sizes per view.** Absolute placement in pixels: ties the program to one output size, against PK-12.2.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. A presentation has at most one `layout` item, a view name, `row(...)` or `column(...)` with at least one item each, nested freely. Every name is a view or panel of the presentation, placed at most once (SX-E03 for an unknown name, SX-E09 for a view placed twice or a second layout; PK-E01 for a layout written in the IR). Views the layout leaves out follow it, one below the other, in declaration order. `layout`, `row` and `column` are contextual keywords (D-040). The IR carries the tree with view identities (`{"row": [{"view": id}, {"column": [...]}]}`), so renames keep it; the host's layout gives it as `page`, with the views left out appended. Without a layout, each medium arranges views as before.
+- **Reason:** the author decides relations (this plot belongs beside this scene; the readout under the controls), which hold on every page; sizes and breakpoints depend on the medium, which knows its page. A tree of rows and columns is the smallest form that says this, and it reads as the page looks.
+- **Consequences:** PK-7.4a; 04-ir section 7.1; working syntax 1.2; IR `present::Layout` and `Presentation::layout`; parser, lowering, formatter; presentation checks; the host's `page`; `prismal-svg` places views in rows (top aligned) and columns, so still images and videos follow the layout; the web player builds rows and columns and turns rows into columns below 700 px; guide chapter 7, Laying out views; `prismal-svg/tests/layout.rs`. Not yet: weights or sizes per view, alignment choices, and layouts that change during a lesson.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

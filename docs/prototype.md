@@ -331,8 +331,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
-| Drag mode `live`; learner predictions as expected values; instruments; layout of views | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
-| Several views laid out on one page by the author | PK-7.4, D-052 |
+| Drag mode `live`; learner predictions as expected values; instruments | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
 | `contribute` operations on discrete state | MK section 16 |
 | Failure policy `pause` (interactive) | RC-10.3 |
 | Frames of spaces (D-022), affine temperature units | MK sections 3.4, 4 |

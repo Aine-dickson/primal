@@ -310,9 +310,18 @@ function buildViews() {
       setupPointer(entry);
     }
     fig.append(entry.panel);
-    host.append(fig);
     st.views[v.id] = entry;
   }
+  // The author's page layout (PK-7.4a, D-063): rows and columns of views, a row turned into
+  // a column on a narrow screen. Without one, the views fill a grid in order.
+  host.classList.toggle('paged', !!st.layout.page);
+  const place = (node) => {
+    if (node.view) return st.views[node.view]?.fig;
+    const kids = (node.row || node.column || []).map(place).filter(Boolean);
+    return el('div', { class: node.row ? 'page-row' : 'page-column' }, ...kids);
+  };
+  if (st.layout.page) host.append(place(st.layout.page));
+  else for (const v of st.layout.views) host.append(st.views[v.id].fig);
 }
 
 /// View coordinates of a plot view to SVG coordinates: the frame's box (the plot's ranges)

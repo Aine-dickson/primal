@@ -73,6 +73,7 @@ Operators: `+ - * / ^`, `== != < <= > >=`, `and or not`. Units: `m cm mm km s ms
 | `permit learner { zoom; pan; timeline_controls }` | what the learner may do with views and time | 7, 8 |
 | `observe { n = e schedule }` | observations | 1, 6 |
 | `timeline { scene s { beat b { actions } } }` | a lesson | 8 |
+| `layout row(a, column(b, c))` | where views go on the page | 7 |
 
 **Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `circle(P, r)`, `ellipse(P, a, b, rotate: θ)`, `arc(P, r, from: θ1, to: θ2)`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)`, `group(at: P, rotate: θ, scale: k) { members }` (chapter 7). `color: red|orange|yellow|green|teal|blue|purple|pink|gray|ink` and `line: solid|dashed|dotted` style drawn kinds (chapter 7); `as name` names one; `{ on drag [head] as p { propose x = e } }` declares its inverse, and `{ on click request E(v) }` the event a click requests; in `for b in c { ... }`, `propose b.x = e` and `request E(b)` act on that member (chapter 9). A view's `on click as q request E(q)` requests `E` with an empty point clicked (chapter 9).
 
@@ -139,6 +140,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `intervene` | a timeline action that changes a parameter at the instant shown: `intervene { set p = e }` | 8 |
 | `input` | values supplied from outside, with an optional default; an object's connections | 5, 9 |
 | `intervenable` | state the learner may change | 3 |
+| `layout`, `row`, `column` | a presentation's page layout: views side by side or one below the other | 7 |
 | `learner` | a run's scripted learner inputs | 8 |
 | `live`, `over`, `microstep` | observation schedules: current value, over an interval, at a microstep | 6 |
 | `max` | the capacity of a collection whose members come and go (`Drop[max 40]`); also the aggregate `max(...)` | 9 |
@@ -178,7 +180,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 
 **Reserved** (never names): `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request enum match`.
 
-**Contextual** (keywords only where expected, names elsewhere): `for view panel observe live over microstep show as drag click propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue`.
+**Contextual** (keywords only where expected, names elsewhere): `for view panel observe live over microstep show as drag click propose permit timeline layout row column scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue`.
 
 ## Diagnostics
 

@@ -98,6 +98,7 @@ self-study, deep study, and syllabus-based educational content creation.
 - **D-060:** clicks on an empty point of a view: `on click as q request E(q)` in a spatial or plot view; the point is the payload; the host's `click_at`.
 - **D-061:** author styles: `color:` from a named palette (each medium maps names to its theme), `line: solid|dashed|dotted`; frames carry names only.
 - **D-062:** drags on members of a group read the pointer in the group's frame; targeting and focus reach members of groups.
+- **D-063:** page layout: `layout row(a, column(b, c))` places views side by side or one below the other, nested; views left out follow it; each medium adapts the tree to its page.
 - **D-018:** first target is an interactive web player (WASM). Output form and medium follow the nature of the content and the author's intent; no medium is the defining output.
 
 ## Waiting on the owner
@@ -109,7 +110,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 **Next session starts here:** (handover written 2026-10-01; see item 5.)
 
 1. Mava Studio is not designed yet (D-044): do not design for it. Integration work goes into the general host interface (`docs/spec/05-host-interface.md`), driven by what any host needs.
-2. **Media follow-ups**, when content needs them: voices in several languages (a voice directory per language, D-053) and a layout of several views on one page chosen by the author (PK-7.4). Video files, raster images and narration sound are done (`prismal-media`, D-052, D-053); export draws frames on every core (2026-10-01).
+2. **Media follow-ups**, when content needs them: voices in several languages (a voice directory per language, D-053). Video files, raster images and narration sound are done (`prismal-media`, D-052, D-053); export draws frames on every core (2026-10-01). Author page layouts are done (D-063).
 3. Input follow-ups, when content needs them: drags in lessons if explore beats come to offer them.
 4. Host interface follow-ups, when a host needs them: a C ABI (`prismal-ffi`, HI-6.4a) for hosts that link libraries (a process binding exists: `prismal-stdio`); fine-grained edit operations (D-045 option 2); introspection for editors (the bindings, types, units and representations available for a value, D-019) as protocol operations.
 5. **Done: members as payloads, drags and clicks on members** (D-059, 2026-10-01, on branch `dynamic-membership`, pushed, not yet merged into `main`). `on request(b in balls)`, several payloads per event, `propose b.pos = p` in a representation per member, `on click request remove(b)`, the protocol's `request` and `click`, requests refused with a reason; guide chapter 9, Labs with members. **Next session starts here:** merge `dynamic-membership` into `main` once the owner has looked at chapters 7, 9 and 11 (D-057 to D-062, the solutions chapter and pinch zoom are all on the branch), then continue with item 6 or the open items below. Done since on the same branch (2026-10-01 overnight): clicks on an empty point of a view (D-060); author styles (D-061); drags on members of groups (D-062); pinch zoom with two touches (HI-4.5); a descriptions track in video export (PK-11.3a); points and enumeration cases as protocol payloads; a glossary test.

@@ -59,6 +59,7 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 | `trace(pos every 0.02 s)`, `series_plot(y every 0.01 s)` | a sampled source: `expr every Δ`, only as a representation's argument (PK-6.3a) |
 | `plot(x: [0 s, 6 s], y: [0 m, 1.1 m])` | plot axes with dimensions; a plot marker is at a pair in those dimensions, `marker(at: (0, y))` (PK-7.3a) |
 | `permit learner { ... }` | permissions |
+| `layout row(scene, column(plot, controls))` | page layout: views side by side in a row, one below the other in a column, nested (D-063) |
 | `timeline { scene S { beat B { actions } } }` | timeline; run-directing actions apply in written order at the beat's start, then the others start together (D-033); `sequence { }` orders actions that take time |
 | `run rate r until E` | shorthand for `run rate r` and `wait until E` in the same beat |
 | `reveal fade\|draw [for d] [in view] { reps }`, `hide name [for d]`, `camera view [to P] [zoom z] [for d]` | animations of the presentation (D-042) |
@@ -542,3 +543,4 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-30 `object` declarations, `parts`, member expressions, aggregates, `for` in flows and representation blocks (D-055).
 - 2026-09-30 `relation` declarations, `connect`, `disconnect`, endpoints `s.a` (D-058).
 - 2026-09-30 capacities `[max m]` and `[n, max m]`, `create`, `destroy`, member targets `set b.x`, `for` blocks of events (D-057).
+- 2026-10-01 `layout`, `row`, `column`: page layout of views (D-063); added to the contextual keywords.

@@ -380,6 +380,16 @@ pub enum PresItem {
     View(ViewDecl),
     Permit { who: Name, items: Vec<Name> },
     Timeline(Vec<SceneDecl>),
+    /// `layout row(scene, column(energy, controls))` (PK-7.4a, D-063).
+    Layout(LayoutNode),
+}
+
+/// A view, or views in a row or a column; the name of a row or column is its keyword.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LayoutNode {
+    View(Name),
+    Row(Name, Vec<LayoutNode>),
+    Column(Name, Vec<LayoutNode>),
 }
 
 #[derive(Clone, Debug, PartialEq)]

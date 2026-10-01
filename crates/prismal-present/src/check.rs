@@ -56,6 +56,17 @@ pub fn check_presentation(cm: &CModel, p: &Presentation) -> Vec<PDiag> {
             None
         }
     };
+    // A layout places views of this presentation, each once (PK-7.4a, D-063).
+    if let Some(l) = &p.layout {
+        let placed = l.views();
+        for (k, v) in placed.iter().enumerate() {
+            if !p.views.iter().any(|x| &x.id == *v) {
+                out.push(PDiag { code: "PK-E01", message: format!("the layout places `{v}`, which is not a view of this presentation (PK-7.4a)"), element: p.id.clone() });
+            } else if placed[..k].contains(v) {
+                out.push(PDiag { code: "PK-E01", message: format!("the layout places `{v}` twice (PK-7.4a)"), element: p.id.clone() });
+            }
+        }
+    }
     for o in &p.observations {
         match &o.source {
             Source::Expr { expr: e } => expr(cm, e, None, &o.id, &mut out),

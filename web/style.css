@@ -94,6 +94,11 @@ select { background: var(--surface); border: 1px solid var(--line); border-radiu
   padding: 8px; min-width: 0; display: flex; flex-direction: column; gap: 6px;
 }
 .view.wide { grid-column: 1 / -1; }
+.views.paged { display: block; }
+.page-row { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.page-row > * { flex: 1 1 0; min-width: 0; }
+.page-column { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+@media (max-width: 700px) { .page-row { flex-direction: column; align-items: stretch; } }
 .view figcaption { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
 .view svg { width: 100%; height: auto; display: block; touch-action: none; user-select: none; }
 .view svg { max-height: 62vh; }

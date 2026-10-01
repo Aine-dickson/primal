@@ -10,6 +10,7 @@ presentation Name for Model {
   view name: plot(x: [a, b], y: [c, d]) { representations }
   panel name { representations }
   permit learner { zoom; pan; timeline_controls }
+  layout row(name, column(name, name))
   observe { name = expression schedule }
   timeline { ... }                                  // chapter 8
 }
@@ -20,6 +21,7 @@ presentation Name for Model {
 | `view ...: spatial(...)` | a region showing a space, with a scale from lengths to pixels and an orientation (`y: up` or `y: down`) |
 | `view ...: plot(...)` | a region with two axes; each range gives its axis a dimension (`[0 s, 5 s]` is a time axis) |
 | `panel ...` | a region without coordinates, for controls, formulas and labels |
+| `layout ...` | where the views go on the page: `row(...)` side by side, `column(...)` one below the other, nested |
 | `permit learner { ... }` | what the learner may do with the views and the timeline: `zoom`, `pan`, `timeline_controls` |
 | `observe { ... }` | named values recorded for tests and for the Observations tab |
 
@@ -157,6 +159,39 @@ run flatter of Cannon with CannonLab {
 }
 ```
 
+## Laying out views
+
+Without a layout, each medium arranges the views itself: the web player fills a grid in the order they are declared, and still images and videos stack them. `layout` places them as the author intends: `row(...)` puts views side by side, `column(...)` one below the other, and either may hold the other.
+
+```text
+presentation CannonPage for Cannon {
+  view flight: plot(x: [0, 60], y: [0, 25]) {
+    function_graph(path)
+    marker(at: (reach / (1 m), 0)) as landing
+  }
+  panel controls {
+    slider(angle, range: [5 deg, 85 deg])
+    toggle(moon)
+  }
+  panel readout {
+    formula("R", speed^2 * sin(2 * angle) / g, live: true)
+    label(top)
+  }
+  layout row(flight, column(controls, readout))
+  observe { R = reach live }
+}
+```
+
+- The plot is on the left; the controls sit above the readout on its right.
+- A layout says where views go and how they share the page, never what they show (PK-7.4). A medium adapts it to its size: on a narrow screen the web player turns a row into a column.
+- Every name in a layout is a view or panel of the presentation, placed once. Views a layout leaves out follow it, in the order they are declared.
+
+```cases
+run page_layout of Cannon with CannonPage {
+  expect { R == 40.7747196738022 m within 1e-9 m }
+}
+```
+
 ## Groups
 
 A **group** draws several representations with one shared placement: its members are written in the group's own frame, then moved to `at`, turned by `rotate` and scaled by `scale`. A rigid body is drawn this way: its shape once, in its own coordinates, and its position and angle from the model.
@@ -270,6 +305,20 @@ presentation Bad for Cannon {
 ```
 
 A derived value cannot be set; the slider must target a parameter (`speed`).
+
+```error
+// error: SX-E09
+model Cannon {
+  param { speed: Velocity = 20 m/s }
+}
+presentation Bad for Cannon {
+  panel a { label(speed) }
+  panel b { label(speed) }
+  layout row(a, column(b, a))
+}
+```
+
+A layout places each view once.
 
 ```error
 // error: PK-E04

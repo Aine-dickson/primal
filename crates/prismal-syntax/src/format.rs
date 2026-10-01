@@ -925,6 +925,17 @@ impl<'a> Printer<'a> {
             }
             sections.push(format!("{INDENT}{head} {block}"));
         }
+        // The layout follows the views it places (D-063).
+        if let Some(l) = &p.layout {
+            fn node(p: &Presentation, l: &Layout) -> String {
+                match l {
+                    Layout::View(id) => p.views.iter().find(|v| &v.id == id).map(|v| v.name.clone()).unwrap_or_else(|| id.clone()),
+                    Layout::Row(xs) => format!("row({})", xs.iter().map(|x| node(p, x)).collect::<Vec<_>>().join(", ")),
+                    Layout::Column(xs) => format!("column({})", xs.iter().map(|x| node(p, x)).collect::<Vec<_>>().join(", ")),
+                }
+            }
+            sections.push(format!("{INDENT}layout {}", node(p, l)));
+        }
         for perm in &p.permissions {
             sections.push(format!("{INDENT}permit {} {{ {} }}", perm.role, perm.allows.join("; ")));
         }

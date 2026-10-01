@@ -23,7 +23,7 @@ pub const RESERVED: &[&str] = &[
 /// such a word is expected (D-040). Elsewhere they are ordinary names (`process drag`).
 pub const CONTEXTUAL: &[&str] = &[
     "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "click", "propose", "permit",
-    "timeline", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
+    "timeline", "layout", "row", "column", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
     "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "reveal", "zoom", "animate", "camera", "bind", "release", "config",
     "expect", "exactly", "rel", "of", "with", "learner", "continue",
 ];
@@ -1341,7 +1341,25 @@ impl<'a> Parser<'a> {
             let scenes = self.block(|p| Self::one(p.scene()))?;
             return Ok(vec![PresItem::Timeline(scenes)]);
         }
-        Err(self.unexpected("`observe`, `view`, `panel`, `permit` or `timeline`"))
+        if self.eat_word("layout") {
+            return Ok(vec![PresItem::Layout(self.layout_node()?)]);
+        }
+        Err(self.unexpected("`observe`, `view`, `panel`, `permit`, `timeline` or `layout`"))
+    }
+
+    /// A view name, or `row(...)` or `column(...)` of layout nodes.
+    fn layout_node(&mut self) -> P<LayoutNode> {
+        let name = self.name("a view name, `row(...)` or `column(...)`")?;
+        if !matches!(name.text.as_str(), "row" | "column") || !self.is_punct("(") {
+            return Ok(LayoutNode::View(name));
+        }
+        self.expect_punct("(")?;
+        let mut items = vec![self.layout_node()?];
+        while self.eat_punct(",") && !self.is_punct(")") {
+            items.push(self.layout_node()?);
+        }
+        self.expect_punct(")")?;
+        Ok(if name.text == "row" { LayoutNode::Row(name, items) } else { LayoutNode::Column(name, items) })
     }
 
     fn observation(&mut self) -> P<Observation> {

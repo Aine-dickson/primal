@@ -28,6 +28,25 @@ struct PresCx<'a, 'b> {
 }
 
 impl PresCx<'_, '_> {
+    /// A page layout (PK-7.4a, D-063): every name a view of this presentation, placed once.
+    fn layout(&mut self, n: &ast::LayoutNode, placed: &mut HashMap<String, Span>) -> Option<Layout> {
+        match n {
+            ast::LayoutNode::View(name) => {
+                let Some(id) = self.views.get(&name.text).cloned() else {
+                    self.err("SX-E03", format!("unknown view `{}`", name.text), name.span);
+                    return None;
+                };
+                if placed.insert(name.text.clone(), name.span).is_some() {
+                    self.err("SX-E09", format!("view `{}` placed twice in the layout", name.text), name.span);
+                    return None;
+                }
+                Some(Layout::View(id))
+            }
+            ast::LayoutNode::Row(_, xs) => Some(Layout::Row(xs.iter().filter_map(|x| self.layout(x, placed)).collect())),
+            ast::LayoutNode::Column(_, xs) => Some(Layout::Column(xs.iter().filter_map(|x| self.layout(x, placed)).collect())),
+        }
+    }
+
     fn err(&mut self, code: &'static str, msg: impl Into<String>, span: Span) {
         self.cx.err(code, msg, span);
     }
@@ -433,8 +452,15 @@ pub(crate) fn presentation(p: &ast::PresentationDecl, models: &[Model], spaces: 
     let mut observations: Vec<Observation> = vec![];
     let mut permissions = vec![];
     let mut timeline = None;
+    let mut layout = None;
     for it in &p.items {
         match it {
+            ast::PresItem::Layout(node) => {
+                if layout.is_some() {
+                    px.err("SX-E09", "one layout per presentation", p.name.span);
+                }
+                layout = px.layout(node, &mut HashMap::new());
+            }
             ast::PresItem::Observe(obs) => {
                 for o in obs {
                     if observations.iter().any(|x| x.name == o.name.text) {
@@ -474,7 +500,7 @@ pub(crate) fn presentation(p: &ast::PresentationDecl, models: &[Model], spaces: 
             ast::PresItem::View(_) => {}
         }
     }
-    Some(Presentation { id: id.clone(), name: id.clone(), model: model.id.clone(), observations, views, permissions, timeline, notes: vec![] })
+    Some(Presentation { id: id.clone(), name: id.clone(), model: model.id.clone(), observations, views, permissions, timeline, layout, notes: vec![] })
 }
 
 pub(crate) fn run(
