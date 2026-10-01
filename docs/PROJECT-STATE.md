@@ -110,7 +110,7 @@ Nothing blocking. Since 2026-09-30 the owner has delegated acceptance of recomme
 
 ## Next steps
 
-**Next session starts here:** (handover written 2026-10-01, after the lesson-buttons session.) Timeline actions (D-067, D-068) are merged into `main`. Buttons in lessons and runtime-control buttons (D-069) are on branch `lesson-buttons` (pull request #3); merge it once its run is green. Then, in order:
+**Next session starts here:** (handover written 2026-10-01, after the lesson-buttons session.) Timeline actions (D-067, D-068) are merged into `main`. Buttons in lessons and runtime-control buttons (D-069) are merged too (pull request #3). Next, in order:
    1. **Plot axes** with display units and ranges that follow the data (PK-7.3).
    2. **Drag mode `live`** (PK-10.9) and the interactive failure policy `pause` (RC-10.3).
    3. Smaller language items: `contribute` on discrete state, relation sets with one relation per pair, `create`/`connect` outside a collection's container; buttons whose event takes a payload.
