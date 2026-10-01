@@ -178,10 +178,6 @@ struct Player {
 }
 
 impl Player {
-    fn cm(&self) -> &CModel {
-        &self.pb.cm
-    }
-
     fn num(&mut self, e: &prismal_ir::Expr) -> f64 {
         match number(&self.pb.cm, e) {
             Ok(x) => x,
