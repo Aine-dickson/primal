@@ -35,11 +35,12 @@ await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
 const port = server.address().port;
 const devtools = 9337;
 // BROWSER_ARGS adds flags, such as `--no-sandbox` where the system forbids Chrome's sandbox.
-const edge = spawn(browser, [...(process.env.BROWSER_ARGS || '').split(' ').filter(Boolean), '--headless=new', '--disable-gpu', `--remote-debugging-port=${devtools}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'prismal-input-'))}`, '--window-size=1300,900', 'about:blank']);
+const edge = spawn(browser, [...(process.env.BROWSER_ARGS || '').split(' ').filter(Boolean), '--headless=new', '--disable-gpu', '--no-first-run', `--remote-debugging-port=${devtools}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), 'prismal-input-'))}`, '--window-size=1300,900', 'about:blank']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// A cold machine (a CI runner) can take well over ten seconds to start the browser.
 let target;
-for (let i = 0; i < 50 && !target; i++) {
+for (let i = 0; i < 150 && !target; i++) {
   await sleep(200);
   try {
     target = (await (await fetch(`http://127.0.0.1:${devtools}/json`)).json()).find((t) => t.type === 'page');
