@@ -33,7 +33,7 @@ Every form of the working syntax on one page, with the chapter that introduces i
 
 Each block keyword also has a one-line form: `param g: Acceleration = 9.81 m/s^2`, `flow der(x) = v`.
 
-**Modifiers:** `symbol "θ"` (display symbol), `unit deg` (display unit of an angle), `intervenable` (state the learner may change), `private`.
+**Modifiers:** `symbol "θ"` (display symbol), `unit deg` (display unit of an angle), `intervenable` (state the learner may change), `private`, `combine sum|product|min|max|any|all` (discrete state that takes contributions).
 
 **Triggers:** `rising(g)`, `falling(g)`, `crossing(g)` (zero crossings of `g`), `at τ`, `every Δ [from τ0]`, `start`, `request`, `E` (after event `E` occurs or is emitted), `input(i)`. `request(p: T)` and `E(p: T)` receive a payload named `p` (chapter 5); `request(b in c)` receives a member of the collection `c`, and `request(b in c, p: T)` several payloads (chapter 9).
 
@@ -41,7 +41,7 @@ Each block keyword also has a one-line form: `param g: Acceleration = 9.81 m/s^2
 
 **Members** (chapter 9): `a.x`, `c[k].x`; `sum`, `min`, `max`, `any`, `all` of `(e for b in c [if cond])`; `count(c)`, `count(b for b in c if cond)`. In views, `for b in c { reps }` draws one representation per member, named `name[k]`.
 
-**Operations:** `set x = e`, `set b.x = e` (a member's binding), `emit E`, `emit E(v)` (with a payload), `emit E(b, v)` (several), `contribute x += e` (contributions to discrete state are not implemented by the prototype, MK-E11).
+**Operations:** `set x = e`, `set b.x = e` (a member's binding), `emit E`, `emit E(v)` (with a payload), `emit E(b, v)` (several), `contribute x += e` (into discrete state declared with `combine`; any number combine, a `set` of the same binding conflicts, chapter 5).
 
 ## Types and values
 
@@ -126,7 +126,9 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `else`, `if`, `then` | conditional values; `if` also filters an aggregate and enables an event | 1, 5, 9 |
 | `emit` | an operation that makes another event happen | 5 |
 | `enum`, `match` | enumerations and a choice by case | 5 |
+| `combine` | how contributions combine into discrete state: `combine sum`, `product`, `min`, `max`, `any`, `all` | 5 |
 | `connect`, `disconnect` | operations that make a relation between members and remove one | 9 |
+| `contribute` | an operation adding to discrete state by its combination: `contribute total += 1` | 5 |
 | `create`, `destroy` | operations that make a member of a collection and remove one | 9 |
 | `equation` | a named relation, shown and optionally checked | 6 |
 | `event` | something that happens at an instant, with operations | 5 |
@@ -180,14 +182,13 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `where` | a parameter's condition; an observation filter | 2, 6 |
 | `zeno`, `settle` | what happens when an event repeats without end | 5 |
 | `zoom` | the zoom of a `camera` action | 8 |
-| `contribute` | an operation adding to discrete state; not implemented (MK-E11) | reserved for later |
 | `enter` | reserved | reserved for later |
 
 ## Words
 
 **Reserved** (never names): `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request enum match`.
 
-**Contextual** (keywords only where expected, names elsewhere): `for view panel observe live over microstep show as drag click propose permit timeline layout row column scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue press undo redo`.
+**Contextual** (keywords only where expected, names elsewhere): `for view panel observe live over microstep show as drag click propose permit timeline layout row column scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue press undo redo combine`.
 
 ## Diagnostics
 

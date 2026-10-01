@@ -80,6 +80,20 @@ event full on rising(level - high) { set pumping = false }
 
 `rising(g)` fires when `g` crosses zero going up, so `level - high` fires when `level` passes `high`. `falling` is the downward crossing. The value changed is usually **discrete**. See [chapter 5](05-events-and-modes.md).
 
+### Let several events add to one value at the same instant
+
+Combine **discrete** state declared with **combine** and **contribute** in each handler.
+
+```prismal
+// model / discrete
+total: Real = 0   combine sum
+// model
+event small on every 1 s { contribute total += 1 }
+event large on every 1 s { contribute total += 10 }
+```
+
+Two `set`s of one value at one instant are a conflict; contributions are not. See [chapter 5](05-events-and-modes.md).
+
 ### Switch between behaviors (on/off, modes)
 
 Combine a **discrete** value, **if ... then ... else** in the flow, and **events** that switch it.

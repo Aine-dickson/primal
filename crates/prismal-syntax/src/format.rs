@@ -654,6 +654,9 @@ impl<'a> Printer<'a> {
             if b.private {
                 tail.push("private".into());
             }
+            if let Some(c) = &b.combine {
+                tail.push(format!("combine {c}"));
+            }
             if let Some(sym) = &b.display.symbol {
                 tail.push(format!("symbol \"{sym}\""));
             }

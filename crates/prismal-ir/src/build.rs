@@ -191,6 +191,7 @@ impl ModelBuilder {
             display: Display::default(),
             notes: vec![],
             when: None,
+            combine: None,
         });
         id
     }

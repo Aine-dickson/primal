@@ -57,6 +57,9 @@ pub enum CTrigger {
 #[derive(Clone, Debug)]
 pub enum COp {
     Set { binding: usize, component: Option<usize>, value: CExpr },
+    /// `contribute x += e`: combined with the other contributions of the transition and the
+    /// value before it, by `combine` (MK-14.9, D-073).
+    Contribute { binding: usize, value: CExpr, combine: String },
     /// `emit E` or `emit E(value)`, the value becoming the payload of `E`'s followers (D-050).
     Emit { event: usize, payload: Option<CExpr> },
     /// `destroy`: the liveness binding of a member becomes false; two in one transition do

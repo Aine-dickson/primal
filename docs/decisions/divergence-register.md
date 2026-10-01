@@ -1348,3 +1348,20 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** lowering, formatter; `CKind::Button { payload }`; `Interactive::press` and lesson presses request with the value; guide chapters 5, 7, 10 and 14; `prismal-host/tests/payload_buttons.rs`, `prismal-syntax/tests/glossary.rs`. Not yet: option 3.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-073: Contributions to discrete state
+
+- **Status:** Accepted
+- **Original position:** MK-14.9 and MK-16.4 define `contribute(target, value)` for discrete targets whose type or binding declares a combination, with any number of contributions combining and a `set` on the same target conflicting. No type or binding could declare a combination, so the prototype rejected every contribution (MK-E11).
+- **Raised by:** PROJECT-STATE, next steps; `docs/prototype.md`, "Not implemented".
+- **Builds on:** MK-14.9, MK-16.3, MK-16.4, D-005.
+- **Question:** How does a binding declare its combination, which combinations exist, and with what does a contribution combine?
+- **Options considered:**
+  1. **A binding modifier, `combine sum`,** among a fixed set: `sum` and `product` (numbers; `sum` also vectors), `min`, `max` (numbers and quantities), `any`, `all` (Booleans). The contributions of one transition combine with the value before it: `contribute total += 1` adds one.
+  2. **Combinations on types** (D-005's type-supplied default). Needs declared quantity types with combinations, which v0 does not have; a binding modifier works now and a type default can be added later.
+  3. **Contributions replacing the value** (combined only with each other). Then `contribute n += 1` would set `n` to 1, against the `+=` written.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. `combine` is a contextual word, accepted only on discrete state (SX-E06). A contribution to a binding without a combination, or of a type its combination does not apply to, is MK-E11; a `set` and a `contribute` of one binding in one handler are MK-E19, and across handlers of one transition a conflict at run time (MK-16.4). Contributions to components are not allowed.
+- **Reason:** a modifier is where a binding already declares how it is shown and changed; reading `+=` as "combine with the current value" is what authors expect from a score or a counter.
+- **Consequences:** working syntax (modifier, contextual word); IR `Binding.combine`; parser, lowering, formatter; `COp::Contribute`, the runtime's `combine`; guide chapters 5, 10 and 14. Not yet: combinations supplied by types (option 2).
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

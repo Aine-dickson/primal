@@ -332,7 +332,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Plot axes controlled by a timeline camera (D-070) | PK-7.3 |
 | Animated color, line and scale, shape morphs and chosen easing functions (D-068 option 2); narration speed as a learner control separate from playback speed (the web player offers pause, seek, replay, speed, zoom and pan) | PK-8.4, PK-9.7 |
 | Learner predictions as expected values; instruments | PK-4.3, PK-3.7, PK-7.4 |
-| `contribute` operations on discrete state | MK section 16 |
+| Combinations supplied by types (D-073 option 2) | MK-14.9 |
 | Failure policies chosen per category in a run's configuration (D-071) | RC-10.3 |
 | Frames of spaces (D-022), affine temperature units | MK sections 3.4, 4 |
 
@@ -366,3 +366,4 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 - 2026-10-01 plot axes that follow the data, axis display units, zoom and pan of plots (D-070); solver rounding near 0 shown as 0 in point descriptions.
 - 2026-10-01 drag mode `live` and the interactive failure policy `pause` (D-071); a step breaking a `reject` or `stop` constraint cut at the last valid instant.
 - 2026-10-01 buttons whose event takes a payload, `button(kick(2 kg*m/s))` (D-072).
+- 2026-10-01 contributions to discrete state with `combine` (D-073).
