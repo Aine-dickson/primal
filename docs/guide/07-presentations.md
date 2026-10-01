@@ -45,6 +45,7 @@ presentation Name for Model {
 | `equation(name [, live: true])` | a model equation, typeset, with its symbols' current values | any |
 | `table(e every Δ)` | rows of sampled values; a tuple `e` gives one column per component | any |
 | `button(E [, label: "..."])` | requests the `on request` event `E` when pressed | any |
+| `button(reset)`, `button(undo)`, `button(redo)` | a lab's runtime controls: start the run again, take back the last action, put it back | any |
 | `slider(p, range: [a, b] [, step: s])` | a control for a parameter | any |
 | `number_input(p [, range: [a, b]])` | a typed value for a parameter | any |
 | `toggle(p)` | a switch for a Boolean parameter | any |

@@ -328,7 +328,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 |---|---|
 | Keeping comments that are not notes when formatting (the formatter prints from the IR) | D-036 |
 | Relations between relations, relation sets with at most one relation per pair, `create` and `connect` outside the container of the collection they change, creation and destruction as interventions (set aside by D-059), native growable state for very large populations (D-066 option 1); function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
-| `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
+| Sampled sources `over I`; buttons whose event takes a payload | PK-6.3, PK-6.3b, D-069 |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
 | Animated color, line and scale, shape morphs and chosen easing functions (D-068 option 2); narration speed as a learner control separate from playback speed (the web player offers pause, seek, replay, speed, zoom and pan) | PK-8.4, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |

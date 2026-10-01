@@ -25,7 +25,7 @@ pub const CONTEXTUAL: &[&str] = &[
     "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "click", "propose", "permit",
     "timeline", "layout", "row", "column", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
     "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "reveal", "zoom", "animate", "camera", "bind", "release", "config",
-    "expect", "exactly", "rel", "of", "with", "learner", "continue",
+    "expect", "exactly", "rel", "of", "with", "learner", "continue", "press", "undo", "redo",
 ];
 
 pub fn is_reserved(w: &str) -> bool {
@@ -1725,8 +1725,10 @@ impl<'a> Parser<'a> {
             }
             self.bump();
             LearnerAction::Set { control, value: self.expr()? }
+        } else if self.eat_word("press") {
+            LearnerAction::Press(self.name("an event name")?)
         } else {
-            return Err(self.unexpected("`set` or `continue`"));
+            return Err(self.unexpected("`set`, `press` or `continue`"));
         };
         Ok(LearnerStep { at, action, span: self.since(start) })
     }

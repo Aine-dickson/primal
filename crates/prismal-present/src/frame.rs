@@ -207,8 +207,15 @@ pub enum Shape {
     Ellipse { center: [f64; 2], radii: [f64; 2], rotation: f64, start: f64, sweep: f64, closed: bool },
     /// A model equation typeset from the IR (PK-6.5); `name` is the equation's name.
     Equation { name: String, lhs: Expr, rhs: Expr, symbols: Vec<Symbol>, layout: MathLayout },
-    /// A button that requests an event (D-027).
-    Button { event: Id, label: String },
+    /// A button that requests an event (D-027), or that is a runtime control: `reset`,
+    /// `undo` or `redo` (D-069).
+    Button {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        event: Option<Id>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        control: Option<String>,
+        label: String,
+    },
     /// Rows of values: the sample instant, then one column per component.
     Table { columns: Vec<String>, rows: Vec<Vec<String>> },
     /// A group's members, already placed by its transform (D-043).
@@ -399,6 +406,8 @@ pub enum CKind {
     Round { center: CExpr, rx: CExpr, ry: Option<CExpr>, rotate: Option<CExpr>, from: Option<CExpr>, to: Option<CExpr> },
     Equation { name: String, lhs: Expr, rhs: Expr, refs: Vec<(Id, usize)>, live: bool },
     Button { event: Id, label: String },
+    /// A runtime control (D-069): `reset`, `undo` or `redo`.
+    RunButton { control: String, label: String },
     Table { value: CExpr, tys: Vec<Type>, every: f64, columns: Vec<String> },
     Axes,
     Grid,
@@ -747,17 +756,22 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, full: &Rep) -> Result<CRep, Vec<P
             CKind::Equation { name: q.name.clone(), lhs: q.lhs.clone(), rhs: q.rhs.clone(), refs, live }
         }
         "button" => {
-            let msg = "the name of an event declared `on request` (D-027)";
-            let Some(Arg::Element { element }) = rep.sources.first() else { return Err(needs(msg)) };
-            let Some(ev) = cm.ir.events.iter().find(|e| &e.id == element) else { return Err(needs(msg)) };
-            if !matches!(ev.trigger, prismal_ir::Trigger::Request) {
-                return Err(d("PK-E03", format!("`{}` is not declared `on request`, so no button can request it (D-027)", ev.name)));
-            }
-            let label = match rep.prop("label") {
+            let msg = "the name of an event declared `on request` (D-027), or `reset`, `undo` or `redo` (D-069)";
+            let label_or = |w: &str| match rep.prop("label") {
                 Some(Arg::Text { text }) => text.clone(),
-                _ => ev.name.clone(),
+                _ => w.to_string(),
             };
-            CKind::Button { event: element.clone(), label }
+            match rep.sources.first() {
+                Some(Arg::Word { word }) if ["reset", "undo", "redo"].contains(&word.as_str()) => CKind::RunButton { control: word.clone(), label: label_or(word) },
+                Some(Arg::Element { element }) => {
+                    let Some(ev) = cm.ir.events.iter().find(|e| &e.id == element) else { return Err(needs(msg)) };
+                    if !matches!(ev.trigger, prismal_ir::Trigger::Request) {
+                        return Err(d("PK-E03", format!("`{}` is not declared `on request`, so no button can request it (D-027)", ev.name)));
+                    }
+                    CKind::Button { event: element.clone(), label: label_or(&ev.name) }
+                }
+                _ => return Err(needs(msg)),
+            }
         }
         "table" => {
             let Some(Arg::Sampled { expr: e, every }) = rep.sources.first() else {
@@ -1074,8 +1088,9 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
         }
         CKind::Button { event, label } => {
             let name = cm.ir.events.iter().find(|e| &e.id == event).map(|e| e.name.clone()).unwrap_or_default();
-            (Shape::Button { event: event.clone(), label: label.clone() }, format!("button {label}: requests {name}"))
+            (Shape::Button { event: Some(event.clone()), control: None, label: label.clone() }, format!("button {label}: requests {name}"))
         }
+        CKind::RunButton { control, label } => (Shape::Button { event: None, control: Some(control.clone()), label: label.clone() }, format!("button {label}: {control}")),
         CKind::Table { value, tys, every, columns } => {
             let t0 = run.config.t0;
             let mut rows = vec![];

@@ -436,6 +436,8 @@ pub enum LearnerInput {
     Continue,
     /// `set slider angle = 60 deg`: set the control of that kind targeting the binding.
     SetControl { control: String, binding: Id, value: Expr },
+    /// `press drop`: press the button that requests the event (D-069).
+    Press { event: Id },
 }
 
 /// An expectation (PK section 4).

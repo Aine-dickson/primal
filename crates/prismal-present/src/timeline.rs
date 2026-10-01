@@ -625,6 +625,16 @@ impl Player {
                     let op = Op::Set { target: prismal_ir::Target::of(binding.clone()), value: value.clone() };
                     self.modify(inp.at, Action::Intervene(vec![op]));
                 }
+                // A button among the beat's controls requests its event on the branch (D-069).
+                LearnerInput::Press { event } => {
+                    let offered = controls.iter().any(|c| c.kind == "button" && matches!(c.sources.first(), Some(prismal_ir::present::Arg::Element { element }) if element == event));
+                    if !offered {
+                        let name = self.pb.cm.ir.events.iter().find(|e| &e.id == event).map(|e| e.name.clone()).unwrap_or_else(|| event.clone());
+                        self.pb.refusals.push(Refusal { at: inp.at, input: describe(&inp.input), reason: format!("{beat} offers no button for `{name}` (PK-9.8)") });
+                        continue;
+                    }
+                    self.modify(inp.at, Action::Request(event.clone()));
+                }
             }
         }
         let end_input = end;
@@ -658,6 +668,7 @@ fn describe(i: &LearnerInput) -> String {
     match i {
         LearnerInput::Continue => "continue".into(),
         LearnerInput::SetControl { control, binding, .. } => format!("set {control} {binding}"),
+        LearnerInput::Press { event } => format!("press {event}"),
     }
 }
 
@@ -731,7 +742,7 @@ fn play_once(prog: &Program, presentation: &str, base: Config, medium: Medium, i
         if !used {
             let reason = match inp.input {
                 LearnerInput::Continue => "no continue point at this instant".into(),
-                LearnerInput::SetControl { .. } => "outside an explore beat the learner has no model actions (PK-9.8, D-025)".to_string(),
+                LearnerInput::SetControl { .. } | LearnerInput::Press { .. } => "outside an explore beat the learner has no model actions (PK-9.8, D-025)".to_string(),
             };
             pl.pb.refusals.push(Refusal { at: inp.at, input: describe(&inp.input), reason });
         }

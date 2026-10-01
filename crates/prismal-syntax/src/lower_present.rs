@@ -12,6 +12,9 @@ use prismal_ir::present::*;
 use prismal_ir::{Expr, Id, Model, Space};
 use std::collections::HashMap;
 
+/// Runtime controls a `button` can offer instead of an event (PK-6.3, D-069).
+pub const RUN_CONTROLS: &[&str] = &["reset", "undo", "redo"];
+
 /// Representation kinds of the first slice (PK-6.3).
 const KINDS: &[&str] = &[
     "marker", "arrow", "segment", "polyline", "polygon", "circle", "ellipse", "arc", "trace", "function_graph", "series_plot", "axes", "grid", "label",
@@ -127,6 +130,11 @@ impl PresCx<'_, '_> {
                     Some(scale) => Arg::Scale { scale },
                     None => continue,
                 },
+                // A runtime control of a button (D-069): `button(reset)`, unless the model has an
+                // event of that name.
+                (ExprKind::Name(n), None) if r.kind.text == "button" && RUN_CONTROLS.contains(&n.as_str()) && !self.cx.bindings.contains_key(n) && !self.cx.events.contains_key(n) => {
+                    Arg::Word { word: n.clone() }
+                }
                 // A positional name of an event or equation, not a binding: a model element.
                 (ExprKind::Name(n), None) if a.every.is_none() && !self.cx.bindings.contains_key(n) && (self.cx.events.contains_key(n) || self.equations.contains_key(n)) => {
                     let element = self.cx.events.get(n).or_else(|| self.equations.get(n)).cloned().unwrap();
@@ -584,6 +592,7 @@ pub(crate) fn run(
     for s in &r.learner {
         let input = match &s.action {
             ast::LearnerAction::Continue => LearnerInput::Continue,
+            ast::LearnerAction::Press(e) => LearnerInput::Press { event: cx.event_id(e) },
             ast::LearnerAction::Set { control, value } => match control.as_slice() {
                 [kind, target] => LearnerInput::SetControl { control: kind.text.clone(), binding: cx.binding(target), value: cx.expr(value, &[]) },
                 _ => {

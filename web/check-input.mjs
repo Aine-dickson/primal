@@ -209,6 +209,21 @@ await sleep(600);
 const going = await ev(`[document.querySelector('#clock').textContent, document.querySelector('#continue').hidden, document.querySelector('#play').textContent]`);
 check('Continue plays on', parseFloat(going[0]) > 3 && going[1] && going[2] === 'Pause', JSON.stringify(going));
 
+// The guide's explore beat with a button (D-069): pressing it drops the ball again on the
+// learner's branch, at the instant shown.
+await open('g8-freefall/DropTry');
+await ev(`document.querySelector('#beats [data-beat="yours"]').click()`);
+await sleep(300);
+const ballText = () => ev(`document.querySelector('[data-rep$=".ball"] title').textContent`);
+const landedText = await ballText();
+const dropBtn = await ev(`[...document.querySelectorAll('button')].some((b) => b.textContent === 'Drop it')`);
+check('an explore beat shows its button', dropBtn);
+await ev(`[...document.querySelectorAll('button')].find((b) => b.textContent === 'Drop it').click()`);
+await sleep(300);
+const droppedText = await ballText();
+const statusText = await ev(`document.querySelector('#status').textContent`);
+check('pressing it drops the ball on the branch', droppedText.includes('y = 10 m') && !statusText.startsWith('Refused'), `${landedText} to ${droppedText}; ${statusText}`);
+
 ws.close();
 edge.kill();
 server.close();

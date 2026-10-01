@@ -105,6 +105,10 @@ impl WebPlayer {
     pub fn lesson_set_control(&mut self, p: f64, rep: &str, value: f64) -> Result<String, JsValue> {
         self.0.lesson_set_control(p, rep, value).map(s).map_err(|d| JsValue::from_str(&d.to_string()))
     }
+    /// A press of an explore beat's button at presentation instant `p` (D-069).
+    pub fn lesson_press(&mut self, p: f64, rep: &str) -> Result<String, JsValue> {
+        self.0.lesson_press(p, rep).map(s).map_err(|d| JsValue::from_str(&d.to_string()))
+    }
     pub fn lesson_continue(&mut self, p: f64) -> Result<String, JsValue> {
         self.0.lesson_continue(p).map(s).map_err(|d| JsValue::from_str(&d.to_string()))
     }

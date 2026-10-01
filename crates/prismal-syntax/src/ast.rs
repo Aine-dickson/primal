@@ -534,6 +534,8 @@ pub enum LearnerAction {
     Continue,
     /// `set slider angle = 60 deg`: the control words, then the value.
     Set { control: Vec<Name>, value: Expr },
+    /// `press E`: the button that requests event `E` (D-069).
+    Press(Name),
 }
 
 #[derive(Clone, Debug, PartialEq)]
