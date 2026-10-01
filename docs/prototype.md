@@ -107,7 +107,7 @@ Acceptance (`prismal-web/tests/format.rs`): every reference program and every pr
 
 `cargo run -p prismal-present --example cases -- FILE...` runs the cases of a program headless and reports every expectation (for a lesson, also the beat timings).
 
-Representations implemented: `marker`, `arrow`, `segment`, `polyline`, `polygon`, `trace`, `function_graph`, `series_plot`, `label`, `formula`, `equation`, `table`, `slider`, `number_input`, `toggle`, `button`, `axes`, `grid`. A representation argument that names a model event or equation lowers to an `element` argument (04-ir section 7): `button(drop)` requests an `on request` event (D-027) at the instant shown, `equation(name)` typesets a model equation with its symbols' values. Timeline actions: all of PK-9.2 except `animate`, `camera`, `bind`, `release`, `reveal`, `wait_for_learner`; `hide` stops showing a named representation. Others are reported as PK-E06, never dropped.
+Representations implemented: `marker`, `arrow`, `segment`, `polyline`, `polygon`, `trace`, `function_graph`, `series_plot`, `label`, `formula`, `equation`, `table`, `slider`, `number_input`, `toggle`, `button`, `axes`, `grid`. A representation argument that names a model event or equation lowers to an `element` argument (04-ir section 7): `button(drop)` requests an `on request` event (D-027) at the instant shown, `equation(name)` typesets a model equation with its symbols' values. Timeline actions: all of PK-9.2. `hide` stops showing a named representation; `reveal`, `hide ... for` and `camera` are named effects (D-042); `wait learner` is a continue point (D-067); `animate` drives opacity and an offset, `release` and `bind` hand a representation's geometry between its projection and the lesson (D-068). Others are reported as PK-E06, never dropped.
 
 An interactive session has a display clock (RC section 12): its run is computed to the configuration's end, `seek` chooses the instant shown, and the learner's actions take effect at that instant (RC-11.2), so the trajectory after it is recomputed and the one before it is unchanged; `reset` starts a new run with an empty log. A static model has one instant (RC-12.4).
 
@@ -330,7 +330,7 @@ The energy drifts agree with the predictions of `tools/refvals.py` (RP-04: 7.8e-
 | Relations between relations, relation sets with at most one relation per pair, `create` and `connect` outside the container of the collection they change, creation and destruction as interventions (set aside by D-059), native growable state for very large populations (D-066 option 1); function libraries shared between models | MK sections 8, 16, 17, MK section 2, R-55 |
 | `button` for runtime controls and inside lessons; sampled sources `over I` | PK-6.3, PK-6.3b |
 | Plot axes that follow the data or the camera; display units on plot axes | PK-7.3 |
-| Timeline actions `animate`, `bind`, `release`, `wait_for_learner` (the web player offers pause, seek, replay, zoom and pan as renderer operations) | PK-8.4, PK-9.2, PK-9.7 |
+| Animated color, line and scale, shape morphs and chosen easing functions (D-068 option 2); narration speed as a learner control separate from playback speed (the web player offers pause, seek, replay, speed, zoom and pan) | PK-8.4, PK-9.7 |
 | Drag mode `live`; learner predictions as expected values; instruments | PK-10.9, PK-4.3, PK-3.7, PK-7.4 |
 | `contribute` operations on discrete state | MK section 16 |
 | Failure policy `pause` (interactive) | RC-10.3 |

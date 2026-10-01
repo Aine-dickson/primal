@@ -63,6 +63,8 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 | `timeline { scene S { beat B { actions } } }` | timeline; run-directing actions apply in written order at the beat's start, then the others start together (D-033); `sequence { }` orders actions that take time |
 | `run rate r until E` | shorthand for `run rate r` and `wait until E` in the same beat |
 | `reveal fade\|draw [for d] [in view] { reps }`, `hide name [for d]`, `camera view [to P] [zoom z] [for d]` | animations of the presentation (D-042) |
+| `animate name opacity\|offset to v [for d]`, `release name`, `bind name [for d]` | animated properties and the handover of a bound representation (D-068) |
+| `wait learner [limit d] [fallback { actions }]` | a continue point (D-067) |
 
 ### 1.3 Runs
 
@@ -546,3 +548,4 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-10-01 `layout`, `row`, `column`: page layout of views (D-063); added to the contextual keywords.
 - 2026-10-01 `undirected relation`, `s.has(o)`, `s.other(o)` (D-064); part paths `left.atoms` (D-065).
 - 2026-10-01 `[max inf]`: collections without a declared limit (D-066).
+- 2026-10-01 `wait learner` (D-067); `animate`, `release`, `bind` defined (D-068).

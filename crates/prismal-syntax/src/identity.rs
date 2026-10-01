@@ -192,7 +192,7 @@ fn beat_reps(actions: &[Action]) -> Vec<Rep> {
                 out.extend(controls.iter().cloned());
                 out.extend(beat_reps(fallback));
             }
-            Action::Sequence { actions } => out.extend(beat_reps(actions)),
+            Action::Sequence { actions } | Action::WaitLearner { fallback: actions, .. } => out.extend(beat_reps(actions)),
             _ => {}
         }
     }

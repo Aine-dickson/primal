@@ -9,9 +9,9 @@
 //! | PK-E05 | a representation whose sources do not suit its kind or view (PK-6.3) |
 //! | PK-E06 | a representation kind the prototype does not implement |
 
-use crate::frame::{compile_rep, Projector, ViewCtx};
+use crate::frame::{compile_rep, rep_view, Projector, ViewCtx};
 use crate::{number, PDiag};
-use prismal_ir::present::{Action, Presentation, Schedule, Source};
+use prismal_ir::present::{Action, Animated, Presentation, Schedule, Source};
 use prismal_ir::{Expr, Trigger, Type};
 use prismal_kernel::{check_intervention, compile_expr, CModel};
 
@@ -107,14 +107,14 @@ pub fn check_presentation(cm: &CModel, p: &Presentation) -> Vec<PDiag> {
     }
     if let Some(tl) = &p.timeline {
         for b in tl.scenes.iter().flat_map(|s| &s.beats) {
-            check_actions(cm, &projector, &b.actions, &b.id, &mut rep_ids, &mut out, &time, &duration);
+            check_actions(cm, p, &projector, &b.actions, &b.id, &mut rep_ids, &mut out, &time, &duration);
         }
     }
     out
 }
 
 #[allow(clippy::too_many_arguments)]
-fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps: &mut Vec<String>, out: &mut Vec<PDiag>, time: &Type, duration: &Type) {
+fn check_actions(cm: &CModel, p: &Presentation, pr: &Projector, acts: &[Action], beat: &str, reps: &mut Vec<String>, out: &mut Vec<PDiag>, time: &Type, duration: &Type) {
     for a in acts {
         match a {
             Action::Reveal { view, reps: rs, duration: d, .. } => {
@@ -226,11 +226,55 @@ fn check_actions(cm: &CModel, pr: &Projector, acts: &[Action], beat: &str, reps:
                     }
                     with_members(r, reps);
                 }
-                check_actions(cm, pr, fallback, beat, reps, out, time, duration);
+                check_actions(cm, p, pr, fallback, beat, reps, out, time, duration);
             }
-            Action::Sequence { actions } => check_actions(cm, pr, actions, beat, reps, out, time, duration),
+            Action::Sequence { actions } => check_actions(cm, p, pr, actions, beat, reps, out, time, duration),
+            Action::WaitLearner { limit, fallback } => {
+                if let Some(l) = limit {
+                    expr(cm, l, Some(duration), beat, out);
+                }
+                check_actions(cm, p, pr, fallback, beat, reps, out, time, duration);
+            }
+            Action::Animate { target, property, to, duration: d } => {
+                if !known(reps, target, beat, out) {
+                    continue;
+                }
+                if let Some(d) = d {
+                    expr(cm, d, Some(duration), beat, out);
+                }
+                match property {
+                    Animated::Opacity => {
+                        expr(cm, to, Some(&Type::real()), beat, out);
+                        if number(cm, to).is_ok_and(|x| !(0.0..=1.0).contains(&x)) {
+                            out.push(PDiag { code: "PK-E02", message: "an opacity is from 0 to 1 (D-068)".into(), element: beat.into() });
+                        }
+                    }
+                    // An offset is a vector of the space of the view the representation is
+                    // drawn in, of dimension length.
+                    Animated::Offset => match rep_view(p, target).flatten().map(|v| pr.ctx(Some(&v))) {
+                        Some(ViewCtx::Spatial { space, .. }) => expr(cm, to, Some(&Type::Vector { space, dim: prismal_ir::Dim::length() }), beat, out),
+                        _ => out.push(PDiag { code: "PK-E05", message: format!("`{target}` is not drawn in a spatial view; only those take an offset (D-068)"), element: beat.into() }),
+                    },
+                }
+            }
+            Action::Release { target } | Action::Bind { target, duration: None } => {
+                known(reps, target, beat, out);
+            }
+            Action::Bind { target, duration: Some(d) } => {
+                known(reps, target, beat, out);
+                expr(cm, d, Some(duration), beat, out);
+            }
         }
     }
+}
+
+/// Whether a timeline action's target is a representation shown so far (PK-2.3).
+fn known(reps: &[String], target: &str, beat: &str, out: &mut Vec<PDiag>) -> bool {
+    let ok = reps.iter().any(|r| r == target);
+    if !ok {
+        out.push(PDiag { code: "PK-E01", message: format!("unknown representation `{target}`"), element: beat.into() });
+    }
+    ok
 }
 
 /// A representation's identity and those of a group's members (D-043).

@@ -1601,6 +1601,11 @@ impl<'a> Parser<'a> {
             if self.eat_word("until") {
                 return Ok(Action::WaitUntil(self.name("an event name")?));
             }
+            if self.eat_word("learner") {
+                let limit = if self.eat_word("limit") { Some(self.expr()?) } else { None };
+                let fallback = if self.eat_word("fallback") { self.block(|p| Self::one(p.action()))? } else { vec![] };
+                return Ok(Action::WaitLearner { limit, fallback });
+            }
             return Ok(Action::Wait(self.expr()?));
         }
         if self.eat_word("request") {
@@ -1608,10 +1613,21 @@ impl<'a> Parser<'a> {
             let payload = self.payload_args()?;
             return Ok(Action::Request(e, payload));
         }
-        for w in ["animate", "bind", "release"] {
-            if self.is_word(w) {
-                return Err(Diag::new("SX-E06", format!("the timeline action `{w}` is not yet defined by the working syntax"), self.span()));
-            }
+        if self.eat_word("animate") {
+            let target = self.name("a representation name")?;
+            let property = self.any_name("`opacity` or `offset`")?;
+            self.expect_word("to")?;
+            let to = self.expr()?;
+            let duration = if self.eat_word("for") { Some(self.expr()?) } else { None };
+            return Ok(Action::Animate { target, property, to, duration });
+        }
+        if self.eat_word("release") {
+            return Ok(Action::Release(self.name("a representation name")?));
+        }
+        if self.eat_word("bind") {
+            let n = self.name("a representation name")?;
+            let d = if self.eat_word("for") { Some(self.expr()?) } else { None };
+            return Ok(Action::Bind(n, d));
         }
         Err(self.unexpected("a timeline action"))
     }

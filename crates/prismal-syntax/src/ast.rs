@@ -495,6 +495,14 @@ pub enum Action {
     Request(Name, Option<Expr>),
     Reset,
     Branch,
+    /// `wait learner [limit d] [fallback { ... }]` (D-067)
+    WaitLearner { limit: Option<Expr>, fallback: Vec<Action> },
+    /// `animate R opacity|offset to v [for d]` (D-068)
+    Animate { target: Name, property: Name, to: Expr, duration: Option<Expr> },
+    /// `release R` (D-068)
+    Release(Name),
+    /// `bind R [for d]` (D-068)
+    Bind(Name, Option<Expr>),
 }
 
 // ---------------------------------------------------------------- runs

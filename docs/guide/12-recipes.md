@@ -138,6 +138,8 @@ run row of Row with RowView {
 | add a button that makes the model do something | `event kick on request { ... }` and `button(kick)` | 7, 8 |
 | tell a story with pauses for the learner | `timeline { scene s { beat b { ... } } }`, `explore ... fallback { ... }` | 8 |
 | animate the camera or reveal a drawing | `camera scene to P zoom 2 for 1 s`, `reveal draw for 2 s { ... }` | 8 |
+| pause a lesson until the learner is ready | `narrate "..."; wait learner` | 8 |
+| move or fade a drawing, or keep it still while the model moves | `animate ball offset to (2 m, 0 m)`, `release ball`, `bind ball for 1 s` | 8 |
 | let a learner add or remove objects | `on request(b in balls)`, `on click request remove(b)` | 9 |
 
 ## Run tests from the command line or in CI

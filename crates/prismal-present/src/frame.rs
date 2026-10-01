@@ -1232,3 +1232,31 @@ impl Projector {
 pub fn value_of(cm: &CModel, e: &Expr) -> Option<Value> {
     constant(cm, e).ok()
 }
+
+/// The view a representation is drawn in: `Some(view)`, `Some(None)` over the presentation
+/// (a panel), or `None` when the presentation has no representation `id`. Members of groups
+/// are found in their group's view.
+pub fn rep_view(p: &prismal_ir::present::Presentation, id: &str) -> Option<Option<Id>> {
+    use prismal_ir::present::Action;
+    fn has(reps: &[Rep], id: &str) -> bool {
+        reps.iter().any(|r| r.id == id || has(&r.members, id))
+    }
+    fn in_actions(acts: &[Action], id: &str) -> Option<Option<Id>> {
+        for a in acts {
+            let found = match a {
+                Action::Show { view, reps } | Action::Reveal { view, reps, .. } => has(reps, id).then(|| view.clone()),
+                Action::Explore { controls, fallback, .. } => if has(controls, id) { Some(None) } else { in_actions(fallback, id) },
+                Action::Sequence { actions } | Action::WaitLearner { fallback: actions, .. } => in_actions(actions, id),
+                _ => None,
+            };
+            if found.is_some() {
+                return found;
+            }
+        }
+        None
+    }
+    if let Some(v) = p.views.iter().find(|v| has(&v.representations, id)) {
+        return Some(Some(v.id.clone()));
+    }
+    p.timeline.iter().flat_map(|t| t.scenes.iter().flat_map(|s| &s.beats)).find_map(|b| in_actions(&b.actions, id))
+}
