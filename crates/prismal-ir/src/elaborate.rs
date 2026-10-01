@@ -9,10 +9,15 @@
 //! replaced by what they denote. The result is an ordinary model, checked and run as any
 //! other; elaboration only moves and renames what was written.
 //!
-//! Membership is fixed in v0: a part holds one object, or `count` members.
+//! A part holds one object, or `count` members. A collection declared with a `capacity`
+//! changes its membership during a run (D-057): it is elaborated to `capacity` members, the
+//! `k`-th member made in the run being `drops[k]`, each with a liveness binding. A member not
+//! alive has no flows, events, equations or constraints in effect, is left out of aggregates
+//! and is not drawn; `create` makes the next member alive and `destroy` ends one. Identities
+//! are never reused within a run (MK-7.7).
 
 use crate::present::{Action, Arg, Check, Inverse, Item, LearnerInput, Observation, Operand, Presentation, Prop, Rep, RunCase, Schedule, Source, Subject, Tolerance, ViewKind};
-use crate::{Agg, BinOp, Builtin, Document, Each, Event, Expr, Flow, Id, Model, Op, Target, Trigger, Zeno, ZenoPolicy};
+use crate::{Agg, BinOp, Binding, Builtin, Constraint, Display, Document, Each, Event, Expr, Flow, Guarded, Id, Model, Op, Policy, Role, Target, Trigger, Type, Zeno, ZenoPolicy};
 
 /// A problem found while elaborating; `element` is the identity of what was written.
 #[derive(Clone, Debug, PartialEq)]
@@ -44,11 +49,54 @@ fn join(a: &str, b: &str) -> String {
     }
 }
 
-/// A member: its path and its object type.
+/// A member: its path, its object type and, in a collection whose membership changes, the
+/// reference to its liveness binding; the container it is declared in (type and path), the
+/// key of its collection and its number there (D-058).
 #[derive(Clone)]
 struct Inst<'a> {
     path: String,
     ty: &'a Model,
+    live: Option<Expr>,
+    outer_ty: &'a Model,
+    outer_path: String,
+    coll: String,
+    pos: u32,
+}
+
+/// A member selected by an expression: one known when elaborating, or one of a collection's
+/// members chosen during the run by its number, as the member at a relation's endpoint or a
+/// member payload (D-058, D-059).
+#[derive(Clone)]
+enum Sel<'a> {
+    One(Inst<'a>),
+    Chosen { members: Vec<Inst<'a>>, index: Expr, coll: String },
+}
+
+/// The key of a collection: the container's path and the part.
+fn coll_key(path: &str, part: &str) -> String {
+    format!("{path}#{part}")
+}
+
+/// The liveness binding of the member at `path` of the part `part` (D-057).
+pub fn alive(part: &str, path: &str) -> Id {
+    flat(&format!("{part}.alive"), path)
+}
+
+/// The binding counting the members a collection has made, in the container at `path`.
+pub fn created(part: &str, path: &str) -> Id {
+    flat(&format!("{part}.created"), path)
+}
+
+/// `a and b`, where either may be absent (always true).
+fn both(a: Option<Expr>, b: Option<Expr>) -> Option<Expr> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(Expr::bin(BinOp::And, a, b)),
+        (a, b) => a.or(b),
+    }
+}
+
+fn num(x: f64) -> Expr {
+    Expr::Num { num: x, unit: None }
 }
 
 /// Where the identities of an expression resolve: the object type whose declarations it
@@ -58,17 +106,28 @@ struct Inst<'a> {
 struct Scope<'a> {
     ty: &'a Model,
     path: String,
-    vars: Vec<(String, Inst<'a>)>,
+    vars: Vec<(String, Sel<'a>)>,
     index: Option<u32>,
+    /// Whether the scope's member is alive, when it or a container belongs to a collection
+    /// whose membership changes (D-057).
+    live: Option<Expr>,
+    /// In an event repeated per member: its payload's identity as written and the member's.
+    payload: Option<(Id, Id)>,
+    /// The member whose body this is, for the endpoints of a relation type (D-058).
+    me: Option<Inst<'a>>,
 }
 
 impl<'a> Scope<'a> {
     fn root(m: &'a Model) -> Scope<'a> {
-        Scope { ty: m, path: String::new(), vars: vec![], index: None }
+        Scope { ty: m, path: String::new(), vars: vec![], index: None, live: None, payload: None, me: None }
+    }
+    /// The scope of the container a member is declared in.
+    fn outer(inst: &Inst<'a>) -> Scope<'a> {
+        Scope { ty: inst.outer_ty, path: inst.outer_path.clone(), vars: vec![], index: None, live: None, payload: None, me: None }
     }
     fn with_var(&self, var: &str, inst: Inst<'a>) -> Scope<'a> {
         let mut s = self.clone();
-        s.vars.push((var.to_string(), inst));
+        s.vars.push((var.to_string(), Sel::One(inst)));
         s
     }
     fn local(&self, id: &str) -> Id {
@@ -99,17 +158,103 @@ impl<'a> Cx<'a> {
     }
 
     /// The members of the part `id` of the object type in `s`: one for a contained object,
-    /// `count` for a collection.
+    /// `count` for a collection, `capacity` for a collection whose membership changes.
     fn members(&mut self, s: &Scope<'a>, id: &str) -> Option<(Vec<Inst<'a>>, bool)> {
         let Some(p) = s.ty.part(id) else {
             self.err("MK-E26", format!("unknown part `{id}`"));
             return None;
         };
         let ty = self.object(&p.object)?;
-        Some(match p.count {
-            None => (vec![Inst { path: join(&s.path, &p.name), ty }], false),
-            Some(n) => ((1..=n).map(|k| Inst { path: join(&s.path, &format!("{}[{k}]", p.name)), ty }).collect(), true),
+        let coll = coll_key(&s.path, &p.id);
+        let inst = |path: String, live: Option<Expr>, pos: u32| Inst { path, ty, live, outer_ty: s.ty, outer_path: s.path.clone(), coll: coll.clone(), pos };
+        Some(match (p.count, p.capacity) {
+            (_, Some(n)) => (
+                (1..=n)
+                    .map(|k| {
+                        let path = join(&s.path, &format!("{}[{k}]", p.name));
+                        inst(path.clone(), Some(Expr::Ref { r#ref: alive(&p.id, &path) }), k)
+                    })
+                    .collect(),
+                true,
+            ),
+            (None, None) => (vec![inst(join(&s.path, &p.name), None, 1)], false),
+            (Some(n), None) => ((1..=n).map(|k| inst(join(&s.path, &format!("{}[{k}]", p.name)), None, k)).collect(), true),
         })
+    }
+
+    /// The member at the endpoint `end` of the relation instance `rel` (D-058): its number
+    /// is the instance's endpoint binding.
+    fn end(&mut self, rel: &Inst<'a>, end: &str) -> Option<Sel<'a>> {
+        let Some(e) = rel.ty.ends.iter().find(|x| x.id == end) else {
+            self.err("MK-E26", format!("`{}` is not a relation with an endpoint `{}`", rel.ty.name, end.rsplit('.').next().unwrap_or(end)));
+            return None;
+        };
+        let outer = Scope::outer(rel);
+        let (members, many) = self.members(&outer, &e.over)?;
+        if !many {
+            return members.into_iter().next().map(Sel::One);
+        }
+        Some(Sel::Chosen { members, index: Expr::Ref { r#ref: flat(end, &rel.path) }, coll: coll_key(&outer.path, &e.over) })
+    }
+
+    /// The member an expression selects, known now or chosen during the run.
+    fn select(&mut self, s: &Scope<'a>, e: &Expr) -> Option<Sel<'a>> {
+        match e {
+            Expr::End { end, of } => {
+                let rel = match of {
+                    // The endpoint of a relation chosen during the run: its number is picked
+                    // among the relations' endpoint bindings (D-059).
+                    Some(x) => match self.select(s, x)? {
+                        Sel::One(r) => r,
+                        Sel::Chosen { members, index, .. } => {
+                            return match self.end(&members[0], end)? {
+                                Sel::Chosen { members: ends, coll, .. } => {
+                                    let from = members.iter().map(|r| Expr::Ref { r#ref: flat(end, &r.path) }).collect();
+                                    Some(Sel::Chosen { members: ends, index: Expr::Pick { pick: Box::new(index), from }, coll })
+                                }
+                                one => Some(one),
+                            };
+                        }
+                    },
+                    None => match &s.me {
+                        Some(m) => m.clone(),
+                        None => {
+                            self.err("MK-E26", "an endpoint is read in its relation type, or of a relation instance (`s.a`)".into());
+                            return None;
+                        }
+                    },
+                };
+                self.end(&rel, end)
+            }
+            Expr::Var { var } => match s.vars.iter().rev().find(|(v, _)| v == var) {
+                Some((_, sel)) => Some(sel.clone()),
+                None => self.member(s, e).map(Sel::One),
+            },
+            _ => self.member(s, e).map(Sel::One),
+        }
+    }
+
+    /// The collection and the number of a selected member.
+    fn key(sel: &Sel<'a>) -> (String, Expr) {
+        match sel {
+            Sel::One(i) => (i.coll.clone(), num(i.pos as f64)),
+            Sel::Chosen { index, coll, .. } => (coll.clone(), index.clone()),
+        }
+    }
+
+    /// A binding of a selected member: a reference, or a pick among the members.
+    fn field_of(&mut self, sel: &Sel<'a>, field: &str) -> Expr {
+        let ty = match sel {
+            Sel::One(i) => i.ty,
+            Sel::Chosen { members, .. } => members[0].ty,
+        };
+        if ty.binding(field).is_none() && !ty.ends.iter().any(|e| e.id == field) {
+            self.err("MK-E26", format!("an object `{}` has no binding `{}`", ty.name, field.rsplit('.').next().unwrap_or(field)));
+        }
+        match sel {
+            Sel::One(i) => Expr::Ref { r#ref: flat(field, &i.path) },
+            Sel::Chosen { members, index, .. } => Expr::Pick { pick: Box::new(index.clone()), from: members.iter().map(|m| Expr::Ref { r#ref: flat(field, &m.path) }).collect() },
+        }
     }
 
     /// The member an expression selects: a loop variable, a contained object, or a member of
@@ -117,7 +262,11 @@ impl<'a> Cx<'a> {
     fn member(&mut self, s: &Scope<'a>, e: &Expr) -> Option<Inst<'a>> {
         match e {
             Expr::Var { var } => match s.vars.iter().rev().find(|(v, _)| v == var) {
-                Some((_, i)) => Some(i.clone()),
+                Some((_, Sel::One(i))) => Some(i.clone()),
+                Some((_, Sel::Chosen { .. })) => {
+                    self.err("MK-E26", format!("`{var}` is chosen during the run: here a member known when the program is read is needed"));
+                    None
+                }
                 None => {
                     self.err("MK-E26", format!("`{var}` is not a member here: it is named only inside its `for` or aggregate"));
                     None
@@ -150,6 +299,10 @@ impl<'a> Cx<'a> {
                 }
                 ms.into_iter().nth(k as usize - 1)
             }
+            Expr::End { .. } => {
+                self.err("MK-E26", "an endpoint is chosen during the run: here a member known when the program is read is needed".into());
+                None
+            }
             _ => None,
         }
     }
@@ -173,7 +326,7 @@ impl<'a> Cx<'a> {
     }
 
     fn is_member(e: &Expr) -> bool {
-        matches!(e, Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. })
+        matches!(e, Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. })
     }
 
     /// An expression with members and aggregates replaced, and identities declared in the
@@ -184,27 +337,35 @@ impl<'a> Cx<'a> {
             Expr::Ref { r#ref } => Expr::Ref { r#ref: s.local(r#ref) },
             Expr::Der { der } => Expr::Der { der: s.local(der) },
             Expr::Fn { r#fn } => Expr::Fn { r#fn: s.local(r#fn) },
-            Expr::Payload { payload } => Expr::Payload { payload: s.local(payload) },
+            Expr::Payload { payload } => match &s.payload {
+                Some((from, to)) if from == payload => Expr::Payload { payload: to.clone() },
+                _ => Expr::Payload { payload: s.local(payload) },
+            },
             Expr::Builtin { builtin: Builtin::Index } => match s.index {
                 Some(k) => Expr::Num { num: k as f64, unit: None },
                 None => e.clone(),
             },
-            Expr::Field { field, of } => {
-                let Some(inst) = self.member(s, of) else { return Expr::Num { num: 0.0, unit: None } };
-                if inst.ty.binding(field).is_none() {
-                    self.err("MK-E26", format!("an object `{}` has no binding `{}`", inst.ty.name, field.rsplit('.').next().unwrap_or(field)));
-                }
-                Expr::Ref { r#ref: flat(field, &inst.path) }
-            }
-            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } => {
+            Expr::Field { field, of } => match self.select(s, of) {
+                Some(sel) => self.field_of(&sel, field),
+                None => num(0.0),
+            },
+            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } => {
                 self.err("MK-E26", "a member is not a value: read one of its bindings, `b.pos`".into());
-                Expr::Num { num: 0.0, unit: None }
+                num(0.0)
             }
-            // Members compare by identity, which elaboration knows: `o != b` is a constant.
+            Expr::Pick { pick, from } => Expr::Pick { pick: b(self, pick), from: from.iter().map(|x| self.expr(s, x)).collect() },
+            // Members compare by identity. Members known now compare to a constant (`o != b`);
+            // a member at an endpoint compares by its number in its collection (D-058).
             Expr::Bin { bin: bin @ (BinOp::Eq | BinOp::Ne), l, r } if Self::is_member(l) && Self::is_member(r) => {
-                let (a, c) = (self.member(s, l), self.member(s, r));
-                let same = matches!((&a, &c), (Some(x), Some(y)) if x.path == y.path);
-                Expr::Bool { bool: same == (*bin == BinOp::Eq) }
+                let (Some(a), Some(c)) = (self.select(s, l), self.select(s, r)) else { return Expr::Bool { bool: false } };
+                if let (Sel::One(x), Sel::One(y)) = (&a, &c) {
+                    return Expr::Bool { bool: (x.path == y.path) == (*bin == BinOp::Eq) };
+                }
+                let ((ka, ia), (kc, ic)) = (Self::key(&a), Self::key(&c));
+                if ka != kc {
+                    return Expr::Bool { bool: *bin == BinOp::Ne };
+                }
+                Expr::bin(*bin, ia, ic)
             }
             Expr::Aggregate { aggregate, var, over, body, filter } => self.aggregate(s, *aggregate, var, over, body.as_deref(), filter.as_deref()),
             Expr::Neg { neg } => Expr::Neg { neg: b(self, neg) },
@@ -226,6 +387,10 @@ impl<'a> Cx<'a> {
                 r#match: b(self, r#match),
                 arms: arms.iter().map(|a| crate::Arm { case: a.case.clone(), value: self.expr(s, &a.value) }).collect(),
             },
+            Expr::Extreme { extreme, terms } => Expr::Extreme {
+                extreme: *extreme,
+                terms: terms.iter().map(|g| Guarded { when: self.expr(s, &g.when), value: self.expr(s, &g.value) }).collect(),
+            },
             Expr::Num { .. } | Expr::Bool { .. } | Expr::Case { .. } | Expr::Param { .. } | Expr::Builtin { .. } | Expr::Const { .. } | Expr::Origin { .. } => e.clone(),
         }
     }
@@ -238,13 +403,28 @@ impl<'a> Cx<'a> {
             return zero;
         }
         let mut terms: Vec<Expr> = vec![];
+        let mut guarded: Vec<Guarded> = vec![];
+        let changing = members.iter().any(|m| m.live.is_some());
         for inst in members {
+            let live = inst.live.clone();
             let inner = s.with_var(var, inst);
             let cond = filter.map(|f| self.expr(&inner, f));
             if matches!(cond, Some(Expr::Bool { bool: false })) {
                 continue;
             }
-            let dynamic = cond.filter(|c| !matches!(c, Expr::Bool { bool: true }));
+            let written = cond.filter(|c| !matches!(c, Expr::Bool { bool: true }));
+            // D-057: `min` and `max` over a collection that changes take the members alive.
+            if changing && matches!(agg, Agg::Min | Agg::Max) {
+                if written.is_some() {
+                    self.err("MK-E26", format!("a filter of `{}` compares members only (`if o != b`)", agg.name()));
+                    return zero;
+                }
+                let value = body.map(|e| self.expr(&inner, e)).unwrap_or_else(|| zero.clone());
+                guarded.push(Guarded { when: live.unwrap_or(Expr::Bool { bool: true }), value });
+                continue;
+            }
+            // A member not alive is left out, as one failing the filter (D-057).
+            let dynamic = both(live, written);
             let value = match body {
                 Some(e) => self.expr(&inner, e),
                 None => Expr::Num { num: 1.0, unit: None },
@@ -260,11 +440,23 @@ impl<'a> Cx<'a> {
                 }
             });
         }
-        let fold = |terms: Vec<Expr>, f: &dyn Fn(Expr, Expr) -> Expr| terms.into_iter().reduce(|a, b| f(a, b));
+        // Terms are combined as a balanced tree, in member order: an expression as deep as the
+        // logarithm of the members, and pairwise summation.
+        fn fold(mut terms: Vec<Expr>, f: &dyn Fn(Expr, Expr) -> Expr) -> Option<Expr> {
+            match terms.len() {
+                0 => None,
+                1 => terms.pop(),
+                n => {
+                    let right = terms.split_off(n / 2);
+                    Some(f(fold(terms, f)?, fold(right, f)?))
+                }
+            }
+        }
         match agg {
             Agg::Sum | Agg::Count => fold(terms, &|a, b| Expr::bin(BinOp::Add, a, b)).unwrap_or(zero),
             Agg::Any => fold(terms, &|a, b| Expr::bin(BinOp::Or, a, b)).unwrap_or(Expr::Bool { bool: false }),
             Agg::All => fold(terms, &|a, b| Expr::bin(BinOp::And, a, b)).unwrap_or(Expr::Bool { bool: true }),
+            Agg::Min | Agg::Max if changing => Expr::Extreme { extreme: if agg == Agg::Min { crate::Func::Min } else { crate::Func::Max }, terms: guarded },
             Agg::Min | Agg::Max => {
                 let func = if agg == Agg::Min { crate::Func::Min } else { crate::Func::Max };
                 match fold(terms, &|a, b| Expr::Call { call: func, args: vec![a, b] }) {
@@ -279,19 +471,274 @@ impl<'a> Cx<'a> {
     }
 
     fn target(&mut self, s: &Scope<'a>, t: &Target) -> Target {
-        Target { binding: s.local(&t.binding), component: t.component }
+        let binding = match &t.member {
+            None => s.local(&t.binding),
+            // MK-7.10: a container writes a binding of a member it contains (D-057).
+            Some(m) => match self.member(s, m) {
+                Some(inst) => {
+                    if inst.ty.binding(&t.binding).is_none() {
+                        self.err("MK-E26", format!("an object `{}` has no binding `{}`", inst.ty.name, t.binding.rsplit('.').next().unwrap_or(&t.binding)));
+                    }
+                    flat(&t.binding, &inst.path)
+                }
+                None => t.binding.clone(),
+            },
+        };
+        Target { binding, component: t.component, member: None }
     }
 
-    fn op(&mut self, s: &Scope<'a>, o: &Op) -> Op {
-        match o {
-            Op::Set { target, value } => Op::Set { target: self.target(s, target), value: self.expr(s, value) },
-            Op::Contribute { target, value } => Op::Contribute { target: self.target(s, target), value: self.expr(s, value) },
-            Op::Emit { event, payload } => Op::Emit { event: s.local(event), payload: payload.as_ref().map(|p| self.expr(s, p)) },
+    /// The targets of an operation on a binding of a member chosen during the run (a member
+    /// payload, `set b.vel`, or an endpoint, `set s.a.vel`): one per member of its collection,
+    /// each with the condition that it is the one chosen (D-059). `None` for any other target.
+    fn chosen_targets(&mut self, s: &Scope<'a>, t: &Target) -> Option<Vec<(Expr, Target)>> {
+        let m = t.member.as_ref()?;
+        let chosen = match m {
+            Expr::End { .. } => true,
+            Expr::Var { var } => matches!(s.vars.iter().rev().find(|(v, _)| v == var), Some((_, Sel::Chosen { .. }))),
+            _ => false,
+        };
+        if !chosen {
+            return None;
+        }
+        let sel = self.select(s, m)?;
+        let (members, index) = match sel {
+            Sel::Chosen { members, index, .. } => (members, index),
+            Sel::One(i) => return Some(vec![(Expr::Bool { bool: true }, Target { binding: flat(&t.binding, &i.path), component: t.component, member: None })]),
+        };
+        if members[0].ty.binding(&t.binding).is_none() {
+            self.err("MK-E26", format!("an object `{}` has no binding `{}`", members[0].ty.name, t.binding.rsplit('.').next().unwrap_or(&t.binding)));
+            return Some(vec![]);
+        }
+        Some(members.iter().map(|m| (Expr::bin(BinOp::Eq, index.clone(), num(m.pos as f64)), Target { binding: flat(&t.binding, &m.path), component: t.component, member: None })).collect())
+    }
+
+    /// The payload `e` supplied to an event that declares `declared`, in scope `s`: a member
+    /// payload is given a member and carries its number; several are given as a tuple (D-059).
+    fn payload_value(&mut self, s: &Scope<'a>, declared: Option<&crate::Payload>, e: &Expr) -> Expr {
+        let Some(p) = declared else { return self.expr(s, e) };
+        let items = p.declared();
+        match e {
+            Expr::Tuple { tuple } if items.len() > 1 && tuple.len() == items.len() => Expr::Tuple { tuple: items.iter().zip(tuple).map(|(i, x)| self.payload_item(s, i, x)).collect() },
+            _ if items.len() > 1 => {
+                self.err("MK-E26", format!("the payload is {} values: `{}`", items.len(), p.name));
+                num(0.0)
+            }
+            _ => self.payload_item(s, items[0], e),
         }
     }
 
-    fn event(&mut self, s: &Scope<'a>, e: &Event) -> Event {
+    fn payload_item(&mut self, s: &Scope<'a>, item: &crate::Payload, e: &Expr) -> Expr {
+        let Some(of) = &item.of else { return self.expr(s, e) };
+        if !Self::is_member(e) {
+            self.err("MK-E26", format!("the payload `{}` is a member of `{}`: give one, `{}[1]` or a member's name", item.name, part_name(s.ty, of), part_name(s.ty, of)));
+            return num(0.0);
+        }
+        let Some(sel) = self.select(s, e) else { return num(0.0) };
+        let (coll, index) = Self::key(&sel);
+        if coll != coll_key(&s.path, of) {
+            self.err("MK-E26", format!("the payload `{}` is a member of `{}`", item.name, part_name(s.ty, of)));
+            return num(0.0);
+        }
+        index
+    }
+
+    /// The operations of a handler. The creates and connects of one collection in one handler
+    /// take the next free members in order, and the count of members made is set once (D-057).
+    fn ops(&mut self, s: &Scope<'a>, ops: &[Op]) -> Vec<Op> {
+        let mut out = vec![];
+        let mut made: Vec<(Id, u32)> = vec![];
+        for o in ops {
+            match o {
+                Op::Set { target, value } | Op::Contribute { target, value } => {
+                    let value = self.expr(s, value);
+                    let op = |t: Target| match o {
+                        Op::Set { .. } => Op::Set { target: t, value: value.clone() },
+                        _ => Op::Contribute { target: t, value: value.clone() },
+                    };
+                    match self.chosen_targets(s, target) {
+                        Some(ts) => out.extend(ts.into_iter().map(|(cond, t)| Op::If { r#if: cond, then: vec![op(t)] })),
+                        None => out.push(op(self.target(s, target))),
+                    }
+                }
+                Op::Emit { event, payload } => {
+                    let declared = s.ty.events.iter().find(|e| &e.id == event).and_then(|e| e.payload.clone());
+                    let payload = payload.as_ref().map(|p| self.payload_value(s, declared.as_ref(), p));
+                    out.push(Op::Emit { event: s.local(event), payload })
+                }
+                Op::If { r#if, then } => out.push(Op::If { r#if: self.expr(s, r#if), then: self.ops(s, then) }),
+                Op::Destroy { member: Expr::Ref { .. } } | Op::Make { .. } => out.push(o.clone()),
+                Op::Destroy { member } | Op::Disconnect { relation: member } => {
+                    let what = if matches!(o, Op::Destroy { .. }) { "destroyed" } else { "disconnected" };
+                    let Some(sel) = self.select(s, member) else { continue };
+                    let relation = match &sel {
+                        Sel::One(i) => !i.ty.ends.is_empty(),
+                        Sel::Chosen { members, .. } => !members[0].ty.ends.is_empty(),
+                    };
+                    if relation != matches!(o, Op::Disconnect { .. }) {
+                        self.err("MK-E26", if relation { "a relation is ended with `disconnect`".into() } else { "an object is ended with `destroy`".into() });
+                        continue;
+                    }
+                    self.destroy(&sel, what, &mut out);
+                }
+                Op::Create { part, overrides } => {
+                    let Some(ty) = s.ty.part(part).and_then(|p| self.root.objects.iter().find(|o| o.id == p.object)) else {
+                        self.err("MK-E26", format!("unknown part `{part}`"));
+                        continue;
+                    };
+                    if !ty.ends.is_empty() {
+                        self.err("MK-E26", format!("`{}` holds relations: they are made with `connect`", part_name(s.ty, part)));
+                        continue;
+                    }
+                    let values = self.starting(s, ty, overrides, "create");
+                    self.make(s, part, values, &mut made, &mut out);
+                }
+                Op::Connect { part, ends, overrides } => {
+                    let Some(ty) = s.ty.part(part).and_then(|p| self.root.objects.iter().find(|o| o.id == p.object)) else {
+                        self.err("MK-E26", format!("unknown part `{part}`"));
+                        continue;
+                    };
+                    if ty.ends.is_empty() {
+                        self.err("MK-E26", format!("`{}` holds objects: they are made with `create`", part_name(s.ty, part)));
+                        continue;
+                    }
+                    if ends.len() != ty.ends.len() {
+                        self.err("MK-E26", format!("`{}` has {} endpoints, `connect` gives {}", ty.name, ty.ends.len(), ends.len()));
+                        continue;
+                    }
+                    let mut values = vec![];
+                    for (e, x) in ty.ends.iter().zip(ends) {
+                        if let Some(v) = self.end_value(s, e, x) {
+                            values.push((e.id.clone(), v));
+                        }
+                    }
+                    values.extend(self.starting(s, ty, overrides, "connect"));
+                    self.make(s, part, values, &mut made, &mut out);
+                }
+            }
+        }
+        for (part, n) in made {
+            let counter = created(&part, &s.path);
+            out.push(Op::Set { target: Target::of(counter.clone()), value: Expr::bin(BinOp::Add, Expr::Ref { r#ref: counter }, num(n as f64)) });
+        }
+        out
+    }
+
+    /// Starting values given by `create` or `connect`: stored bindings of the type only.
+    fn starting(&mut self, s: &Scope<'a>, ty: &'a Model, overrides: &[crate::present::Override], op: &str) -> Vec<(Id, Expr)> {
+        let mut values = vec![];
+        for ov in overrides {
+            match ty.binding(&ov.binding) {
+                None => self.err("MK-E26", format!("an object `{}` has no binding `{}`", ty.name, ov.binding.rsplit('.').next().unwrap_or(&ov.binding))),
+                Some(b) if matches!(b.role, Role::Derived | Role::Input | Role::Constant) => self.err("MK-E26", format!("`{op}` gives starting values to stored bindings; `{}` is not one", b.name)),
+                Some(_) => values.push((ov.binding.clone(), self.expr(s, &ov.value))),
+            }
+        }
+        values
+    }
+
+    /// The number, in the endpoint's collection, of the member `x` given for the endpoint `e`.
+    fn end_value(&mut self, s: &Scope<'a>, e: &crate::End, x: &Expr) -> Option<Expr> {
+        let sel = self.select(s, x)?;
+        let (k, idx) = Self::key(&sel);
+        if k != coll_key(&s.path, &e.over) {
+            self.err("MK-E26", format!("the endpoint `{}` is a member of `{}`", e.name, part_name(s.ty, &e.over)));
+            return None;
+        }
+        Some(idx)
+    }
+
+    /// Makes the next member of the collection `part`, with the values given (D-057, D-058).
+    fn make(&mut self, s: &Scope<'a>, part: &Id, values: Vec<(Id, Expr)>, made: &mut Vec<(Id, u32)>, out: &mut Vec<Op>) {
+        let p = s.ty.part(part).expect("known part");
+        let Some(cap) = p.capacity else {
+            self.err("MK-E26", format!("`{}` has a fixed membership: declare it with `max` to make members (`{}: {}[max 20]`)", p.name, p.name, part_name_of(self.root, &p.object)));
+            return;
+        };
+        let start = p.count.unwrap_or(0);
+        let j = match made.iter_mut().find(|(id, _)| id == part) {
+            Some((_, n)) => {
+                *n += 1;
+                *n - 1
+            }
+            None => {
+                made.push((part.clone(), 1));
+                0
+            }
+        };
+        let counter = created(part, &s.path);
+        // The member made is the next one: `created` members exist before it.
+        for k in (start + j + 1)..=cap {
+            let path = join(&s.path, &format!("{}[{k}]", p.name));
+            let then = vec![Op::Make { alive: alive(part, &path), values: values.iter().map(|(b, v)| crate::present::Override { binding: flat(b, &path), value: v.clone() }).collect() }];
+            let cond = Expr::bin(BinOp::Eq, Expr::Ref { r#ref: counter.clone() }, num((k - 1 - j) as f64));
+            out.push(Op::If { r#if: cond, then });
+        }
+    }
+
+    /// Ends the selected member and disconnects the relations it is an endpoint of, in the
+    /// same transition (MK-8.6, D-058).
+    fn destroy(&mut self, sel: &Sel<'a>, what: &str, out: &mut Vec<Op>) {
+        let (members, index) = match sel {
+            Sel::One(i) => (vec![i.clone()], None),
+            Sel::Chosen { members, index, .. } => (members.clone(), Some(index.clone())),
+        };
+        if members.iter().any(|m| m.live.is_none()) {
+            self.err("MK-E26", format!("only a member of a collection declared with `max` can be {what} (`row: Ball[max 20]`)"));
+            return;
+        }
+        for m in &members {
+            let op = Op::Destroy { member: m.live.clone().unwrap() };
+            match &index {
+                None => out.push(op),
+                Some(ix) => out.push(Op::If { r#if: Expr::bin(BinOp::Eq, ix.clone(), num(m.pos as f64)), then: vec![op] }),
+            }
+        }
+        let (coll, idx) = Self::key(sel);
+        let outer = Scope::outer(&members[0]);
+        for p in &outer.ty.parts {
+            let Some(rty) = self.root.objects.iter().find(|o| o.id == p.object) else { continue };
+            for e in rty.ends.iter().filter(|e| coll_key(&outer.path, &e.over) == coll) {
+                let Some((rels, _)) = self.members(&outer, &p.id) else { continue };
+                for r in rels {
+                    let Some(live) = r.live.clone() else {
+                        self.err("MK-E26", format!("`{}` holds relations with members that can be {what}: declare it with `max`", p.name));
+                        return;
+                    };
+                    let cond = Expr::bin(BinOp::And, live.clone(), Expr::bin(BinOp::Eq, Expr::Ref { r#ref: flat(&e.id, &r.path) }, idx.clone()));
+                    out.push(Op::If { r#if: cond, then: vec![Op::Destroy { member: live }] });
+                }
+            }
+        }
+    }
+
+    /// An event in scope `s`, with the identity and name it has there, in effect while `live`.
+    fn event(&mut self, s: &Scope<'a>, e: &Event, id: Id, name: String, live: Option<Expr>) -> Event {
         self.element = e.id.clone();
+        // D-059: a member payload is a member of its collection chosen by the number the
+        // occurrence carries. The event is enabled only for a member that exists and is alive.
+        let mut scope = s.clone();
+        let mut payload = e.payload.clone();
+        let mut chosen: Option<Expr> = None;
+        if let Some(p) = &mut payload {
+            let several = !p.items.is_empty();
+            let items: Vec<&mut crate::Payload> = if several { p.items.iter_mut().collect() } else { vec![p] };
+            for (k, item) in items.into_iter().enumerate() {
+                let Some(of) = item.of.clone() else { continue };
+                let Some((members, many)) = self.members(&scope, &of) else { continue };
+                if !many {
+                    self.err("MK-E26", format!("`{}` is one object; a member payload names a member of a collection", part_name(scope.ty, &of)));
+                    continue;
+                }
+                let read = Expr::Payload { payload: id.clone() };
+                let index = if several { Expr::Comp { comp: Box::new(read), axis: k } } else { read };
+                let exists = Expr::Pick { pick: Box::new(index.clone()), from: members.iter().map(|m| m.live.clone().unwrap_or(Expr::Bool { bool: true })).collect() };
+                chosen = both(chosen, Some(exists));
+                item.members = Some(join(&scope.path, &part_name(scope.ty, &of)));
+                let coll = coll_key(&scope.path, &of);
+                scope.vars.push((item.name.clone(), Sel::Chosen { members, index, coll }));
+            }
+        }
+        let s = &scope;
         let trigger = match &e.trigger {
             Trigger::Rising { guard } => Trigger::Rising { guard: self.expr(s, guard) },
             Trigger::Falling { guard } => Trigger::Falling { guard: self.expr(s, guard) },
@@ -304,42 +751,83 @@ impl<'a> Cx<'a> {
             Trigger::Start => Trigger::Start,
             Trigger::Request => Trigger::Request,
         };
+        // The guard of a member not alive is not evaluated: its values may not exist (D-058).
+        let trigger = match (trigger, &live) {
+            (Trigger::Rising { guard }, Some(l)) => Trigger::Rising { guard: Self::guarded(l, guard) },
+            (Trigger::Falling { guard }, Some(l)) => Trigger::Falling { guard: Self::guarded(l, guard) },
+            (Trigger::Crossing { guard }, Some(l)) => Trigger::Crossing { guard: Self::guarded(l, guard) },
+            (t, _) => t,
+        };
+        let enable = e.enable.as_ref().map(|c| self.expr(s, c));
         Event {
-            id: s.local(&e.id),
-            name: join(&s.path, &e.name),
+            id,
+            name,
             trigger,
-            enable: e.enable.as_ref().map(|c| self.expr(s, c)),
-            handler: e.handler.iter().map(|o| self.op(s, o)).collect(),
+            enable: both(live, both(chosen, enable)),
+            handler: self.ops(s, &e.handler),
             zeno: e.zeno.as_ref().map(|z| Zeno {
                 policy: match &z.policy {
                     ZenoPolicy::Stop => ZenoPolicy::Stop,
-                    ZenoPolicy::Settle { ops } => ZenoPolicy::Settle { ops: ops.iter().map(|o| self.op(s, o)).collect() },
+                    ZenoPolicy::Settle { ops } => ZenoPolicy::Settle { ops: self.ops(s, ops) },
                 },
                 ..z.clone()
             }),
             process: e.process.as_ref().map(|p| s.local(p)),
-            payload: e.payload.clone(),
+            payload,
+            each: None,
             notes: e.notes.clone(),
         }
     }
 
-    /// The flows of `f` in scope `s`: one, or one per member of its loop.
+    fn guarded(live: &Expr, g: Expr) -> Expr {
+        Expr::If { r#if: Box::new(live.clone()), then: Box::new(g), r#else: Box::new(num(0.0)) }
+    }
+
+    /// The events of `e` in scope `s`: one, or one per member of its loop (D-057), named
+    /// `leave[k]` after the member's number.
+    fn events(&mut self, s: &Scope<'a>, e: &Event, out: &mut Vec<Event>) {
+        match &e.each {
+            None => {
+                let ev = self.event(s, e, s.local(&e.id), join(&s.path, &e.name), s.live.clone());
+                out.push(ev);
+            }
+            Some(Each { var, over }) => {
+                self.element = e.id.clone();
+                let Some((members, _)) = self.members(s, over) else { return };
+                for (k, inst) in members.into_iter().enumerate() {
+                    let id = flat(&e.id, &inst.path);
+                    let live = both(s.live.clone(), inst.live.clone());
+                    let mut inner = s.with_var(var, inst);
+                    inner.payload = Some((e.id.clone(), id.clone()));
+                    let name = join(&s.path, &format!("{}[{}]", e.name, k + 1));
+                    let ev = self.event(&inner, e, id, name, live);
+                    out.push(ev);
+                }
+            }
+        }
+    }
+
+    /// The flows of `f` in scope `s`: one, or one per member of its loop. A flow writing a
+    /// member that is not alive, or written by one, has no effect (D-057).
     fn flows(&mut self, s: &Scope<'a>, f: &Flow, out: &mut Vec<Flow>) {
         self.element = f.id.clone();
         let one = |cx: &mut Self, scope: &Scope<'a>, id: Id, out: &mut Vec<Flow>| {
-            let target = match &f.member {
-                None => scope.local(&f.target),
+            let (target, live) = match &f.member {
+                None => (scope.local(&f.target), scope.live.clone()),
                 Some(m) => match cx.member(scope, m) {
                     Some(inst) => {
                         if inst.ty.binding(&f.target).is_none() {
                             cx.err("MK-E26", format!("an object `{}` has no binding `{}`", inst.ty.name, f.target.rsplit('.').next().unwrap_or(&f.target)));
                         }
-                        flat(&f.target, &inst.path)
+                        (flat(&f.target, &inst.path), both(scope.live.clone(), inst.live))
                     }
                     None => return,
                 },
             };
-            let expr = cx.expr(scope, &f.expr);
+            let mut expr = cx.expr(scope, &f.expr);
+            if let Some(c) = live {
+                expr = Expr::If { r#if: Box::new(c), then: Box::new(expr), r#else: Box::new(num(0.0)) };
+            }
             out.push(Flow { id, target, kind: f.kind, expr, process: f.process.as_ref().map(|p| s.local(p)), member: None, each: None });
         };
         match &f.each {
@@ -377,7 +865,29 @@ impl<'a> Cx<'a> {
                     _ => nb.init = Some(v.clone()),
                 }
             }
+            // A member not alive has no derived values (D-058).
+            if nb.role == Role::Derived {
+                nb.when = s.live.clone();
+            }
             out.bindings.push(nb);
+        }
+        // A relation instance's endpoints: the numbers of its members in their collections,
+        // starting at the part's overrides; an instance not made yet points at member 1.
+        for e in &ty.ends {
+            let init = overrides.iter().find(|(id, _)| id == &e.id).map(|(_, v)| v.clone()).unwrap_or_else(|| num(1.0));
+            out.bindings.push(Binding {
+                id: s.local(&e.id),
+                name: join(&s.path, &e.name),
+                role: Role::Discrete,
+                ty: Type::real(),
+                init: Some(init),
+                def: None,
+                intervenable: None,
+                private: true,
+                display: Display::default(),
+                notes: vec![],
+                when: None,
+            });
         }
         for f in &ty.functions {
             self.element = f.id.clone();
@@ -397,8 +907,7 @@ impl<'a> Cx<'a> {
             self.flows(s, f, &mut out.flows);
         }
         for e in &ty.events {
-            let ne = self.event(s, e);
-            out.events.push(ne);
+            self.events(s, e, &mut out.events);
         }
         for q in &ty.equations {
             self.element = q.id.clone();
@@ -407,6 +916,10 @@ impl<'a> Cx<'a> {
             nq.name = join(&s.path, &q.name);
             nq.lhs = self.expr(s, &q.lhs);
             nq.rhs = self.expr(s, &q.rhs);
+            // A member not alive satisfies its equations (D-057).
+            if let Some(c) = &s.live {
+                nq.lhs = Expr::If { r#if: Box::new(c.clone()), then: Box::new(nq.lhs), r#else: Box::new(nq.rhs.clone()) };
+            }
             nq.tol = q.tol.as_ref().map(|t| self.expr(s, t));
             out.equations.push(nq);
         }
@@ -416,6 +929,9 @@ impl<'a> Cx<'a> {
             nc.id = s.local(&c.id);
             nc.name = join(&s.path, &c.name);
             nc.cond = self.expr(s, &c.cond);
+            if let Some(l) = &s.live {
+                nc.cond = Expr::bin(BinOp::Or, Expr::Not { not: Box::new(l.clone()) }, nc.cond);
+            }
             nc.tol = c.tol.as_ref().map(|t| self.expr(s, t));
             nc.attached_to = c.attached_to.as_ref().map(|a| s.local(a));
             out.constraints.push(nc);
@@ -427,21 +943,83 @@ impl<'a> Cx<'a> {
                 return;
             }
             let Some((members, _)) = self.members(s, &p.id) else { continue };
+            if let Some(cap) = p.capacity {
+                self.changing(s, p, cap, out);
+            }
             for (k, inst) in members.into_iter().enumerate() {
                 // Overrides are read in the container's scope, with `index` the member's number.
                 let mut outer = s.clone();
-                outer.index = p.count.map(|_| k as u32 + 1);
-                let ov: Vec<(Id, Expr)> = p.overrides.iter().map(|o| (o.binding.clone(), self.expr(&outer, &o.value))).collect();
+                outer.index = p.count.or(p.capacity).map(|_| k as u32 + 1);
+                // An endpoint is given a member, whose number it holds (D-058).
+                let mut ov: Vec<(Id, Expr)> = vec![];
+                for o in &p.overrides {
+                    match inst.ty.ends.iter().find(|e| e.id == o.binding) {
+                        Some(e) => {
+                            if let Some(v) = self.end_value(&outer, e, &o.value) {
+                                ov.push((o.binding.clone(), v));
+                            }
+                        }
+                        None => ov.push((o.binding.clone(), self.expr(&outer, &o.value))),
+                    }
+                }
                 for (id, _) in &ov {
-                    if inst.ty.binding(id).is_none() {
+                    if inst.ty.binding(id).is_none() && !inst.ty.ends.iter().any(|e| &e.id == id) {
                         self.err("MK-E26", format!("an object `{}` has no binding `{}`", inst.ty.name, id.rsplit('.').next().unwrap_or(id)));
                     }
                 }
-                let inner = Scope { ty: inst.ty, path: inst.path.clone(), vars: vec![], index: None };
+                if k == 0 && p.count.unwrap_or(0) > 0 {
+                    for e in &inst.ty.ends {
+                        if !ov.iter().any(|(id, _)| id == &e.id) {
+                            self.err("MK-E26", format!("each starting relation of `{}` names its endpoint `{}`", p.name, e.name));
+                        }
+                    }
+                }
+                let live = both(s.live.clone(), inst.live.clone());
+                let inner = Scope { ty: inst.ty, path: inst.path.clone(), vars: vec![], index: None, live, payload: None, me: Some(inst.clone()) };
                 self.body(&inner, &ov, out, depth + 1);
             }
         }
     }
+
+    /// The bindings of a collection whose membership changes (D-057): each member's
+    /// liveness, the count of members made, and a constraint bounding it by the capacity.
+    fn changing(&mut self, s: &Scope<'a>, p: &crate::Part, cap: u32, out: &mut Model) {
+        let start = p.count.unwrap_or(0);
+        if start > cap {
+            self.err("MK-E26", format!("`{}` starts with {start} members but holds at most {cap}", p.name));
+        }
+        let hidden = |id: Id, name: String, ty: Type, init: Expr| Binding {
+            id,
+            name,
+            role: Role::Discrete,
+            ty,
+            init: Some(init),
+            def: None,
+            intervenable: None,
+            private: true,
+            display: Display::default(),
+            notes: vec![],
+            when: None,
+        };
+        let counter = created(&p.id, &s.path);
+        out.bindings.push(hidden(counter.clone(), join(&s.path, &format!("{}.created", p.name)), Type::real(), num(start as f64)));
+        for k in 1..=cap {
+            let path = join(&s.path, &format!("{}[{k}]", p.name));
+            out.bindings.push(hidden(alive(&p.id, &path), format!("{path}.alive"), Type::Boolean, Expr::Bool { bool: k <= start }));
+        }
+        out.constraints.push(Constraint {
+            id: flat(&format!("{}.capacity", p.id), &s.path),
+            name: join(&s.path, &format!("{}.capacity", p.name)),
+            cond: Expr::bin(BinOp::Le, Expr::Ref { r#ref: counter }, num(cap as f64)),
+            tol: None,
+            policy: Policy::Stop,
+            attached_to: None,
+        });
+    }
+}
+
+fn part_name_of(root: &Model, object: &str) -> String {
+    root.objects.iter().find(|o| o.id == object).map(|o| o.name.clone()).unwrap_or_else(|| object.rsplit('.').next().unwrap_or(object).to_string())
 }
 
 fn part_name(ty: &Model, id: &str) -> String {
@@ -501,7 +1079,10 @@ impl<'a> PCx<'a, '_> {
                     let Some((members, _)) = self.cx.members(s, over) else { continue };
                     let mut ids = vec![];
                     for (k, inst) in members.into_iter().enumerate() {
-                        let inner = s.with_var(var, inst);
+                        // A member's representation is drawn while it is alive (D-057).
+                        let live = both(s.live.clone(), inst.live.clone());
+                        let mut inner = s.with_var(var, inst);
+                        inner.live = live;
                         let nr = self.rep(&inner, r, Some(k + 1));
                         ids.push(nr.id.clone());
                         out.push(nr);
@@ -528,9 +1109,35 @@ impl<'a> PCx<'a, '_> {
             inverse: r.inverse.as_ref().map(|inv| Inverse {
                 gesture: inv.gesture.clone(),
                 part: inv.part.clone(),
-                proposals: inv.proposals.iter().map(|p| crate::present::Proposal { target: p.target.clone(), value: self.e(s, &p.value) }).collect(),
+                proposals: inv.proposals.iter().map(|p| crate::present::Proposal { target: self.proposed(s, p), value: self.e(s, &p.value), member: None }).collect(),
             }),
             members: self.reps(s, &r.members),
+            click: r.click.as_ref().map(|c| {
+                let declared = self.cx.root.events.iter().find(|e| e.id == c.event).and_then(|e| e.payload.clone());
+                crate::present::Click { event: c.event.clone(), payload: c.payload.as_ref().map(|p| self.cx.payload_value(s, declared.as_ref(), p)) }
+            }),
+            when: both(s.live.clone(), r.when.as_ref().map(|w| self.e(s, w))),
+        }
+    }
+
+    /// The binding a drag proposes: of the model, or of the member a representation repeated
+    /// per member draws (D-059). A member chosen during the run, as the one at a relation's
+    /// endpoint, is not dragged through the relation: the member's own representation is.
+    fn proposed(&mut self, s: &Scope<'a>, p: &crate::present::Proposal) -> Id {
+        let Some(m) = &p.member else { return s.local(&p.target) };
+        let field = p.target.rsplit('.').next().unwrap_or(&p.target);
+        match self.cx.select(s, m) {
+            Some(Sel::One(inst)) => {
+                if inst.ty.binding(&p.target).is_none() {
+                    self.cx.err("MK-E26", format!("an object `{}` has no binding `{field}`", inst.ty.name));
+                }
+                flat(&p.target, &inst.path)
+            }
+            Some(Sel::Chosen { .. }) => {
+                self.cx.err("MK-E26", format!("a drag proposes a binding of the member it draws; a member at an endpoint is dragged by its own representation (`for b in ... {{ marker(b.{field}) {{ on drag as p {{ propose b.{field} = p }} }} }}`)"));
+                p.target.clone()
+            }
+            None => p.target.clone(),
         }
     }
 
@@ -546,8 +1153,11 @@ impl<'a> PCx<'a, '_> {
                 Action::Narrate { text, duration } => Action::Narrate { text: text.clone(), duration: ex(self, duration) },
                 Action::Run { rate } => Action::Run { rate: self.e(&s, rate) },
                 Action::Seek { time } => Action::Seek { time: self.e(&s, time) },
-                Action::Intervene { ops } => Action::Intervene { ops: ops.iter().map(|o| self.cx.op(&s, o)).collect() },
-                Action::Request { event, payload } => Action::Request { event: event.clone(), payload: ex(self, payload) },
+                Action::Intervene { ops } => Action::Intervene { ops: self.cx.ops(&s, ops) },
+                Action::Request { event, payload } => {
+                    let declared = s.ty.events.iter().find(|e| &e.id == event).and_then(|e| e.payload.clone());
+                    Action::Request { event: event.clone(), payload: payload.as_ref().map(|p| self.cx.payload_value(&s, declared.as_ref(), p)) }
+                }
                 Action::Wait { duration } => Action::Wait { duration: self.e(&s, duration) },
                 Action::Explore { limit, keep, controls, fallback } => Action::Explore { limit: ex(self, limit), keep: keep.clone(), controls: self.reps(&s, controls), fallback: self.actions(fallback) },
                 Action::Sequence { actions } => Action::Sequence { actions: self.actions(actions) },
@@ -604,6 +1214,12 @@ fn presentation<'a>(cx: &mut Cx<'a>, root: &'a Model, p: &Presentation) -> Prese
             ViewKind::Panel => ViewKind::Panel,
         };
         v.representations = pc.reps(&s, &v.representations);
+        // A click on a point of the view (D-060): its payload reads the point as `{"param": 0}`.
+        if let Some(c) = &v.click {
+            let declared = pc.cx.root.events.iter().find(|e| e.id == c.event).and_then(|e| e.payload.clone());
+            let payload = c.payload.as_ref().map(|p| pc.cx.payload_value(&s, declared.as_ref(), p));
+            v.click = Some(crate::present::Click { event: c.event.clone(), payload });
+        }
     }
     if let Some(t) = &mut out.timeline {
         for sc in &mut t.scenes {

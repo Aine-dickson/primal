@@ -91,14 +91,16 @@ fn payloads_from_requests_and_emits() {
     assert!(matches!(r.status, RunStatus::Completed), "{:?}", r.status);
     let names: Vec<&str> = r.log.iter().map(|e| e.name.as_str()).collect();
     // The request at 1 s does not occur: its enabling condition is false for a negative
-    // impulse (MK-15.5). The one at 1.5 s supplies no payload and is rejected. The followers
-    // of `kick` share the next microstep, in declaration order.
+    // impulse (MK-15.5), and it is rejected with that reason (D-059). The one at 1.5 s
+    // supplies no payload and is rejected. The followers of `kick` share the next microstep,
+    // in declaration order.
     assert_eq!(names, ["kick", "counted", "echo"]);
     assert_eq!(r.log[0].payload, Some(prismal_kernel::Value::Num(4.0)), "the requested impulse");
     assert_eq!(r.log[1].payload, Some(prismal_kernel::Value::Num(8.0)), "`emit tally(2 * j)` supplies the followers' payload");
     assert_eq!(r.log[2].payload, Some(prismal_kernel::Value::Num(4.0)), "`on kick(j)` receives kick's payload");
-    assert_eq!(r.rejected.len(), 1, "{:?}", r.rejected);
-    assert!(r.rejected[0].message.contains("supplies its payload"), "{}", r.rejected[0].message);
+    assert_eq!(r.rejected.len(), 2, "{:?}", r.rejected);
+    assert!(r.rejected[0].message.contains("not enabled"), "{}", r.rejected[0].message);
+    assert!(r.rejected[1].message.contains("supplies its payload"), "{}", r.rejected[1].message);
     let end = r.state_at(2.0);
     let (v, last, total) = (cm.idx("Cart.v"), cm.idx("Cart.last"), cm.idx("Cart.total"));
     assert_eq!(end[v], prismal_kernel::Value::Num(2.0), "4 kg m/s on 2 kg");

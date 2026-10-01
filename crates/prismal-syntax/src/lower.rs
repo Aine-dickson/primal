@@ -156,6 +156,8 @@ pub(crate) struct ObjInfo {
     pub(crate) id: Id,
     pub(crate) bindings: HashMap<String, Id>,
     pub(crate) parts: HashMap<String, PartInfo>,
+    /// A relation type's endpoints: identity and the object type of its collection (D-058).
+    pub(crate) ends: HashMap<String, (Id, String)>,
 }
 
 /// A part: its identity, its object type's name, and whether it is a collection.
@@ -177,6 +179,8 @@ pub(crate) struct ModelCx<'a> {
     index_ok: bool,
     /// Lowering an object type's body, where object types are not declared.
     in_object: bool,
+    /// In a relation type's body, its endpoints (D-058).
+    ends: HashMap<String, (Id, String)>,
     space: Option<&'a Space>,
     spaces: &'a [Space],
     pub(crate) bindings: HashMap<String, Id>,
@@ -185,8 +189,9 @@ pub(crate) struct ModelCx<'a> {
     pub(crate) enums: HashMap<String, (Id, Vec<String>)>,
     /// Declared functions by name (D-048).
     pub(crate) functions: HashMap<String, Id>,
-    /// While lowering an event with a payload: the payload's name and the event (D-050).
-    payload: Option<(String, Id)>,
+    /// While lowering an event with payloads: each value payload's name, the event, and its
+    /// component when the event carries several (D-050, D-059). Member payloads are in `vars`.
+    payload: Vec<(String, Id, Option<usize>)>,
     pub(crate) diags: &'a mut Vec<Diag>,
     pub(crate) map: &'a mut SourceMap,
     flows: usize,
@@ -196,7 +201,14 @@ pub(crate) struct ModelCx<'a> {
 impl<'a> ModelCx<'a> {
     /// The scope of a lowered model, for expressions written outside it (presentations, runs).
     pub(crate) fn scope(m: &Model, spaces: &'a [Space], diags: &'a mut Vec<Diag>, map: &'a mut SourceMap) -> ModelCx<'a> {
-        let objects: HashMap<String, ObjInfo> = m.objects.iter().map(|o| (o.name.clone(), obj_info(o))).collect();
+        let mut objects: HashMap<String, ObjInfo> = m.objects.iter().map(|o| (o.name.clone(), obj_info(o))).collect();
+        // A relation type's endpoints, with the object types of their collections (D-058).
+        for o in &m.objects {
+            for e in &o.ends {
+                let ty = m.parts.iter().find(|p| p.id == e.over).map(|p| p.object.rsplit('.').next().unwrap_or(&p.object).to_string()).unwrap_or_default();
+                objects.get_mut(&o.name).unwrap().ends.insert(e.name.clone(), (e.id.clone(), ty));
+            }
+        }
         let parts = obj_info(m).parts;
         ModelCx {
             objects,
@@ -204,6 +216,7 @@ impl<'a> ModelCx<'a> {
             vars: vec![],
             index_ok: false,
             in_object: false,
+            ends: HashMap::new(),
             name: m.name.clone(),
             space: m.default_space.as_ref().and_then(|s| spaces.iter().find(|x| &x.id == s)),
             spaces,
@@ -211,7 +224,7 @@ impl<'a> ModelCx<'a> {
             events: m.events.iter().map(|ev| (ev.name.clone(), ev.id.clone())).collect(),
             enums: m.enums.iter().map(|e| (e.name.clone(), (e.id.clone(), e.cases.clone()))).collect(),
             functions: m.functions.iter().map(|f| (f.name.clone(), f.id.clone())).collect(),
-            payload: None,
+            payload: vec![],
             diags,
             map,
             flows: 0,
@@ -243,13 +256,14 @@ impl<'a> ModelCx<'a> {
             vars: vec![],
             index_ok: false,
             in_object: false,
+            ends: HashMap::new(),
             space,
             spaces,
             bindings: HashMap::new(),
             events: HashMap::new(),
             enums: HashMap::new(),
             functions: HashMap::new(),
-            payload: None,
+            payload: vec![],
             diags,
             map,
             flows: 0,
@@ -267,7 +281,7 @@ impl<'a> ModelCx<'a> {
                 }
                 Member::Parts(ps) => {
                     for p in ps {
-                        let pi = PartInfo { id: format!("{id}.part.{}", p.name.text), object: p.object.text.clone(), many: p.count.is_some() };
+                        let pi = PartInfo { id: format!("{id}.part.{}", p.name.text), object: p.object.text.clone(), many: p.count.is_some() || p.capacity.is_some() };
                         if info.parts.insert(p.name.text.clone(), pi).is_some() {
                             self.err("SX-E09", format!("part `{}` declared twice", p.name.text), p.name.span);
                         }
@@ -296,8 +310,14 @@ impl<'a> ModelCx<'a> {
         sub.objects = objects;
         sub.parts = info.parts.clone();
         sub.in_object = true;
+        sub.ends = info.ends.clone();
         let mut ty = sub.lower(&decl);
         ty.name = o.name.text.clone();
+        // A relation type's endpoints are members of the model's collections (D-058).
+        for (n, over) in &o.ends {
+            let over_id = self.parts.get(&over.text).map(|p| p.id.clone()).unwrap_or_default();
+            ty.ends.push(prismal_ir::End { id: format!("{}.{}", info.id, n.text), name: n.text.clone(), over: over_id });
+        }
         self.model.objects.push(ty);
     }
 
@@ -310,14 +330,31 @@ impl<'a> ModelCx<'a> {
                 // Kept, so that its uses are known and not reported again.
                 self.err("SX-E03", format!("unknown object type `{}`", p.object.text), p.object.span);
                 let object = format!("{}.{}", self.name, p.object.text);
-                self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object, count: p.count, overrides: vec![], notes: p.notes.clone() });
+                self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object, count: p.count, capacity: p.capacity, overrides: vec![], notes: p.notes.clone() });
                 continue;
             };
-            if p.count == Some(0) {
+            if p.count == Some(0) && p.capacity.is_none() {
                 self.err("SX-E08", "a collection has at least one member", p.span);
+            }
+            if p.capacity == Some(0) {
+                self.err("SX-E08", "a collection holds at least one member", p.span);
             }
             let mut overrides = vec![];
             for (n, e) in &p.overrides {
+                // An endpoint of a starting relation is given a member (D-058).
+                if let Some((end, _)) = obj.ends.get(&n.text).cloned() {
+                    self.index_ok = info.many;
+                    let value = match self.member_expr(e, &[]) {
+                        Some((m, _)) => m,
+                        None => {
+                            self.err("SX-E08", format!("the endpoint `{}` is a member: `{} = balls[1]`", n.text, n.text), e.span);
+                            Self::placeholder()
+                        }
+                    };
+                    self.index_ok = false;
+                    overrides.push(prismal_ir::present::Override { binding: end, value });
+                    continue;
+                }
                 let Some(b) = obj.bindings.get(&n.text).cloned() else {
                     self.err("SX-E03", format!("an object `{}` has no binding `{}`", p.object.text, n.text), n.span);
                     continue;
@@ -327,13 +364,50 @@ impl<'a> ModelCx<'a> {
                 self.index_ok = false;
                 overrides.push(prismal_ir::present::Override { binding: b, value });
             }
-            self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object: obj.id, count: p.count, overrides, notes: p.notes.clone() });
+            self.model.parts.push(Part { id: info.id, name: p.name.text.clone(), object: obj.id, count: p.count, capacity: p.capacity, overrides, notes: p.notes.clone() });
+        }
+    }
+
+    /// The object type of the member an expression selects, without reporting anything.
+    fn quiet_type(&self, e: &ast::Expr, locals: &[String]) -> Option<String> {
+        match &e.kind {
+            ExprKind::Name(n) if locals.contains(n) => None,
+            ExprKind::Name(n) => {
+                if let Some((_, t)) = self.vars.iter().rev().find(|(v, _)| v == n) {
+                    return Some(t.clone());
+                }
+                if !self.bindings.contains_key(n) {
+                    if let Some((_, t)) = self.ends.get(n) {
+                        return Some(t.clone());
+                    }
+                }
+                self.parts.get(n).filter(|p| !p.many).map(|p| p.object.clone())
+            }
+            ExprKind::Index(x, _) => match &x.kind {
+                ExprKind::Name(n) => self.parts.get(n).filter(|p| p.many).map(|p| p.object.clone()),
+                _ => None,
+            },
+            ExprKind::Field(x, n) => {
+                let t = self.quiet_type(x, locals)?;
+                self.objects.get(&t)?.ends.get(&n.text).map(|(_, t)| t.clone())
+            }
+            _ => None,
         }
     }
 
     /// The member an expression selects (`b`, `ball`, `row[2]`) and its object type (D-055).
     fn member_expr(&mut self, e: &ast::Expr, locals: &[String]) -> Option<(Expr, String)> {
         match &e.kind {
+            // An endpoint inside its relation type, and of a relation: `a`, `s.a` (D-058).
+            ExprKind::Name(n) if !locals.contains(n) && !self.bindings.contains_key(n) && self.ends.contains_key(n) => {
+                let (end, ty) = self.ends[n].clone();
+                Some((Expr::End { end, of: None }, ty))
+            }
+            ExprKind::Field(x, n) if self.quiet_type(x, locals).is_some_and(|t| self.objects.get(&t).is_some_and(|o| o.ends.contains_key(&n.text))) => {
+                let (of, ty) = self.member_expr(x, locals)?;
+                let (end, ety) = self.objects.get(&ty)?.ends.get(&n.text)?.clone();
+                Some((Expr::End { end, of: Some(Box::new(of)) }, ety))
+            }
             ExprKind::Name(n) if !locals.contains(n) => {
                 if let Some((_, ty)) = self.vars.iter().rev().find(|(v, _)| v == n) {
                     return Some((Expr::Var { var: n.clone() }, ty.clone()));
@@ -410,7 +484,20 @@ impl<'a> ModelCx<'a> {
         for mem in &m.members {
             if let Member::Object(o) = mem {
                 let id = format!("{}.{}", self.name, o.name.text);
-                let info = self.declare_names(&id, &o.members);
+                let mut info = self.declare_names(&id, &o.members);
+                for (n, over) in &o.ends {
+                    // An unknown collection is reported here; its endpoint is still known.
+                    let object = match self.parts.get(&over.text) {
+                        Some(p) => p.object.clone(),
+                        None => {
+                            self.err("SX-E03", format!("unknown collection `{}`", over.text), over.span);
+                            String::new()
+                        }
+                    };
+                    if info.bindings.contains_key(&n.text) || info.ends.insert(n.text.clone(), (format!("{id}.{}", n.text), object)).is_some() {
+                        self.err("SX-E09", format!("`{}` is declared twice in `{}`", n.text, o.name.text), n.span);
+                    }
+                }
                 if self.objects.insert(o.name.text.clone(), info).is_some() {
                     self.err("SX-E09", format!("object type `{}` declared twice", o.name.text), o.name.span);
                 }
@@ -604,6 +691,7 @@ impl<'a> ModelCx<'a> {
             private: false,
             display: Display::default(),
             notes: d.notes.clone(),
+            when: None,
         };
         for m in &d.modifiers {
             match m {
@@ -678,6 +766,23 @@ impl<'a> ModelCx<'a> {
     }
 
     fn event(&mut self, e: &ast::EventDecl, process: Option<&Id>) {
+        // `for b in drops { event ... }`: the loop variable is in scope (D-057).
+        let each = match &e.each {
+            Some((var, over)) => match self.parts.get(&over.text).cloned() {
+                Some(p) => {
+                    if !p.many {
+                        self.err("SX-E08", format!("`{}` is one object; `for` goes over a collection", over.text), over.span);
+                    }
+                    self.vars.push((var.text.clone(), p.object.clone()));
+                    Some(Each { var: var.text.clone(), over: p.id })
+                }
+                None => {
+                    self.err("SX-E03", format!("unknown collection `{}`", over.text), over.span);
+                    None
+                }
+            },
+            None => None,
+        };
         let trigger = match &e.trigger {
             ast::TriggerExpr::Rising(g) => Trigger::Rising { guard: self.expr(g, &[]) },
             ast::TriggerExpr::Falling(g) => Trigger::Falling { guard: self.expr(g, &[]) },
@@ -696,17 +801,51 @@ impl<'a> ModelCx<'a> {
             ast::TriggerExpr::On(n, _) => Trigger::On { event: self.event_id(n) },
         };
         let id = format!("{}.event.{}", self.name, e.name.text);
-        // D-050: the payload's name reads the occurrence's payload in the condition and handler.
-        let payload = match &e.trigger {
-            ast::TriggerExpr::Request(Some((n, t))) | ast::TriggerExpr::On(_, Some((n, t))) => {
-                if self.bindings.contains_key(&n.text) || self.functions.contains_key(&n.text) {
-                    self.err("SX-E09", format!("payload `{}` has the name of a binding or function", n.text), n.span);
-                }
-                Some(Payload { name: n.text.clone(), ty: self.ty(t) })
-            }
-            _ => None,
+        // D-050: the payload's name reads the occurrence's payload in the condition and handler;
+        // a member payload names a member of its collection, as a loop variable does (D-059).
+        let decls: &[ast::PayloadDecl] = match &e.trigger {
+            ast::TriggerExpr::Request(d) | ast::TriggerExpr::On(_, d) => d,
+            _ => &[],
         };
-        self.payload = payload.as_ref().map(|p| (p.name.clone(), id.clone()));
+        let vars = self.vars.len();
+        let mut items = vec![];
+        for (k, d) in decls.iter().enumerate() {
+            let n = &d.name;
+            if self.bindings.contains_key(&n.text) || self.functions.contains_key(&n.text) {
+                self.err("SX-E09", format!("payload `{}` has the name of a binding or function", n.text), n.span);
+            }
+            if decls[..k].iter().any(|x| x.name.text == n.text) {
+                self.err("SX-E09", format!("payload `{}` declared twice", n.text), n.span);
+            }
+            let component = if decls.len() > 1 { Some(k) } else { None };
+            match &d.ty {
+                ast::PayloadTy::Value(t) => {
+                    items.push(Payload::value(n.text.clone(), self.ty(t)));
+                    self.payload.push((n.text.clone(), id.clone(), component));
+                }
+                ast::PayloadTy::Member(c) => match self.parts.get(&c.text).cloned() {
+                    Some(p) if p.many => {
+                        items.push(Payload::member(n.text.clone(), p.id));
+                        self.vars.push((n.text.clone(), p.object));
+                    }
+                    // The name stays a member, of no known type, so that its uses are not
+                    // reported again.
+                    Some(_) => {
+                        self.err("SX-E08", format!("`{}` is one object; a member payload names a member of a collection", c.text), c.span);
+                        self.vars.push((n.text.clone(), String::new()));
+                    }
+                    None => {
+                        self.err("SX-E03", format!("unknown collection `{}`", c.text), c.span);
+                        self.vars.push((n.text.clone(), String::new()));
+                    }
+                },
+            }
+        }
+        let payload = match items.len() {
+            0 => None,
+            1 => items.pop(),
+            _ => Some(Payload::several(items)),
+        };
         let enable = e.enable.as_ref().map(|c| self.expr(c, &[]));
         let handler = e.handler.iter().map(|o| self.op(o)).collect();
         let zeno = e.zeno.as_ref().map(|z| Zeno {
@@ -718,7 +857,11 @@ impl<'a> ModelCx<'a> {
             n: None,
             window: None,
         });
-        self.payload = None;
+        self.payload.clear();
+        self.vars.truncate(vars);
+        if each.is_some() {
+            self.vars.pop();
+        }
         self.map.insert(id.clone(), e.span);
         self.model.events.push(Event {
             id,
@@ -729,6 +872,7 @@ impl<'a> ModelCx<'a> {
             zeno,
             process: process.cloned(),
             payload,
+            each,
             notes: e.notes.clone(),
         });
     }
@@ -741,13 +885,113 @@ impl<'a> ModelCx<'a> {
                 let payload = payload.as_ref().map(|p| self.expr(p, &[]));
                 Op::Emit { event: self.event_id(event), payload }
             }
+            // D-057: the overrides name the member's bindings and are read in this scope.
+            ast::OpStmt::Create { part, overrides, .. } => {
+                let Some(p) = self.parts.get(&part.text).cloned() else {
+                    self.err("SX-E03", format!("unknown collection `{}`", part.text), part.span);
+                    return Op::Create { part: part.text.clone(), overrides: vec![] };
+                };
+                if !p.many {
+                    self.err("SX-E08", format!("`{}` is one object; `create` makes a member of a collection", part.text), part.span);
+                }
+                let obj = self.objects.get(&p.object).cloned().unwrap_or_default();
+                let mut ovs = vec![];
+                for (n, e) in overrides {
+                    let Some(b) = obj.bindings.get(&n.text).cloned() else {
+                        self.err("SX-E03", format!("an object `{}` has no binding `{}`", p.object, n.text), n.span);
+                        continue;
+                    };
+                    let value = self.expr(e, &[]);
+                    ovs.push(prismal_ir::present::Override { binding: b, value });
+                }
+                Op::Create { part: p.id, overrides: ovs }
+            }
+            ast::OpStmt::Destroy { member, span } => match self.member_expr(member, &[]) {
+                Some((sel, _)) => Op::Destroy { member: sel },
+                None => {
+                    self.err("SX-E08", "`destroy` names a member: `destroy b`, `destroy row[2]`", *span);
+                    Op::Destroy { member: Self::placeholder() }
+                }
+            },
+            // D-058: endpoints are members, in the order of the relation type's roles.
+            ast::OpStmt::Connect { part, ends, overrides, .. } => {
+                let Some(p) = self.parts.get(&part.text).cloned() else {
+                    self.err("SX-E03", format!("unknown set of relations `{}`", part.text), part.span);
+                    return Op::Connect { part: part.text.clone(), ends: vec![], overrides: vec![] };
+                };
+                let obj = self.objects.get(&p.object).cloned().unwrap_or_default();
+                if obj.ends.is_empty() && self.objects.contains_key(&p.object) {
+                    self.err("SX-E08", format!("`{}` holds objects: `connect` makes a relation, `create` an object", part.text), part.span);
+                }
+                let mut sels = vec![];
+                for e in ends {
+                    match self.member_expr(e, &[]) {
+                        Some((m, _)) => sels.push(m),
+                        None => {
+                            self.err("SX-E08", "an endpoint is a member: `connect springs(b, o)`", e.span);
+                            sels.push(Self::placeholder());
+                        }
+                    }
+                }
+                let mut ovs = vec![];
+                for (n, e) in overrides {
+                    let Some(b) = obj.bindings.get(&n.text).cloned() else {
+                        self.err("SX-E03", format!("a relation `{}` has no binding `{}`", p.object, n.text), n.span);
+                        continue;
+                    };
+                    let value = self.expr(e, &[]);
+                    ovs.push(prismal_ir::present::Override { binding: b, value });
+                }
+                Op::Connect { part: p.id, ends: sels, overrides: ovs }
+            }
+            ast::OpStmt::Disconnect { relation, span } => match self.member_expr(relation, &[]) {
+                Some((sel, _)) => Op::Disconnect { relation: sel },
+                None => {
+                    self.err("SX-E08", "`disconnect` names a relation: `disconnect s`", *span);
+                    Op::Disconnect { relation: Self::placeholder() }
+                }
+            },
         }
     }
 
-    fn target(&mut self, p: &ast::Path) -> Target {
-        let binding = self.binding(&p.name);
-        let component = p.component.as_ref().map(|c| self.axis(c));
-        Target { binding, component }
+    /// A target of an operation: a binding of the scope, or a binding of a member it
+    /// contains (`set b.vel = ...`, D-057). `b.vel` is a member's binding when `b` names a
+    /// member and is not a binding.
+    pub(crate) fn target(&mut self, p: &ast::Path) -> Target {
+        let names_member = |cx: &Self, n: &str| !cx.bindings.contains_key(n) && (cx.vars.iter().any(|(v, _)| v == n) || cx.parts.contains_key(n));
+        let (member, name, component) = match (&p.member, &p.component) {
+            // `s.b.vel`: the member at the endpoint `b` of `s` (D-059).
+            (Some(m), Some(c)) if self.quiet_type(m, &[]).is_some_and(|t| self.objects.get(&t).is_some_and(|o| o.ends.contains_key(&p.name.text))) => {
+                (Some(ast::Expr { kind: ExprKind::Field(Box::new(m.clone()), p.name.clone()), span: m.span }), c.clone(), None)
+            }
+            (Some(m), _) => (Some(m.clone()), p.name.clone(), p.component.clone()),
+            (None, Some(c)) if names_member(self, &p.name.text) => {
+                (Some(ast::Expr { kind: ExprKind::Name(p.name.text.clone()), span: p.name.span }), c.clone(), None)
+            }
+            (None, _) => (None, p.name.clone(), p.component.clone()),
+        };
+        let component = component.as_ref().map(|c| self.axis(c));
+        let Some(m) = member else {
+            return Target { binding: self.binding(&name), component, member: None };
+        };
+        match self.member_expr(&m, &[]) {
+            Some((sel, ty)) => {
+                let binding = match self.objects.get(&ty).and_then(|o| o.bindings.get(&name.text)).cloned() {
+                    Some(id) => id,
+                    None => {
+                        if self.objects.contains_key(&ty) {
+                            self.err("SX-E03", format!("an object `{ty}` has no binding `{}`", name.text), name.span);
+                        }
+                        name.text.clone()
+                    }
+                };
+                Target { binding, component, member: Some(sel) }
+            }
+            None => {
+                self.err("SX-E03", "a target is a binding, or a member's binding: `set b.vel = ...`", m.span);
+                Target { binding: name.text.clone(), component, member: None }
+            }
+        }
     }
 
     pub(crate) fn binding(&mut self, n: &ast::Name) -> Id {
@@ -982,6 +1226,10 @@ impl<'a> ModelCx<'a> {
                 Expr::Case { case: n.text.clone() }
             }
             ExprKind::Field(x, n) => match self.member_expr(x, locals) {
+                // An endpoint of a relation: `s.a` (D-058).
+                Some((of, ty)) if self.objects.get(&ty).is_some_and(|o| o.ends.contains_key(&n.text)) => {
+                    Expr::End { end: self.objects[&ty].ends[&n.text].0.clone(), of: Some(Box::new(of)) }
+                }
                 // A member's binding: `b.pos`, `ball.pos`, `row[2].pos` (D-055). A part of
                 // an unknown type is reported where it is declared, not at each use.
                 Some((_, ty)) if !self.objects.contains_key(&ty) => Self::placeholder(),
@@ -993,7 +1241,12 @@ impl<'a> ModelCx<'a> {
                     }
                 },
                 None => {
+                    // A mistake inside is reported once, not again as a missing component.
+                    let before = self.diags.len();
                     let x = self.expr(x, locals);
+                    if self.diags.len() > before {
+                        return Self::placeholder();
+                    }
                     let axis = self.axis(n);
                     build::comp(x, axis)
                 }
@@ -1030,10 +1283,12 @@ impl<'a> ModelCx<'a> {
         if let Some(i) = locals.iter().position(|l| l == n) {
             return build::param(i);
         }
-        if let Some((p, ev)) = &self.payload {
-            if p == n {
-                return Expr::Payload { payload: ev.clone() };
-            }
+        if let Some((_, ev, k)) = self.payload.iter().find(|(p, ..)| p == n) {
+            let read = Expr::Payload { payload: ev.clone() };
+            return match k {
+                Some(k) => Expr::Comp { comp: Box::new(read), axis: *k },
+                None => read,
+            };
         }
         if let Some(id) = self.bindings.get(n) {
             return build::r(id);
@@ -1041,6 +1296,10 @@ impl<'a> ModelCx<'a> {
         // Members of objects (D-055): a loop variable, a contained object.
         if let Some((_, _)) = self.vars.iter().rev().find(|(v, _)| v == n) {
             return Expr::Var { var: n.to_string() };
+        }
+        // An endpoint inside its relation type (D-058).
+        if let Some((end, _)) = self.ends.get(n) {
+            return Expr::End { end: end.clone(), of: None };
         }
         if let Some(p) = self.parts.get(n) {
             if !p.many {
@@ -1138,8 +1397,9 @@ fn obj_info(m: &Model) -> ObjInfo {
             .iter()
             .map(|p| {
                 let object = p.object.rsplit('.').next().unwrap_or(&p.object).to_string();
-                (p.name.clone(), PartInfo { id: p.id.clone(), object, many: p.count.is_some() })
+                (p.name.clone(), PartInfo { id: p.id.clone(), object, many: p.count.is_some() || p.capacity.is_some() })
             })
             .collect(),
+        ends: HashMap::new(),
     }
 }

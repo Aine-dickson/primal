@@ -87,6 +87,15 @@ pub fn fmt_binding(cm: &CModel, idx: usize, v: &Value) -> String {
 }
 
 /// A value of a type, in coherent SI units: `4.2`, `3 m`, `(4 m, -1 m)`, `true`.
+/// A payload's value: members by name, `balls[2]`, several separated by commas (D-059).
+pub fn fmt_payload(v: &Value, p: &prismal_ir::Payload) -> String {
+    match (v, p.items.is_empty()) {
+        (Value::Tuple(items), false) => items.iter().zip(&p.items).map(|(x, i)| fmt_payload(x, i)).collect::<Vec<_>>().join(", "),
+        (Value::Num(k), true) if p.members.is_some() => format!("{}[{}]", p.members.as_deref().unwrap_or_default(), fmt_num(*k)),
+        _ => fmt_value(v, &p.ty),
+    }
+}
+
 pub fn fmt_value(v: &Value, ty: &Type) -> String {
     match (v, ty) {
         (Value::Bool(b), _) => b.to_string(),
@@ -159,7 +168,7 @@ pub fn print(e: &Expr, cm: &CModel, params: &[String]) -> String {
             Builtin::Index => "index".into(),
         },
         // Elaboration replaces members and aggregates before anything is printed (D-055).
-        Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } => "…".into(),
+        Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } | Expr::Extreme { .. } | Expr::End { .. } | Expr::Pick { .. } => "…".into(),
         Expr::Const { .. } => "π".into(),
         Expr::Origin { .. } => "origin".into(),
         Expr::Der { der } => format!("der({})", symbol(cm, der)),

@@ -252,7 +252,7 @@ At an event time `t`, starting from `(t, 0)`:
 
 - **RC-11.6** An input binding holds the last value supplied, or `unavailable` or `pending` (MK-17.3). In v0 an input is piecewise constant: it changes only at logged instants, and each change is an event instant where `on input(i)` triggers are due.
 - **RC-11.6a** An input starts at the value the run configuration supplies, else at its declared default (MK-6.7a). The starting value is not a change: `on input(i)` is due only for values supplied at later instants. Every value supplied is a change, even one equal to the current value. A value is evaluated against the input's type, reading only constants; a value of another type, or for a binding that is not an input, is rejected and logged as an intervention is (D-051).
-- **RC-11.6b** A requested event obeys its enabling condition (MK-15.5), and a request supplies the payload the event declares (MK-15.1a); a request without it, or with one the event does not declare, is rejected.
+- **RC-11.6b** A requested event obeys its enabling condition (MK-15.5), and a request supplies the payload the event declares (MK-15.1a); a request without it, or with one the event does not declare, is rejected. A request whose event is not enabled is rejected with the reason: the member it names is not alive, or has no member of that number (MK-15.1c), or the condition does not hold (D-059).
 - **RC-11.7** Every input change is logged with its simulation instant and value, so that a replay reproduces the run without the external source.
 
 ---

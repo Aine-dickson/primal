@@ -40,7 +40,7 @@ pub fn capabilities() -> Json {
         "media": ["interactive", "video"],
         // Raw input (HI-4.5, D-047): what the host forwards and the keys the engine uses.
         "input": {
-            "semantic": ["set_control", "press", "key", "pointer_down", "pointer_move", "pointer_up", "cancel", "undo", "redo"],
+            "semantic": ["set_control", "press", "click", "click_at", "request", "key", "pointer_down", "pointer_move", "pointer_up", "cancel", "undo", "redo"],
             // Values from the host's environment for the model's `input` bindings (D-051).
             "environment": ["set_input"],
             "raw": ["pointer", "wheel", "key_down", "focus", "view_reset"],
@@ -247,6 +247,18 @@ fn instance_op(i: &mut Instance, op: &str, r: &Json, s: Field<&str>, n: Field<f6
             only(false)?;
             Ok(i.press(s("rep")?))
         }
+        "click" => {
+            only(false)?;
+            Ok(i.click(s("rep")?))
+        }
+        "click_at" => {
+            only(false)?;
+            Ok(i.click_at(s("view")?, n("x")?, n("y")?))
+        }
+        "request" => {
+            only(false)?;
+            Ok(i.request(s("event")?, r.get("payload")))
+        }
         "key" => {
             only(false)?;
             Ok(i.key(s("rep")?, s("key")?))
@@ -271,6 +283,7 @@ fn instance_op(i: &mut Instance, op: &str, r: &Json, s: Field<&str>, n: Field<f6
                 y: n("y")?,
                 size: drawn_size(r),
                 pointer: r.get("pointer").and_then(Json::as_str).unwrap_or("mouse"),
+                id: r.get("id").and_then(Json::as_u64),
                 time: lesson_time()?,
             };
             Ok(i.pointer(&e))

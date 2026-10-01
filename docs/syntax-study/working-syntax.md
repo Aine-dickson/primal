@@ -29,6 +29,9 @@ Candidate A amended as accepted in D-028: A's keyword-led statements, with group
 | `object Name { ... }` | object type (MK-7.13, D-055), declared in a model, with the body of a model |
 | `parts { a: T [{ x = e ... }]  c: T[n] [{ x = e ... }] }` | a contained object, or a collection of `n` members; overrides and input connections, with `index` the member's number (MK-8.3a) |
 | `flow { for b in c { der(b.x) = e ... } }` | flows written by the container for each member (MK-8.8) |
+| `parts { c: T[max m]  d: T[n, max m] { ... } }` | a collection whose membership changes (MK-8.2a, D-057): none or `n` members at the start, at most `m` made in a run |
+| `for b in c { event E on ... { ops } }` | an event of the model repeated for each member (MK-15.1b) |
+| `relation R(a in c, b in d) { ... }` | relation type (MK-8.5a, D-058); its endpoints are members of `c` and `d`; a part of type `R` is a relation set |
 
 Every block keyword also has a one-line form for a single declaration (`param g: Acceleration = 9.81 m/s^2`, `flow der(x) = v`). Both parse to the same IR; the formatter prints blocks.
 
@@ -38,7 +41,7 @@ Modifiers after a declaration: `intervenable`, `private`, `symbol "v"`, `unit de
 
 Expressions add `match e { a => x, b => y }` (one arm per case, arms separated by commas or lines) to the shared sublanguage, and members (D-055): `a.x`, `c[k].x` with a constant `k`, `b.x` for a loop variable; aggregates `sum(e for b in c [if cond])`, likewise `min`, `max`, `any`, `all`, and `count(c)` or `count(b for b in c if cond)`. In views and representation blocks, `for b in c { reps }` repeats each representation per member. `parts` and `index` are contextual words.
 
-Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E [(p: T)]`, `on start`, `on input(i)`, `on request [(p: T)]`; `(p: T)` names the payload the occurrence receives (D-050). `emit E(v)` supplies a payload. `input { x: T [= default] }` declares an input with an optional default (D-051). Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`.
+Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0]`, `on E [(p: T)]`, `on start`, `on input(i)`, `on request [(p: T)]`; `(p: T)` names the payload the occurrence receives (D-050). A payload may be a member, `(b in balls)`, and an event may declare several, `(b in balls, j: Momentum)` (D-059). `emit E(v)` and `emit E(b, j)` supply payloads. A target may go through an endpoint: `set s.a.vel = e`. `input { x: T [= default] }` declares an input with an optional default (D-051). Operations: `set`, `contribute`, `create`, `destroy`, `connect`, `disconnect`, `emit`. `create c { x = e ... }` makes a member of `c` with starting values; `destroy b` ends the member `b`; `set b.x = e` writes a member's binding from its container (D-057). `max` in `[n, max m]` is a contextual word. `connect rs(x, y) { k = e }` makes a relation, `disconnect s` ends one; `s.a` is the member at an endpoint (D-058); `relation` is a contextual word.
 
 ### 1.2 Presentation
 
@@ -48,7 +51,10 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 | `observe { name = expr schedule ... }` | observations; schedules `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over I` |
 | `view name: spatial(Space, scale: 1 m -> 40 px, y: up) { reps }`, `view name: plot(x: I, y: I) { reps }` | views containing their representations |
 | `panel name { reps }` | region without a coordinate system (controls, formulas) |
-| `rep(...) [as name] { on drag [part] as p { propose x = e } }` | representation with its declared inverse |
+| `rep(...) [as name] { on drag [part] as p { propose x = e } }` | representation with its declared inverse; in `for b in c { ... }`, `propose b.x = e` moves that member (D-059) |
+| `rep(...) [as name] { on click request E(v) }` | representation that requests an event when clicked; `on click request E(b)` for its member (D-059) |
+| `segment(P, Q, color: blue, line: dashed)` | author styles: a named color and a line style (D-061) |
+| `view v: ... { on click as q request E(q) ... }` | a view that requests an event with the point clicked, where no representation takes the click (D-060) |
 | `group(at: P, rotate: θ, scale: k) [as name] { reps }` | representations placed, turned and scaled together; members are written in the group's frame (D-043) |
 | `trace(pos every 0.02 s)`, `series_plot(y every 0.01 s)` | a sampled source: `expr every Δ`, only as a representation's argument (PK-6.3a) |
 | `plot(x: [0 s, 6 s], y: [0 m, 1.1 m])` | plot axes with dimensions; a plot marker is at a pair in those dimensions, `marker(at: (0, y))` (PK-7.3a) |
@@ -59,7 +65,7 @@ Triggers: `rising(g)`, `falling(g)`, `crossing(g)`, `at τ`, `every Δ [from τ0
 
 ### 1.3 Runs
 
-`run Name of Model with Presentation { param { ... } input { x = v; x = v at τ } config { ... } until τ; learner { ... } expect { ... } }`. `input` gives inputs their starting values and later changes (D-051). A timeline's `request E(v)` supplies a payload (D-050).
+`run Name of Model with Presentation { param { ... } input { x = v; x = v at τ } config { ... } until τ; learner { ... } expect { ... } }`. `input` gives inputs their starting values and later changes (D-051). A timeline's `request E(v)` supplies a payload (D-050); `request E(balls[2], v)` supplies a member and a value (D-059).
 
 ### 1.4 Canonical printing (C4)
 
@@ -75,7 +81,7 @@ The formatter prints, from the IR: enumerations, then declarations grouped in bl
 - **Statements** end at a newline or `;`. Several statements on one line are separated by `;`. A line ending in an operator (other than a closing `|`), `,`, an open bracket or one of the operator words continues on the next line; so does every line inside `( )` or `[ ]`.
 - **Reserved words** (D-040), never names: `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request enum match`.
 - **Representation kinds** are read where a representation is expected; there `equation`, reserved elsewhere, is the representation kind of PK-6.3.
-- **Contextual keywords** (D-040), recognized only where such a word is expected and ordinary names elsewhere (`process drag`, `view scene`): `for view panel observe live over microstep show as drag propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue`.
+- **Contextual keywords** (D-040), recognized only where such a word is expected and ordinary names elsewhere (`process drag`, `view scene`): `for view panel observe live over microstep show as drag click propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue`.
 - **Built-in names** (not reserved, but predefined): `t`, `t0`, `elapsed`, `origin`, `der`, `π` and `pi` (D-039), `inf` (only as an interval bound), the SI units and named dimensions of MK section 3. Named dimensions: `Length`, `Mass`, `Time`, `Current`, `Amount`, `Area`, `Volume`, `Velocity`, `Acceleration`, `Frequency`, `Momentum`, `Force`, `Energy`, `Power`, `Pressure`, and `Angle` (dimensionless, D-021); base symbols `L M T I Θ N J` inside `Quantity<...>`.
 
 ---
@@ -523,6 +529,10 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-29 written after D-028 was accepted with amendment.
 - 2026-09-30 zero vectors written `0` (D-030); `sequence` dropped where D-033 orders run-directing actions; reference programs converted.
 - 2026-09-30 payloads (`on E(p: T)`, `request E(v)`) and inputs (defaults, a run's `input` block) implemented (D-050, D-051).
+- 2026-10-01 member payloads and several payloads (`on request(b in balls, j: T)`, `request E(balls[2], v)`) implemented (D-059).
+- 2026-10-01 drags on members (`propose b.pos = p`) and clicks (`on click request E(b)`) implemented (D-059).
+- 2026-10-01 clicks on an empty point of a view (`on click as q request E(q)`) implemented (D-060).
+- 2026-10-01 author styles `color:` and `line:` implemented (D-061).
 - 2026-09-30 `enum`, `fn` and `match` implemented (D-048, D-049); `enum` and `match` reserved; `=>` added.
 - 2026-09-30 implemented by the text parser. Lexical rules made precise (units without spaces, names after numbers, statement separators, `in` after a declaration's value, `inf`); reserved words split into reserved words and contextual keywords (D-040); `π` kept by name (D-039); RP-07 observation `state` renamed `values`.
 - 2026-09-30 sampled sources (`expr every Δ`) and plot axes with dimensions, from the web player.
@@ -530,3 +540,5 @@ run A_keep of Projectile with ProjectileLesson {
 - 2026-09-30 `reveal`, `hide ... for`, `camera` (D-042); `hide`, `reveal` and `zoom` added to the contextual keywords.
 - 2026-09-30 `group` with its members in a block (D-043).
 - 2026-09-30 `object` declarations, `parts`, member expressions, aggregates, `for` in flows and representation blocks (D-055).
+- 2026-09-30 `relation` declarations, `connect`, `disconnect`, endpoints `s.a` (D-058).
+- 2026-09-30 capacities `[max m]` and `[n, max m]`, `create`, `destroy`, member targets `set b.x`, `for` blocks of events (D-057).

@@ -13,3 +13,4 @@ serde_json.workspace = true
 [dev-dependencies]
 prismal-host = { path = "../prismal-host" }
 prismal-web = { path = "../prismal-web" }
+prismal-syntax = { path = "../prismal-syntax" }

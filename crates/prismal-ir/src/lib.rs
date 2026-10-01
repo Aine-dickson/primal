@@ -12,7 +12,7 @@ pub mod units;
 pub use dim::{Dim, Ratio};
 pub mod elaborate;
 
-pub use expr::{Agg, Arm, BinOp, Builtin, Constant, Expr, Func, Lambda};
+pub use expr::{Agg, Arm, BinOp, Builtin, Constant, Expr, Func, Guarded, Lambda};
 pub use units::Unit;
 
 use serde::{Deserialize, Serialize};
@@ -152,6 +152,10 @@ pub struct Binding {
     pub display: Display,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+    /// A derived binding of a member or relation that may not be alive is evaluated only
+    /// while this holds; otherwise it has no value (D-058). Made by elaboration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<Expr>,
 }
 
 impl Binding {
@@ -216,9 +220,11 @@ pub struct Each {
     pub over: Id,
 }
 
-/// A contained object or a collection of fixed membership (MK-7.11, MK-8.1, D-055): `count`
-/// members (one when absent: a contained object) of the object type `object`, each with the
-/// overrides, read in the container's scope, where `{"builtin": "index"}` is its number.
+/// A contained object or a collection (MK-7.11, MK-8.1, D-055): `count` members (one when
+/// absent: a contained object) of the object type `object`, each with the overrides, read in
+/// the container's scope, where `{"builtin": "index"}` is its number. With `capacity`, the
+/// membership changes during a run (D-057): `count` members at the start (none when absent),
+/// more made by `create`, removed by `destroy`, and at most `capacity` made in one run.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Part {
     pub id: Id,
@@ -226,6 +232,8 @@ pub struct Part {
     pub object: Id,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overrides: Vec<present::Override>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -254,9 +262,21 @@ pub struct Target {
     pub binding: Id,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component: Option<usize>,
+    /// The member whose binding `binding` is, when a container's handler writes it:
+    /// `set b.vel = ...` (`{"var": "b"}`), `set ball.vel = ...` (D-057, MK-7.10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<Expr>,
 }
 
-/// Operations (MK section 16). Structural operations are reserved with collections.
+impl Target {
+    pub fn of(binding: impl Into<Id>) -> Target {
+        Target { binding: binding.into(), component: None, member: None }
+    }
+}
+
+/// Operations (MK section 16). `create` and `destroy` act on collections whose membership
+/// changes (D-057); elaboration turns them into `set` and `destroy` on liveness bindings and
+/// `if`; `connect` and `disconnect` are reserved with relations.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
@@ -266,6 +286,42 @@ pub enum Op {
         event: Id,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<Expr>,
+    },
+    /// `create drops { pos = p }`: a new member of the collection `part`, its stored
+    /// bindings starting at the overrides, read in the handler's scope (MK section 16).
+    Create {
+        part: Id,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        overrides: Vec<present::Override>,
+    },
+    /// `destroy b`: the member leaves its collection. After elaboration `member` is a
+    /// reference to the member's liveness binding (D-057); destroying a member twice in one
+    /// transition is not a conflict (MK-16.5).
+    Destroy { member: Expr },
+    /// `connect springs(x, y) { k = e }`: a new relation instance of the relation set `part`,
+    /// with endpoints `ends` (members, in the order of the relation type's roles) and
+    /// starting values (MK-8.6, D-058).
+    Connect {
+        part: Id,
+        ends: Vec<Expr>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        overrides: Vec<present::Override>,
+    },
+    /// `disconnect s`: the relation instance leaves its set (D-058).
+    Disconnect { relation: Expr },
+    /// A member being made: its liveness binding `alive` becomes true and its stored
+    /// bindings, parameters included, take their starting values (MK-16.1a). Made by
+    /// elaboration of `create` and `connect` (D-057, D-058).
+    Make {
+        alive: Id,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        values: Vec<present::Override>,
+    },
+    /// The operations `then`, performed only when `if` holds on the state before the
+    /// transition. Made by elaboration (D-057); conflicts count only operations performed.
+    If {
+        r#if: Expr,
+        then: Vec<Op>,
     },
 }
 
@@ -306,6 +362,10 @@ pub struct Event {
     /// and the handler as `{"payload": id}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload: Option<Payload>,
+    /// `for b in drops { event ... }`: a container's event repeated for each member of a
+    /// collection, named `var` in its trigger, condition and handler (D-057).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub each: Option<Each>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
@@ -316,6 +376,49 @@ pub struct Payload {
     pub name: String,
     #[serde(rename = "type")]
     pub ty: Type,
+    /// A member of the collection with this part identity (`on request(b in balls)`, D-059):
+    /// the payload is the member's number in its collection, of type `Real`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub of: Option<Id>,
+    /// Made by elaboration for a member payload: the collection's path in the flat model
+    /// (`balls`, `cart.wheels`), by which hosts name a member (`balls[2]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub members: Option<String>,
+    /// Several payloads (`on request(b in balls, j: Momentum)`, D-059): the payload is the
+    /// tuple of these, each read as its component; `name` lists their names and `ty` is the
+    /// tuple of their types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<Payload>,
+}
+
+impl Payload {
+    /// A payload of a value of type `ty`.
+    pub fn value(name: impl Into<String>, ty: Type) -> Payload {
+        Payload { name: name.into(), ty, of: None, members: None, items: vec![] }
+    }
+    /// A member of the collection `of`, by its number.
+    pub fn member(name: impl Into<String>, of: impl Into<Id>) -> Payload {
+        Payload { name: name.into(), ty: Type::real(), of: Some(of.into()), members: None, items: vec![] }
+    }
+    /// Several payloads, carried as one tuple.
+    pub fn several(items: Vec<Payload>) -> Payload {
+        let name = items.iter().map(|p| p.name.clone()).collect::<Vec<_>>().join(", ");
+        let ty = Type::Tuple { items: items.iter().map(|p| p.ty.clone()).collect() };
+        Payload { name, ty, of: None, members: None, items }
+    }
+    /// The payloads as declared: the items, or this one.
+    pub fn declared(&self) -> Vec<&Payload> {
+        if self.items.is_empty() {
+            vec![self]
+        } else {
+            self.items.iter().collect()
+        }
+    }
+    /// Whether two events carry the same kind of payload: types and collections (D-059).
+    pub fn same_kind(&self, other: &Payload) -> bool {
+        let (a, b) = (self.declared(), other.declared());
+        self.ty == other.ty && a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.ty == y.ty && x.of == y.of)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -390,8 +493,21 @@ pub struct Model {
     /// Contained objects and collections (MK-7.11, MK-8.1, D-055).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<Part>,
+    /// The endpoint roles of a relation type (MK-8.5, D-058); empty for a model or an object
+    /// type. A part whose type has ends is a relation set.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ends: Vec<End>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+}
+
+/// An endpoint role of a relation type (MK-8.5, D-058): its identity (`Model.Spring.a`), its
+/// name, and the part of the containing model its endpoint is a member of.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct End {
+    pub id: Id,
+    pub name: String,
+    pub over: Id,
 }
 
 /// A declared enumeration (MK-2.2, D-049): a nominal type whose values are its cases. Its

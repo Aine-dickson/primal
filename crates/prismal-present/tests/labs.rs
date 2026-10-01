@@ -383,7 +383,8 @@ fn groups() {
     };
     assert_eq!(codes("rotate: θ)", "rotate: L)"), vec!["PK-E04"], "rotate is an angle");
     assert_eq!(codes("scale: 2)", "scale: 0)"), vec!["PK-E02"], "scale is positive");
-    assert_eq!(codes("as tip", "as tip { on drag as p { propose θ0 = 0 } }"), vec!["PK-E06"]);
+    // A member of a group may be dragged (D-062).
+    assert_eq!(codes("as tip", "as tip { on drag as p { propose θ0 = 0 } }"), Vec::<&str>::new());
     assert_eq!(codes("segment(origin, origin + (0 m, -L))", "trace(bob every 0.1 s)"), vec!["PK-E05"], "no sampled members");
     assert_eq!(codes("view scene: spatial(Plane, scale: 1 m -> 100 px, y: up) {", "view scene: plot(x: [-1, 1], y: [-1, 1]) {"), vec!["PK-E05", "PK-E05"]);
 }

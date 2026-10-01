@@ -98,6 +98,8 @@ impl PresCx<'_, '_> {
         for a in &r.args {
             let value = match (&a.value.kind, a.name.as_ref().map(|n| n.text.as_str())) {
                 (ExprKind::Str(s), _) => Arg::Text { text: s.clone() },
+                // Style words (D-061): `color: blue`, `line: dashed`.
+                (ExprKind::Name(w), Some("color" | "line")) => Arg::Word { word: w.clone() },
                 (ExprKind::List(_), _) => match self.range(&a.value) {
                     Some((lo, hi)) => Arg::Range { lo, hi },
                     None => continue,
@@ -121,15 +123,28 @@ impl PresCx<'_, '_> {
                 Some(n) => props.push(Prop { name: n.text.clone(), value }),
             }
         }
-        if r.interactions.len() > 1 {
-            self.err("SX-E06", "one declared inverse per representation in v0", r.interactions[1].span);
+        let (clicks, drags): (Vec<&ast::Interaction>, Vec<&ast::Interaction>) = r.interactions.iter().partition(|i| i.request.is_some());
+        if drags.len() > 1 {
+            self.err("SX-E06", "one declared inverse per representation in v0", drags[1].span);
         }
-        let inverse = r.interactions.first().map(|i| {
+        if clicks.len() > 1 {
+            self.err("SX-E06", "one click per representation", clicks[1].span);
+        }
+        // `on click request E(v)` (D-059): the payload is read in the representation's scope.
+        let click = clicks.first().and_then(|i| i.request.as_ref()).map(|(e, p)| Click { event: self.cx.event_id(e), payload: p.as_ref().map(|v| self.expr(v)) });
+        let inverse = drags.first().map(|i| {
             let locals = vec![i.bind.text.clone()];
             let proposals = i
                 .proposals
                 .iter()
-                .map(|(t, v)| Proposal { target: self.cx.binding(t), value: self.cx.expr(v, &locals) })
+                .map(|(t, v)| {
+                    // A proposal sets a whole binding, of the model or of a member (D-059).
+                    let target = self.cx.target(t);
+                    if target.component.is_some() {
+                        self.err("SX-E06", "a proposal sets a whole binding: `propose pos = p`", t.name.span);
+                    }
+                    Proposal { target: target.binding, value: self.cx.expr(v, &locals), member: target.member }
+                })
                 .collect();
             Inverse { gesture: i.gesture.text.clone(), part: i.part.as_ref().map(|p| p.text.clone()), proposals }
         });
@@ -139,7 +154,7 @@ impl PresCx<'_, '_> {
         if each.is_some() {
             self.cx.vars.pop();
         }
-        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members }
+        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members, click, when: None }
     }
 
     fn view(&mut self, v: &ast::ViewDecl) -> Option<View> {
@@ -197,7 +212,19 @@ impl PresCx<'_, '_> {
         self.cx.map.insert(id.clone(), v.span);
         let mut counts = HashMap::new();
         let representations = v.reps.iter().map(|r| self.rep(r, &id, &mut counts)).collect();
-        Some(View { id, name: v.name.text.clone(), kind, representations })
+        // `on click as p request E(p)` (D-060): the point is the gesture value, `{"param": 0}`.
+        if let Some(extra) = v.clicks.get(1) {
+            self.err("SX-E06", "one click per view", extra.span);
+        }
+        let click = v.clicks.first().map(|i| {
+            if matches!(kind, ViewKind::Panel) {
+                self.err("SX-E06", "a panel has no points to click; clicks on a point are for spatial and plot views", i.span);
+            }
+            let (e, p) = i.request.as_ref().unwrap();
+            let locals = vec![i.bind.text.clone()];
+            Click { event: self.cx.event_id(e), payload: p.as_ref().map(|v| self.cx.expr(v, &locals)) }
+        });
+        Some(View { id, name: v.name.text.clone(), kind, representations, click })
     }
 
     fn observation(&mut self, o: &ast::Observation, model: &Model) -> Observation {

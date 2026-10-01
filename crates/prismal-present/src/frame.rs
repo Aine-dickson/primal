@@ -61,6 +61,10 @@ pub struct ViewFrame {
     pub id: Id,
     pub kind: &'static str,
     pub reps: Vec<RepFrame>,
+    /// For a view that requests an event when a point of it is clicked: the event's name
+    /// (D-060).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub click: Option<String>,
     /// A camera set by the timeline (D-042).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub camera: Option<Camera>,
@@ -104,6 +108,57 @@ pub struct RepFrame {
     /// `body` or the part's name (`head`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drag: Option<String>,
+    /// For a representation that requests an event when clicked or activated: the event's
+    /// name (D-059).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub click: Option<String>,
+    /// The author's color, a name from the palette every medium maps to its own values
+    /// (PK-6.6a, D-061).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// The author's line style: `dashed` or `dotted`; absent is the kind's own (D-061).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+}
+
+/// Named colors an author may give a representation (D-061). Media map them to values that
+/// suit their theme; the names are the frame's.
+pub const COLORS: &[&str] = &["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "gray", "ink"];
+/// Line styles (D-061).
+pub const LINES: &[&str] = &["solid", "dashed", "dotted"];
+
+/// Kinds that take `color` and `line` (D-061): what is drawn with ink or strokes.
+fn styled(kind: &str) -> (bool, bool) {
+    match kind {
+        "marker" => (true, false),
+        "arrow" | "segment" | "polyline" | "polygon" | "circle" | "ellipse" | "arc" | "trace" | "function_graph" | "series_plot" => (true, true),
+        _ => (false, false),
+    }
+}
+
+/// Checks and removes the style properties of a representation (D-061), so that each kind's
+/// own checks see only its own properties.
+fn style_props(rep: &Rep) -> Result<Rep, PDiag> {
+    let d = |message: String| PDiag { code: "PK-E05", message, element: rep.id.clone() };
+    let (color, line) = styled(&rep.kind);
+    for p in rep.props.iter().filter(|p| p.name == "color" || p.name == "line") {
+        let (ok, words) = if p.name == "color" { (color, COLORS) } else { (line, LINES) };
+        if !ok {
+            return Err(d(format!("a {} takes no `{}` (PK-6.6a)", rep.kind, p.name)));
+        }
+        match &p.value {
+            Arg::Word { word } if words.contains(&word.as_str()) => {}
+            _ => return Err(d(format!("`{}` is one of {} (PK-6.6a)", p.name, words.join(", ")))),
+        }
+    }
+    Ok(Rep { props: rep.props.iter().filter(|p| p.name != "color" && p.name != "line").cloned().collect(), ..rep.clone() })
+}
+
+fn style_word(rep: &Rep, name: &str) -> Option<String> {
+    match rep.prop(name) {
+        Some(Arg::Word { word }) if !(name == "line" && word == "solid") => Some(word.clone()),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -269,6 +324,19 @@ impl ViewCtx {
         }
     }
 
+    /// A pointer position in view coordinates as a point in the frame of a group (D-043):
+    /// the value of a drag on a member of the group.
+    pub fn pointer_in(&self, p: [f64; 2], tf: &Tf) -> Expr {
+        match self {
+            ViewCtx::Spatial { space, px_per_m, y_up } => {
+                let m = [p[0] / px_per_m, if *y_up { -p[1] } else { p[1] } / px_per_m];
+                let l = tf.unapply(m);
+                origin(space) + tuple(vec![num(l[0], "m"), num(l[1], "m")])
+            }
+            _ => self.pointer(p),
+        }
+    }
+
     /// A pointer position in view coordinates as a model expression: a point of the view's
     /// space, or the pair of plot coordinates. This is the value of a gesture (PK-5.6).
     pub fn pointer(&self, p: [f64; 2]) -> Expr {
@@ -298,6 +366,18 @@ fn si_num(x: f64, dim: &Dim) -> Expr {
 pub struct CRep {
     pub rep: Rep,
     pub kind: CKind,
+    /// Drawn only while this holds: a member of a collection that changes, alive (D-057).
+    pub when: Option<CExpr>,
+}
+
+impl CRep {
+    /// Whether the representation is drawn on a state (D-057).
+    pub fn shown(&self, run: &Run, vals: &[Value], t: f64) -> bool {
+        match &self.when {
+            None => true,
+            Some(c) => matches!(run.eval_state(c, vals, t), Ok(Value::Bool(true))),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -345,8 +425,42 @@ impl Tf {
         [self.k * (c * x - s * y), self.k * (s * x + c * y)]
     }
 
+    /// The transform of the groups enclosing a member, outermost first, at a state: as
+    /// projection composes them (D-043).
+    pub fn of_groups(chain: &[CRep], run: &Run, vals: &[Value], t: f64) -> Option<Tf> {
+        let mut tf = Tf::ID;
+        for g in chain {
+            let CKind::Group { at, rotate, scale, .. } = &g.kind else { return None };
+            let at = match at {
+                Some(c) => coords(&tf.apply(run.eval_state(c, vals, t).ok()?)),
+                None => tf.at.to_vec(),
+            };
+            let num = |c: &Option<CExpr>, d: f64| match c.as_ref().map(|c| run.eval_state(c, vals, t)) {
+                Some(Ok(Value::Num(x))) => Some(x),
+                Some(Ok(_)) | None => Some(d),
+                Some(Err(_)) => None,
+            };
+            tf = Tf { at: [at[0], at[1]], angle: tf.angle + num(rotate, 0.0)?, k: tf.k * num(scale, 1.0)? };
+        }
+        Some(tf)
+    }
+
+    /// Model coordinates in the view's space as coordinates in the group's frame: the
+    /// inverse of `apply` on points.
+    pub fn unapply(&self, m: [f64; 2]) -> [f64; 2] {
+        let (x, y) = ((m[0] - self.at[0]) / self.k, (m[1] - self.at[1]) / self.k);
+        let (s, c) = self.angle.sin_cos();
+        [c * x + s * y, -s * x + c * y]
+    }
+
+    /// A point in the group's frame as model coordinates in the view's space.
+    pub fn point(&self, a: [f64; 2]) -> [f64; 2] {
+        let r = self.turn(&a);
+        [self.at[0] + r[0], self.at[1] + r[1]]
+    }
+
     /// A value in the group's frame as a value in the view's space.
-    fn apply(&self, v: Value) -> Value {
+    pub fn apply(&self, v: Value) -> Value {
         if self.at == [0.0, 0.0] && self.angle == 0.0 && self.k == 1.0 {
             return v;
         }
@@ -395,7 +509,9 @@ fn prop_expr<'a>(rep: &'a Rep, name: &str) -> Option<&'a Expr> {
 }
 
 /// Compiles a representation for a view, checking its sources, scales and inverse.
-pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PDiag>> {
+pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, full: &Rep) -> Result<CRep, Vec<PDiag>> {
+    let stripped = style_props(full).map_err(|d| vec![d])?;
+    let rep = &stripped;
     let d = |code: &'static str, message: String| vec![PDiag { code, message, element: rep.id.clone() }];
     let ce = |e: &Expr, exp: Option<&Type>| -> Result<(CExpr, Type), Vec<PDiag>> {
         compile_expr(cm, e, exp).map_err(|ds| d("PK-E02", ds.iter().map(|x| format!("{}: {}", x.code, x.message)).collect::<Vec<_>>().join("; ")))
@@ -695,10 +811,6 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
                     });
                     continue;
                 }
-                if m.inverse.is_some() {
-                    diags.push(PDiag { code: "PK-E06", message: "a drag on a member of a group is not implemented by the prototype".into(), element: m.id.clone() });
-                    continue;
-                }
                 match compile_rep(cm, ctx, m) {
                     Ok(c) => members.push(c),
                     Err(e) => diags.extend(e),
@@ -733,7 +845,27 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, rep: &Rep) -> Result<CRep, Vec<PD
             ce(&subst(&p.value, &ctx.pointer([0.0, 0.0])), Some(&cm.bindings[i].ty))?;
         }
     }
-    Ok(CRep { rep: rep.clone(), kind })
+    // A click requests an event declared `on request`, with the payload it declares (D-027,
+    // D-050, D-059).
+    if let Some(c) = &rep.click {
+        let ev = cm.ir.events.iter().find(|e| e.id == c.event).ok_or_else(|| d("PK-E01", format!("unknown event `{}`", c.event)))?;
+        if !matches!(ev.trigger, prismal_ir::Trigger::Request) {
+            return Err(d("PK-E03", format!("`{}` is not declared `on request`, so no click can request it (D-027)", ev.name)));
+        }
+        match (&ev.payload, &c.payload) {
+            (None, None) => {}
+            (Some(p), Some(v)) => {
+                ce(v, Some(&p.ty))?;
+            }
+            (Some(p), None) => return Err(d("PK-E02", format!("`request {}` supplies its payload `{}`", ev.name, p.name))),
+            (None, Some(_)) => return Err(d("PK-E02", format!("`{}` declares no payload", ev.name))),
+        }
+    }
+    let when = match &rep.when {
+        Some(w) => Some(compile_expr(cm, w, Some(&Type::Boolean)).map_err(|ds| d("PK-E02", ds.iter().map(|x| format!("{}: {}", x.code, x.message)).collect::<Vec<_>>().join("; ")))?.0),
+        None => None,
+    };
+    Ok(CRep { rep: full.clone(), kind, when })
 }
 
 fn coords(v: &Value) -> Vec<f64> {
@@ -763,7 +895,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                 Some(Ok(v)) => coords(&v),
                 Some(Err(s)) => {
                     let (sh, tx) = status(s);
-                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None };
+                    return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None, color: None, line: None };
                 }
                 None => vec![0.0, 0.0],
             };
@@ -802,7 +934,17 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             Err(s) => status(s),
         },
         CKind::Trace { pos, every, label } => {
-            let pts: Vec<[f64; 2]> = samples(run, t, *every).filter_map(|s| run.eval_state(pos, &run.state_at(s), s).ok()).map(|v| ctx.to_view(&coords(&v))).collect();
+            // A member's trace starts when it is made and ends when it is destroyed (D-057).
+            let pts: Vec<[f64; 2]> = samples(run, t, *every)
+                .filter_map(|s| {
+                    let st = run.state_at(s);
+                    if !r.shown(run, &st, s) {
+                        return None;
+                    }
+                    run.eval_state(pos, &st, s).ok()
+                })
+                .map(|v| ctx.to_view(&coords(&v)))
+                .collect();
             let text = match (pts.first(), pts.last()) {
                 (Some(_), Some(_)) => format!("trace of {label}: {} samples every {} s up to t = {} s", pts.len(), fmt_num(*every), fmt_num(t - run.config.t0)),
                 _ => format!("trace of {label}: no samples"),
@@ -870,7 +1012,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                     Ok(v) => pts.push(ctx.to_view(&coords(&v))),
                     Err(s) => {
                         let (sh, tx) = status(s);
-                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None };
+                        return RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape: sh, text: tx, highlighted: false, valid: None, opacity: None, drawn: None, label: None, drag: None, click: None, color: None, line: None };
                     }
                 }
             }
@@ -966,7 +1108,7 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             match (at, num(rotate, 0.0), num(scale, 1.0)) {
                 (Ok(a), Ok(angle), Ok(k)) => {
                     let inner = Tf { at: [a[0], a[1]], angle: tf.angle + angle, k: tf.k * k };
-                    let ms: Vec<RepFrame> = members.iter().map(|m| project_in(cm, ctx, m, run, vals, t, inner)).collect();
+                    let ms: Vec<RepFrame> = members.iter().filter(|m| m.shown(run, vals, t)).map(|m| project_in(cm, ctx, m, run, vals, t, inner)).collect();
                     let name = r.rep.name.clone().unwrap_or("group".into());
                     let text = format!("{name}: {}", ms.iter().map(|m| m.text.as_str()).collect::<Vec<_>>().join("; "));
                     (Shape::Group { members: ms }, text)
@@ -982,7 +1124,14 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
         _ => None,
     };
     let drag = r.rep.inverse.as_ref().map(|inv| inv.part.clone().unwrap_or_else(|| "body".into()));
-    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag }
+    // A clickable representation says what activating it does (PK-11.1, D-059).
+    let click = r.rep.click.as_ref().map(|c| cm.ir.events.iter().find(|e| e.id == c.event).map(|e| e.name.clone()).unwrap_or_else(|| c.event.clone()));
+    let text = match &click {
+        Some(e) => format!("{text}, activate: {e}"),
+        None => text,
+    };
+    let (color, line) = (style_word(&r.rep, "color"), style_word(&r.rep, "line"));
+    RepFrame { id: r.rep.id.clone(), kind: r.rep.kind.clone(), name: r.rep.name.clone(), shape, text, highlighted: false, valid: None, opacity: None, drawn: None, label, drag, click, color, line }
 }
 
 /// Sample instants `t0, t0 + dt, ...` up to `t`, and `t` itself (PK-6.3, PK-7.5: a trace
@@ -998,15 +1147,46 @@ fn samples(run: &Run, t: f64, dt: f64) -> impl Iterator<Item = f64> {
 #[derive(Clone, Debug)]
 pub struct Projector {
     pub views: Vec<(Id, ViewCtx, Vec<CRep>)>,
+    /// Clicks on a point of a view, by view (D-060), with the event's name.
+    pub clicks: Vec<(Id, prismal_ir::present::Click, String)>,
+}
+
+/// Checks a view's `on click as p request E(p)` (D-060): the event is declared `on request`
+/// and the payload, read with the point clicked, has the type the event declares.
+fn compile_view_click(cm: &CModel, ctx: &ViewCtx, v: &prismal_ir::present::View, c: &prismal_ir::present::Click) -> Result<String, PDiag> {
+    let d = |code: &'static str, message: String| PDiag { code, message, element: v.id.clone() };
+    if matches!(ctx, ViewCtx::Panel) {
+        return Err(d("PK-E05", "a panel has no points to click (D-060)".into()));
+    }
+    let ev = cm.ir.events.iter().find(|e| e.id == c.event).ok_or_else(|| d("PK-E01", format!("unknown event `{}`", c.event)))?;
+    if !matches!(ev.trigger, prismal_ir::Trigger::Request) {
+        return Err(d("PK-E03", format!("`{}` is not declared `on request`, so no click can request it (D-027)", ev.name)));
+    }
+    match (&ev.payload, &c.payload) {
+        (None, None) => {}
+        (Some(p), Some(x)) => {
+            compile_expr(cm, &subst(x, &ctx.pointer([0.0, 0.0])), Some(&p.ty)).map_err(|ds| d("PK-E02", ds.iter().map(|x| format!("{}: {}", x.code, x.message)).collect::<Vec<_>>().join("; ")))?;
+        }
+        (Some(p), None) => return Err(d("PK-E02", format!("`request {}` supplies its payload `{}`", ev.name, p.name))),
+        (None, Some(_)) => return Err(d("PK-E02", format!("`{}` declares no payload", ev.name))),
+    }
+    Ok(ev.name.clone())
 }
 
 impl Projector {
     pub fn new(cm: &CModel, p: &Presentation) -> Result<Projector, Vec<PDiag>> {
         let mut views = vec![];
+        let mut clicks = vec![];
         let mut diags = vec![];
         for v in &p.views {
             match ViewCtx::of(cm, v) {
                 Ok(ctx) => {
+                    if let Some(c) = &v.click {
+                        match compile_view_click(cm, &ctx, v, c) {
+                            Ok(name) => clicks.push((v.id.clone(), c.clone(), name)),
+                            Err(d) => diags.push(d),
+                        }
+                    }
                     let mut reps = vec![];
                     for r in &v.representations {
                         match compile_rep(cm, &ctx, r) {
@@ -1020,7 +1200,7 @@ impl Projector {
             }
         }
         if diags.is_empty() {
-            Ok(Projector { views })
+            Ok(Projector { views, clicks })
         } else {
             Err(diags)
         }
@@ -1036,13 +1216,14 @@ impl Projector {
     pub fn frame(&self, cm: &CModel, run: &Run, vals: &[Value], t: f64, extra: &[(Option<Id>, CRep)]) -> (Vec<ViewFrame>, Vec<RepFrame>) {
         let mut out = vec![];
         for (id, ctx, reps) in &self.views {
-            let mut rs: Vec<RepFrame> = reps.iter().map(|r| project(cm, ctx, r, run, vals, t)).collect();
-            for (_, r) in extra.iter().filter(|(v, _)| v.as_deref() == Some(id.as_str())) {
+            let mut rs: Vec<RepFrame> = reps.iter().filter(|r| r.shown(run, vals, t)).map(|r| project(cm, ctx, r, run, vals, t)).collect();
+            for (_, r) in extra.iter().filter(|(v, r)| v.as_deref() == Some(id.as_str()) && r.shown(run, vals, t)) {
                 rs.push(project(cm, ctx, r, run, vals, t));
             }
-            out.push(ViewFrame { id: id.clone(), kind: ctx.kind(), reps: rs, camera: None });
+            let click = self.clicks.iter().find(|c| &c.0 == id).map(|c| c.2.clone());
+            out.push(ViewFrame { id: id.clone(), kind: ctx.kind(), reps: rs, click, camera: None });
         }
-        let overlay = extra.iter().filter(|(v, _)| v.is_none()).map(|(_, r)| project(cm, &ViewCtx::Panel, r, run, vals, t)).collect();
+        let overlay = extra.iter().filter(|(v, r)| v.is_none() && r.shown(run, vals, t)).map(|(_, r)| project(cm, &ViewCtx::Panel, r, run, vals, t)).collect();
         (out, overlay)
     }
 }

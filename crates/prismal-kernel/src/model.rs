@@ -13,6 +13,8 @@ pub struct CBinding {
     pub init: Option<CExpr>,
     pub def: Option<CExpr>,
     pub intervenable: bool,
+    /// A derived binding evaluated only while the condition holds, else the value (D-058).
+    pub when: Option<(CExpr, Value)>,
 }
 
 /// How a continuous state's rate is formed (MK-14.7 to MK-14.11).
@@ -57,6 +59,11 @@ pub enum COp {
     Set { binding: usize, component: Option<usize>, value: CExpr },
     /// `emit E` or `emit E(value)`, the value becoming the payload of `E`'s followers (D-050).
     Emit { event: usize, payload: Option<CExpr> },
+    /// `destroy`: the liveness binding of a member becomes false; two in one transition do
+    /// not conflict (MK-16.5, D-057).
+    Destroy { binding: usize },
+    /// Operations performed when `cond` holds before the transition (D-057).
+    If { cond: CExpr, ops: Vec<COp> },
 }
 
 #[derive(Clone, Debug)]
@@ -159,6 +166,13 @@ impl CModel {
                 vals[i] = v.clone();
                 continue;
             }
+            if let Some((w, none)) = &b.when {
+                let c = Ctx { vals: &vals, der: None, t: t0, t0, args: &[], payloads: &[] };
+                if !w.eval(&c)?.boolean() {
+                    vals[i] = none.clone();
+                    continue;
+                }
+            }
             let e = match b.role {
                 Role::Derived => b.def.as_ref(),
                 // D-051: an input starts at the value the run configuration supplies, else at
@@ -182,7 +196,10 @@ impl CModel {
         for &i in &self.derived_order {
             let v = {
                 let c = Ctx { vals, der: None, t, t0, args: &[], payloads: &[] };
-                self.bindings[i].def.as_ref().expect("checked").eval(&c)?
+                match &self.bindings[i].when {
+                    Some((w, none)) if !w.eval(&c)?.boolean() => none.clone(),
+                    _ => self.bindings[i].def.as_ref().expect("checked").eval(&c)?,
+                }
             };
             vals[i] = v;
         }

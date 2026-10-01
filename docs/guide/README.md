@@ -19,6 +19,7 @@ A guide to writing Prismal programs in the working syntax (D-028), from a first 
 | [8. Lessons](08-lessons.md) | timelines, beats, narration, explore beats, requested events, learner scripts |
 | [9. Systems of objects](09-objects.md) | object types, parts, collections, members, aggregates, forces between members |
 | [10. Reference](10-reference.md) | every form, reserved words, diagnostic codes |
+| [11. Solutions](11-solutions.md) | worked answers to the chapters' exercises, each checked by the tests |
 
 ## Running a program
 

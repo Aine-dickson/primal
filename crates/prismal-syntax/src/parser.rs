@@ -22,7 +22,7 @@ pub const RESERVED: &[&str] = &[
 /// Contextual keywords: words of presentations, timelines and runs, recognized only where
 /// such a word is expected (D-040). Elsewhere they are ordinary names (`process drag`).
 pub const CONTEXTUAL: &[&str] = &[
-    "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "propose", "permit",
+    "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "click", "propose", "permit",
     "timeline", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
     "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "reveal", "zoom", "animate", "camera", "bind", "release", "config",
     "expect", "exactly", "rel", "of", "with", "learner", "continue",
@@ -340,6 +340,23 @@ impl<'a> Parser<'a> {
         if self.is_word("event") {
             return Ok(vec![Member::Event(self.event_decl()?)]);
         }
+        // `for b in drops { event ... }`: events repeated per member (D-057).
+        if self.eat_word("for") {
+            let var = self.name("a member name")?;
+            self.expect_word("in")?;
+            let over = self.name("a collection")?;
+            let mut events = self.block(|p| {
+                if p.is_word("event") {
+                    Self::one(p.event_decl())
+                } else {
+                    Err(p.unexpected("`event` in a `for` block of a model"))
+                }
+            })?;
+            for e in &mut events {
+                e.each = Some((var.clone(), over.clone()));
+            }
+            return Ok(events.into_iter().map(Member::Event).collect());
+        }
         if self.eat_word("process") {
             let notes = self.notes_before(start.line);
             let name = self.name("a process name")?;
@@ -425,7 +442,26 @@ impl<'a> Parser<'a> {
             let notes = self.notes_before(start.line);
             let name = self.name("an object name")?;
             let members = self.block(|p| p.member())?;
-            return Ok(vec![Member::Object(ObjectDecl { name, members, notes, span: self.since(start) })]);
+            return Ok(vec![Member::Object(ObjectDecl { name, ends: vec![], members, notes, span: self.since(start) })]);
+        }
+        // `relation Spring(a in balls, b in balls) { ... }` (D-058); `relation` is a word only here.
+        if self.is_word("relation") && matches!(self.peek_at(1), Tok::Ident(_)) && self.is_punct_at(2, "(") {
+            self.bump();
+            let notes = self.notes_before(start.line);
+            let name = self.name("a relation name")?;
+            self.expect_punct("(")?;
+            let mut ends = vec![];
+            loop {
+                let n = self.name("an endpoint name")?;
+                self.expect_word("in")?;
+                ends.push((n, self.name("a collection")?));
+                if !self.eat_punct(",") {
+                    break;
+                }
+            }
+            self.expect_punct(")")?;
+            let members = if self.is_punct("{") { self.block(|p| p.member())? } else { vec![] };
+            return Ok(vec![Member::Object(ObjectDecl { name, ends, members, notes, span: self.since(start) })]);
         }
         Err(self.unexpected("a declaration (`param`, `state`, `flow`, `event`, ...)"))
     }
@@ -510,13 +546,20 @@ impl<'a> Parser<'a> {
         let name = self.name("a part name")?;
         self.expect_punct(":")?;
         let object = self.name("an object type")?;
-        let count = if self.eat_punct("[") {
-            let n = self.int()?;
+        // `[3]`, `[max 50]` or `[3, max 50]` (D-057).
+        let (mut count, mut capacity) = (None, None);
+        if self.eat_punct("[") {
+            if !self.is_word("max") {
+                count = Some(self.int()? as u32);
+                if self.eat_punct(",") && !self.is_word("max") {
+                    return Err(self.unexpected("`max` and the most members the collection holds"));
+                }
+            }
+            if self.eat_word("max") {
+                capacity = Some(self.int()? as u32);
+            }
             self.expect_punct("]")?;
-            Some(n as u32)
-        } else {
-            None
-        };
+        }
         let overrides = if self.is_punct("{") {
             self.block(|p| {
                 let n = p.name("a binding of the object")?;
@@ -526,7 +569,7 @@ impl<'a> Parser<'a> {
         } else {
             vec![]
         };
-        Ok(PartDecl { name, object, count, overrides, notes, span: self.since(start) })
+        Ok(PartDecl { name, object, count, capacity, overrides, notes, span: self.since(start) })
     }
 
     fn flow_stmt(&mut self) -> P<FlowStmt> {
@@ -585,7 +628,7 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        Ok(EventDecl { name, trigger, enable, handler, zeno, notes, span: self.since(start) })
+        Ok(EventDecl { each: None, name, trigger, enable, handler, zeno, notes, span: self.since(start) })
     }
 
     fn trigger(&mut self) -> P<TriggerExpr> {
@@ -633,22 +676,79 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `(p: T)` after `request` or an event name: the payload the occurrence receives (D-050).
-    fn payload_decl(&mut self) -> P<Option<(Name, TypeExpr)>> {
+    /// `(p: T)` after `request` or an event name: the payload the occurrence receives
+    /// (D-050); a member, `(b in balls)`, or several, `(b in balls, j: Momentum)` (D-059).
+    fn payload_decl(&mut self) -> P<Vec<PayloadDecl>> {
+        let mut out = vec![];
         if !self.eat_punct("(") {
-            return Ok(None);
+            return Ok(out);
         }
-        let n = self.name("a payload name")?;
-        self.expect_punct(":")?;
-        let t = self.type_expr()?;
+        loop {
+            let name = self.name("a payload name")?;
+            let ty = if self.eat_word("in") {
+                PayloadTy::Member(self.name("a collection")?)
+            } else {
+                self.expect_punct(":")?;
+                PayloadTy::Value(self.type_expr()?)
+            };
+            out.push(PayloadDecl { name, ty });
+            if !self.eat_punct(",") {
+                break;
+            }
+        }
         self.expect_punct(")")?;
-        Ok(Some((n, t)))
+        Ok(out)
     }
 
+    /// `(v)` or `(v, w)` right after an event name in `emit` and `request`: the payload it
+    /// supplies, several as one tuple (D-050, D-059).
+    fn payload_args(&mut self) -> P<Option<Expr>> {
+        if !(self.is_punct("(") && !self.tok().space_before) {
+            return Ok(None);
+        }
+        let start = self.span();
+        self.bump();
+        let mut items = vec![self.expr()?];
+        while self.eat_punct(",") {
+            items.push(self.expr()?);
+        }
+        self.expect_punct(")")?;
+        Ok(Some(if items.len() == 1 { items.pop().unwrap() } else { Expr { kind: ExprKind::Tuple(items), span: self.since(start) } }))
+    }
+
+    /// `x`, `x.c`, or a member's binding: `b.x`, `b.x.c`, `row[2].x`, `row[2].x.c` (D-057).
+    /// A longer chain names a member through endpoints: `s.b.vel`, `s.b.vel.x` (D-059); the
+    /// parser keeps the last two names as binding and component, and lowering decides.
     fn path(&mut self) -> P<Path> {
-        let name = self.name("a binding name")?;
-        let component = if self.eat_punct(".") { Some(self.name("a component")?) } else { None };
-        Ok(Path { name, component })
+        let start = self.span();
+        let first = self.name("a binding name")?;
+        let mut base = Expr { kind: ExprKind::Name(first.text.clone()), span: first.span };
+        let indexed = self.eat_punct("[");
+        if indexed {
+            let i = self.expr()?;
+            self.expect_punct("]")?;
+            self.expect_punct(".")?;
+            base = Expr { kind: ExprKind::Index(Box::new(base), Box::new(i)), span: self.since(start) };
+        } else if !self.eat_punct(".") {
+            return Ok(Path { member: None, name: first, component: None });
+        }
+        let mut names = vec![self.name("a binding or a component")?];
+        while self.eat_punct(".") {
+            names.push(self.name("a binding or a component")?);
+        }
+        if !indexed && names.len() == 1 {
+            return Ok(Path { member: None, name: first, component: names.pop() });
+        }
+        // The member is the base and every name but the binding and its component.
+        let keep = if names.len() >= 2 { 2 } else { 1 };
+        let rest = names.split_off(names.len() - keep);
+        let mut member = base;
+        for n in names {
+            member = Expr { span: self.since(start), kind: ExprKind::Field(Box::new(member), n) };
+        }
+        let mut rest = rest.into_iter();
+        let name = rest.next().unwrap();
+        Ok(Path { member: Some(member), name, component: rest.next() })
     }
 
     fn op(&mut self) -> P<OpStmt> {
@@ -667,22 +767,55 @@ impl<'a> Parser<'a> {
         }
         if self.eat_word("emit") {
             let event = self.name("an event name")?;
-            let payload = if self.is_punct("(") && !self.tok().space_before {
-                self.bump();
-                let e = self.expr()?;
-                self.expect_punct(")")?;
-                Some(e)
-            } else {
-                None
-            };
+            let payload = self.payload_args()?;
             return Ok(OpStmt::Emit { event, payload, span: self.since(start) });
         }
-        for w in ["create", "destroy", "connect", "disconnect"] {
-            if self.is_word(w) {
-                return Err(Diag::new("SX-E06", format!("`{w}` needs collections, which the v0 IR does not have"), self.span()));
-            }
+        // `create drops`, `create drops { pos = p }` (D-057).
+        if self.eat_word("create") {
+            let part = self.name("a collection")?;
+            let overrides = if self.is_punct("{") {
+                self.block(|p| {
+                    let n = p.name("a binding of the object")?;
+                    p.expect_punct("=")?;
+                    Ok(vec![(n, p.expr()?)])
+                })?
+            } else {
+                vec![]
+            };
+            return Ok(OpStmt::Create { part, overrides, span: self.since(start) });
         }
-        Err(self.unexpected("an operation (`set`, `contribute`, `emit`)"))
+        if self.eat_word("destroy") {
+            let member = self.postfix_expr()?;
+            return Ok(OpStmt::Destroy { member, span: self.since(start) });
+        }
+        // `connect springs(x, y)`, `connect springs(x, y) { k = e }` (D-058).
+        if self.eat_word("connect") {
+            let part = self.name("a set of relations")?;
+            self.expect_punct("(")?;
+            let mut ends = vec![];
+            loop {
+                ends.push(self.expr()?);
+                if !self.eat_punct(",") {
+                    break;
+                }
+            }
+            self.expect_punct(")")?;
+            let overrides = if self.is_punct("{") {
+                self.block(|p| {
+                    let n = p.name("a binding of the relation")?;
+                    p.expect_punct("=")?;
+                    Ok(vec![(n, p.expr()?)])
+                })?
+            } else {
+                vec![]
+            };
+            return Ok(OpStmt::Connect { part, ends, overrides, span: self.since(start) });
+        }
+        if self.eat_word("disconnect") {
+            let relation = self.postfix_expr()?;
+            return Ok(OpStmt::Disconnect { relation, span: self.since(start) });
+        }
+        Err(self.unexpected("an operation (`set`, `contribute`, `emit`, `create`, `destroy`, `connect`, `disconnect`)"))
     }
 
     // ------------------------------------------------------------ types and units
@@ -1190,14 +1323,14 @@ impl<'a> Parser<'a> {
             self.expect_punct(":")?;
             let kind = self.name("a view kind")?;
             let args = self.args()?;
-            let reps = self.block(|p| p.rep_item())?;
-            return Ok(vec![PresItem::View(ViewDecl { name, kind, args, reps, span: self.since(start) })]);
+            let (reps, clicks) = self.view_body()?;
+            return Ok(vec![PresItem::View(ViewDecl { name, kind, args, reps, clicks, span: self.since(start) })]);
         }
         if self.is_word("panel") {
             let kind = self.any_name("`panel`")?;
             let name = self.name("a panel name")?;
-            let reps = self.block(|p| p.rep_item())?;
-            return Ok(vec![PresItem::View(ViewDecl { name, kind, args: vec![], reps, span: self.since(start) })]);
+            let (reps, clicks) = self.view_body()?;
+            return Ok(vec![PresItem::View(ViewDecl { name, kind, args: vec![], reps, clicks, span: self.since(start) })]);
         }
         if self.eat_word("permit") {
             let who = self.name("a role")?;
@@ -1234,6 +1367,36 @@ impl<'a> Parser<'a> {
             None
         };
         Ok(Observation { name, expr, of, filter, schedule, span: self.since(start) })
+    }
+
+    /// A view's block: representations, and `on click as p request E(p)` for a click on a
+    /// point of the view that no representation takes (D-060).
+    fn view_body(&mut self) -> P<(Vec<Rep>, Vec<Interaction>)> {
+        let items = self.block(|p| {
+            if p.is_word("on") {
+                let start = p.span();
+                p.bump();
+                let gesture = p.any_name("`click`")?;
+                if gesture.text != "click" {
+                    return Err(Diag::new("SX-E02", "a view takes `on click as p request E(p)`; drags belong to representations", gesture.span));
+                }
+                p.expect_word("as")?;
+                let bind = p.name("a name for the point clicked")?;
+                p.expect_word("request")?;
+                let event = p.name("an event name")?;
+                let payload = p.payload_args()?;
+                return Ok(vec![Err(Interaction { gesture, part: None, bind, proposals: vec![], request: Some((event, payload)), span: p.since(start) })]);
+            }
+            Ok(p.rep_item()?.into_iter().map(Ok).collect())
+        })?;
+        let (mut reps, mut clicks) = (vec![], vec![]);
+        for i in items {
+            match i {
+                Ok(r) => reps.push(r),
+                Err(c) => clicks.push(c),
+            }
+        }
+        Ok((reps, clicks))
     }
 
     /// A representation, or `for b in row { representations }`, each repeated per member
@@ -1277,17 +1440,25 @@ impl<'a> Parser<'a> {
     fn interaction(&mut self) -> P<Interaction> {
         let start = self.span();
         self.expect_word("on")?;
-        let gesture = self.any_name("a gesture (`drag`)")?;
+        let gesture = self.any_name("a gesture (`drag`, `click`)")?;
+        // `on click request E(v)` (D-059).
+        if gesture.text == "click" {
+            self.expect_word("request")?;
+            let event = self.name("an event name")?;
+            let payload = self.payload_args()?;
+            let bind = gesture.clone();
+            return Ok(Interaction { gesture, part: None, bind, proposals: vec![], request: Some((event, payload)), span: self.since(start) });
+        }
         let part = if !self.is_word("as") { Some(self.name("a part")?) } else { None };
         self.expect_word("as")?;
         let bind = self.name("a name for the gesture value")?;
         let proposals = self.block(|p| {
             p.expect_word("propose")?;
-            let n = p.name("a binding name")?;
+            let n = p.path()?;
             p.expect_punct("=")?;
             Ok(vec![(n, p.expr()?)])
         })?;
-        Ok(Interaction { gesture, part, bind, proposals, span: self.since(start) })
+        Ok(Interaction { gesture, part, bind, proposals, request: None, span: self.since(start) })
     }
 
     fn scene(&mut self) -> P<SceneDecl> {
@@ -1391,14 +1562,7 @@ impl<'a> Parser<'a> {
         }
         if self.eat_word("request") {
             let e = self.name("an event name")?;
-            let payload = if self.is_punct("(") && !self.tok().space_before {
-                self.bump();
-                let v = self.expr()?;
-                self.expect_punct(")")?;
-                Some(v)
-            } else {
-                None
-            };
+            let payload = self.payload_args()?;
             return Ok(Action::Request(e, payload));
         }
         for w in ["animate", "bind", "release"] {

@@ -185,11 +185,14 @@ fn camera_box(base: [f64; 4], shown: [f64; 4], cam: Option<&Camera>) -> [f64; 4]
 
 // ---------------------------------------------------------------- targeting
 
-/// A representation and the part of it a gesture targets (`None`: its body).
+/// A representation and the part of it a gesture targets (`None`: its body), and whether it
+/// can be dragged and clicked (D-059).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Target {
     pub rep: String,
     pub part: Option<String>,
+    pub drag: bool,
+    pub click: bool,
 }
 
 fn dist_to_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
@@ -211,20 +214,39 @@ fn inside(p: [f64; 2], poly: &[[f64; 2]]) -> bool {
     c
 }
 
-/// The draggable part under pixel `p` of a view drawn with `map` (PK-10.2): the topmost
-/// draggable representation whose grabbed part lies within its drawn radius plus
-/// `tolerance` pixels. Draggable representations are drawn over the others, later ones on
-/// top; invisible ones are not targets.
+/// The draggable or clickable part under pixel `p` of a view drawn with `map` (PK-10.2,
+/// D-059): the topmost such representation whose grabbed part lies within its drawn radius
+/// plus `tolerance` pixels. Draggable representations are drawn over the others, later ones
+/// on top; invisible ones are not targets. A click takes the body.
 pub fn hit(vf: &ViewFrame, map: &Map, p: [f64; 2], tolerance: f64) -> Option<Target> {
+    hit_in(&vf.reps, map, p, tolerance)
+}
+
+/// Targeting among representations, the members of groups included (D-043): a group's
+/// members are placed in the frame already, and the later ones are on top.
+fn hit_in(reps: &[RepFrame], map: &Map, p: [f64; 2], tolerance: f64) -> Option<Target> {
     let px = |v: &[f64; 2]| map.to_px(*v);
     let near = |d: f64, r: f64| d <= r + tolerance;
-    for r in vf.reps.iter().rev() {
-        let Some(part) = &r.drag else { continue };
+    for r in reps.iter().rev() {
+        if let Shape::Group { members } = &r.shape {
+            if r.opacity.is_some_and(|o| o < 0.05) {
+                continue;
+            }
+            if let Some(t) = hit_in(members, map, p, tolerance) {
+                return Some(t);
+            }
+            continue;
+        }
+        let part = match (&r.drag, &r.click) {
+            (Some(part), _) => part.clone(),
+            (None, Some(_)) => "body".to_string(),
+            (None, None) => continue,
+        };
         if r.opacity.is_some_and(|o| o < 0.05) {
             continue;
         }
         let body = part == "body";
-        let target = || Target { rep: r.id.clone(), part: if body { None } else { Some(part.clone()) } };
+        let target = || Target { rep: r.id.clone(), part: if body { None } else { Some(part.clone()) }, drag: r.drag.is_some(), click: r.click.is_some() };
         let hit = match (&r.shape, body) {
             (Shape::Point { at }, _) => near(dist(px(at), p), MARKER_R),
             (Shape::Arrow { to, .. }, false) => near(dist(px(to), p), HANDLE_R),
@@ -247,7 +269,7 @@ pub fn hit(vf: &ViewFrame, map: &Map, p: [f64; 2], tolerance: f64) -> Option<Tar
     None
 }
 
-fn dist(a: [f64; 2], b: [f64; 2]) -> f64 {
+pub fn dist(a: [f64; 2], b: [f64; 2]) -> f64 {
     (a[0] - b[0]).hypot(a[1] - b[1])
 }
 
@@ -263,14 +285,17 @@ pub fn tolerance(pointer: &str) -> f64 {
 // ---------------------------------------------------------------- focus
 
 /// The representations that take keyboard focus, in order (PK-11.2): in each view in turn,
-/// the draggable ones, controls and buttons, in the order the presentation declares them;
+/// the draggable and clickable ones, controls and buttons, in the order the presentation declares them;
 /// then those over the presentation.
 pub fn focus_order(frame: &Frame) -> Vec<&RepFrame> {
-    frame
-        .views
-        .iter()
-        .flat_map(|v| v.reps.iter())
-        .chain(frame.overlay.iter())
-        .filter(|r| r.drag.is_some() || matches!(r.shape, Shape::Control { .. } | Shape::Button { .. }))
-        .collect()
+    fn walk<'a>(r: &'a RepFrame, out: &mut Vec<&'a RepFrame>) {
+        if let Shape::Group { members } = &r.shape {
+            members.iter().for_each(|m| walk(m, out));
+        } else if r.drag.is_some() || r.click.is_some() || matches!(r.shape, Shape::Control { .. } | Shape::Button { .. }) {
+            out.push(r);
+        }
+    }
+    let mut out = vec![];
+    frame.views.iter().flat_map(|v| v.reps.iter()).chain(frame.overlay.iter()).for_each(|r| walk(r, &mut out));
+    out
 }

@@ -58,22 +58,27 @@ pub enum Member {
     Parts(Vec<PartDecl>),
 }
 
-/// An object type: the body of a model, declared in one (D-055).
+/// An object type: the body of a model, declared in one (D-055). A relation type has
+/// endpoint roles, each a member of a collection of the model: `relation Spring(a in balls,
+/// b in balls) { ... }` (D-058).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObjectDecl {
     pub name: Name,
+    pub ends: Vec<(Name, Name)>,
     pub members: Vec<Member>,
     pub notes: Vec<String>,
     pub span: Span,
 }
 
 /// A contained object (`ball: Ball`) or a collection of `count` members (`row: Ball[3]`),
-/// with overrides of its members' bindings (D-055).
+/// with overrides of its members' bindings (D-055). A collection whose membership changes
+/// has a capacity: `drops: Drop[max 50]`, `drops: Drop[3, max 50]` (D-057).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartDecl {
     pub name: Name,
     pub object: Name,
     pub count: Option<u32>,
+    pub capacity: Option<u32>,
     pub overrides: Vec<(Name, Expr)>,
     pub notes: Vec<String>,
     pub span: Span,
@@ -159,6 +164,8 @@ pub struct ProcessDecl {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EventDecl {
+    /// `for b in drops { event ... }`: the loop variable and the collection (D-057).
+    pub each: Option<(Name, Name)>,
     pub name: Name,
     pub trigger: TriggerExpr,
     pub enable: Option<Expr>,
@@ -177,9 +184,22 @@ pub enum TriggerExpr {
     Every(Expr, Option<Expr>),
     Start,
     Input(Name),
-    Request(Option<(Name, TypeExpr)>),
+    Request(Vec<PayloadDecl>),
     /// `on E` or `on E(p: T)`, receiving `E`'s payload as `p` (D-050).
-    On(Name, Option<(Name, TypeExpr)>),
+    On(Name, Vec<PayloadDecl>),
+}
+
+/// A payload an occurrence receives: `p: T` (D-050), or a member `b in balls` (D-059).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PayloadDecl {
+    pub name: Name,
+    pub ty: PayloadTy,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PayloadTy {
+    Value(TypeExpr),
+    Member(Name),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -188,9 +208,12 @@ pub enum ZenoClause {
     Settle(Vec<OpStmt>),
 }
 
-/// A binding, or one component of it (`set vel.y = 0 m/s`).
+/// A binding, or one component of it (`set vel.y = 0 m/s`), possibly of a member
+/// (`set b.vel = ...`, `set row[2].vel.y = ...`, D-057). `b.vel` is read as a binding and a
+/// component by the parser; lowering decides which it is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Path {
+    pub member: Option<Expr>,
     pub name: Name,
     pub component: Option<Name>,
 }
@@ -200,6 +223,14 @@ pub enum OpStmt {
     Set { target: Path, value: Expr, span: Span },
     Contribute { target: Path, value: Expr, span: Span },
     Emit { event: Name, payload: Option<Expr>, span: Span },
+    /// `create drops { pos = p }` (D-057).
+    Create { part: Name, overrides: Vec<(Name, Expr)>, span: Span },
+    /// `destroy b` (D-057).
+    Destroy { member: Expr, span: Span },
+    /// `connect springs(x, y) { k = e }` (D-058).
+    Connect { part: Name, ends: Vec<Expr>, overrides: Vec<(Name, Expr)>, span: Span },
+    /// `disconnect s` (D-058).
+    Disconnect { relation: Expr, span: Span },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -379,6 +410,8 @@ pub struct ViewDecl {
     pub kind: Name,
     pub args: Vec<Arg>,
     pub reps: Vec<Rep>,
+    /// `on click as p request E(p)`: a click on an empty point of the view (D-060).
+    pub clicks: Vec<Interaction>,
     pub span: Span,
 }
 
@@ -401,7 +434,10 @@ pub struct Interaction {
     pub gesture: Name,
     pub part: Option<Name>,
     pub bind: Name,
-    pub proposals: Vec<(Name, Expr)>,
+    /// `propose x = e`, or a member's binding `propose b.pos = e` (D-059).
+    pub proposals: Vec<(Path, Expr)>,
+    /// `on click request E(v)`: the event a click requests and its payload (D-059).
+    pub request: Option<(Name, Option<Expr>)>,
     pub span: Span,
 }
 

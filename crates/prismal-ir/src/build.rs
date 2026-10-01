@@ -118,10 +118,10 @@ pub fn interval(x: Expr, lo: Expr, lo_closed: bool, hi: Expr, hi_closed: bool) -
 }
 
 pub fn set(binding: &str, value: Expr) -> Op {
-    Op::Set { target: Target { binding: binding.into(), component: None }, value }
+    Op::Set { target: Target::of(binding), value }
 }
 pub fn set_comp(binding: &str, component: usize, value: Expr) -> Op {
-    Op::Set { target: Target { binding: binding.into(), component: Some(component) }, value }
+    Op::Set { target: Target { component: Some(component), ..Target::of(binding) }, value }
 }
 
 pub fn space(name: &str, dimension: u32) -> Space {
@@ -150,6 +150,7 @@ impl ModelBuilder {
                 equations: vec![],
                 objects: vec![],
                 parts: vec![],
+                ends: vec![],
                 constraints: vec![],
                 enums: vec![],
                 functions: vec![],
@@ -188,6 +189,7 @@ impl ModelBuilder {
             private: false,
             display: Display::default(),
             notes: vec![],
+            when: None,
         });
         id
     }
@@ -275,6 +277,7 @@ impl ModelBuilder {
             zeno: None,
             process: None,
             payload: None,
+            each: None,
             notes: vec![],
         });
         id

@@ -20,7 +20,7 @@ const st = {
   speed: 1,
   lastTick: null,
   views: {},       // per view id: { kind, svg, panel, vb, base }
-  gesture: null,   // a drag or pan in progress: { action, view, pointerId, resume }
+  gesture: null,   // a drag or pan in progress: { action, view, ids (pointers taking part), resume }
   focus: null,     // { rep } of the focused draggable, restored after each render
   items: new Map(), // keyed HTML items (controls, formulas, labels) by rep id
   // Narration sound (D-053): off, synthesized speech, or recordings by cue name; the cues
@@ -434,8 +434,12 @@ function drawRep(v, g, r, u, colorIndex) {
   const m = mapFor(v);
   const cls = ['rep'];
   if (r.drag) cls.push('draggable');
+  else if (r.click) cls.push('clickable');
   if (r.valid === false) cls.push('invalid');
+  // The author's color (D-061); an invalid preview keeps its own.
+  if (r.color && r.valid !== false) cls.push('styled');
   const grp = svg('g', { class: cls.join(' '), 'data-rep': r.id }, g);
+  if (r.color && r.valid !== false) grp.style.setProperty('--c', `var(--color-${r.color})`);
   if (r.opacity != null) grp.setAttribute('opacity', r.opacity);
   const title = svg('title', {}, grp);
   title.textContent = r.text;
@@ -444,12 +448,12 @@ function drawRep(v, g, r, u, colorIndex) {
     case 'point': {
       const [X, Y] = m.to(r.at);
       if (r.highlighted) svg('circle', { class: 'ring', cx: X, cy: Y, r: 13 * u, 'stroke-width': 3 * u }, grp);
-      const c = svg('circle', { class: 'marker', cx: X, cy: Y, r: (r.drag ? 8 : 6) * u, 'stroke-width': 1.5 * u }, grp);
+      const c = svg('circle', { class: 'marker', cx: X, cy: Y, r: (r.drag || r.click ? 8 : 6) * u, 'stroke-width': 1.5 * u }, grp);
       if (r.label) {
         const t = svg('text', { class: 'rep-label', x: X + 10 * u, y: Y - 10 * u, 'font-size': 12 * u }, grp);
         t.textContent = r.label;
       }
-      if (r.drag) focusable = c;
+      if (r.drag || r.click) focusable = c;
       break;
     }
     case 'arrow': {
@@ -503,6 +507,15 @@ function drawRep(v, g, r, u, colorIndex) {
       grp.remove();
       return;
   }
+  if (r.line && r.drawn == null && r.valid !== false) {
+    // The author's line style (D-061), as prismal-svg draws it.
+    const dash = r.line === 'dashed' ? `${6 * u} ${4 * u}` : `${0.01 * u} ${4 * u}`;
+    for (const e of grp.querySelectorAll('line, polyline, polygon, path')) {
+      if (e.parentNode.classList.contains('arrow') && e.tagName === 'polygon') continue;
+      e.style.strokeDasharray = dash;
+      if (r.line === 'dotted') e.style.strokeLinecap = 'round';
+    }
+  }
   if (r.drawn != null) {
     // `reveal draw`: every stroke is drawn up to the fraction reached (D-042).
     for (const e of grp.querySelectorAll('line, polyline, polygon, path')) {
@@ -515,10 +528,13 @@ function drawRep(v, g, r, u, colorIndex) {
       e.style.strokeDashoffset = String(1 - r.drawn);
     }
   }
+  // A representation clicked to request an event takes focus by its drawn shape (D-059).
+  if (!focusable && r.click) focusable = grp.querySelector('line, polyline, polygon, path');
   if (focusable) {
+    const how = [r.drag ? 'Arrow keys move it.' : '', r.click ? 'Enter activates it.' : ''].filter(Boolean).join(' ');
     focusable.setAttribute('tabindex', '0');
     focusable.setAttribute('role', 'button');
-    focusable.setAttribute('aria-label', `${r.text}. Arrow keys move it.`);
+    focusable.setAttribute('aria-label', `${r.text}. ${how}`);
     focusable.classList.add('rep');
     focusable.dataset.rep = r.id;
     // The browser moves focus (Tab), for assistive technology; the engine is told, and
@@ -731,6 +747,8 @@ function renderFrame(frame) {
       // The engine gives the box of view coordinates each view shows: its framing, the
       // learner's zoom and pan, the timeline's camera (D-047).
       v.box = vf.box;
+      // A view that requests an event when an empty point is clicked (D-060).
+      v.click = vf.click || null;
       if (v.kind === 'spatial') {
         v.svg.setAttribute('viewBox', v.box.join(' '));
       } else {
@@ -757,8 +775,8 @@ function renderFrame(frame) {
       let arrows = 0;
       for (const r of vf.reps) {
         if (['point', 'arrow', 'segment', 'polyline', 'polygon', 'ellipse', 'group'].includes(r.shape)) {
-          // Draggable representations are drawn last and outside the plot's clip.
-          drawRep(v, r.drag ? top : reps, r, u, r.shape === 'arrow' ? arrows++ : 0);
+          // Draggable and clickable representations are drawn last and outside the plot's clip.
+          drawRep(v, r.drag || r.click ? top : reps, r, u, r.shape === 'arrow' ? arrows++ : 0);
         } else if (!['axes', 'grid'].includes(r.shape)) {
           renderItem(v.panel, r);
         }
@@ -858,28 +876,41 @@ function drawnPoint(v, e) {
 
 function forward(v, phase, e) {
   const p = drawnPoint(v, e);
-  return JSON.parse(st.player.pointer(phase, v.id, p.x, p.y, p.width, p.height, e.pointerType || 'mouse', st.p));
+  const id = Number.isInteger(e.pointerId) ? e.pointerId : -1;
+  return JSON.parse(st.player.pointer(phase, v.id, p.x, p.y, p.width, p.height, e.pointerType || 'mouse', id, st.p));
 }
 
 function setupPointer(v) {
   v.svg.addEventListener('pointerdown', (e) => {
+    // A second touch during a pan pinches the view (HI-4.5).
+    if (st.gesture && st.gesture.action === 'pan' && st.gesture.view === v && e.pointerType === 'touch') {
+      const res = forward(v, 'down', e);
+      if (res.action === 'pinch') {
+        e.preventDefault();
+        st.gesture.action = 'pinch';
+        st.gesture.ids.push(e.pointerId);
+        v.svg.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     if (st.gesture) return;
     const res = forward(v, 'down', e);
     if (!res.handled) return;
     e.preventDefault();
     if (res.action === 'drag' && !res.ok) { report(res); return; }
     // Drag mode `hold`: the run pauses while dragging and resumes after the commit (PK-10.9).
-    st.gesture = { action: res.action, view: v, pointerId: e.pointerId, resume: res.action === 'drag' && st.playing };
+    st.gesture = { action: res.action, view: v, ids: [e.pointerId], resume: res.action === 'drag' && st.playing };
     if (res.action === 'drag') stop();
     v.svg.setPointerCapture(e.pointerId);
   });
   v.svg.addEventListener('pointermove', (e) => {
     const g = st.gesture;
-    if (g && g.pointerId !== e.pointerId) return;
+    if (g && !g.ids.includes(e.pointerId)) return;
     const res = forward(v, 'move', e);
     if (!g) {
-      // Hovering: show what can be grabbed.
-      v.svg.style.cursor = res.hover ? 'grab' : '';
+      // Hovering: show what can be grabbed, or clicked (D-059); an empty point of a view
+      // that takes clicks shows a crosshair (D-060).
+      v.svg.style.cursor = res.hover ? (res.hover.drag ? 'grab' : 'pointer') : (v.click && !st.lesson ? 'crosshair' : '');
       return;
     }
     if (res.action === 'drag') status(res.ok ? '' : `Not valid here: ${res.message || 'rejected'}`, !res.ok);
@@ -887,9 +918,15 @@ function setupPointer(v) {
   });
   v.svg.addEventListener('pointerup', (e) => {
     const g = st.gesture;
-    if (!g || g.pointerId !== e.pointerId) return;
+    if (!g || !g.ids.includes(e.pointerId)) return;
     st.gesture = null;
     const res = forward(v, 'up', e);
+    if (res.action === 'click') {
+      report(res);
+      afterSessionAction();
+      if (g.resume) togglePlay();
+      return;
+    }
     if (res.action !== 'drag') { refresh(); return; }
     if (!res.ok) report(res);
     else if (!res.committed) status('Nothing committed: no valid position during the drag.', true);

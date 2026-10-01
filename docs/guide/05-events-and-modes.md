@@ -280,6 +280,7 @@ model Cart {
 
 - `on request(j: Momentum)` declares the payload: whoever requests `kick` (a timeline's `request kick(3 kg*m/s)`, a host) supplies an impulse, which the condition and handler read as `j`. A request without it is rejected.
 - `on kick(j: Momentum)` receives the payload of the event it follows. A handler can also pass a value on explicitly: `emit tally(2 * j)` makes the events `on tally(k: ...)` due with `k = 2 j`.
+- A payload may have any type a binding has: a quantity, a vector, a point, a Boolean, or an enumeration (`on request(k: Color)`, requested as `request paint(blue)`; a host names the case, `"blue"`).
 - A payload is read only in its own event, and it always comes from somewhere: a request, or an event that carries a payload of the same type (`MK-E24` otherwise).
 - `input { thrust: Force = 0 N }` is a value the model does not control: the environment supplies it, and it holds between changes. `0 N` is its default until then; an input without a default needs a starting value from the run.
 - `on input(thrust)` happens whenever the environment supplies a new value.
@@ -341,6 +342,8 @@ model Wrong {
 The compiler reports `match does not cover landed`.
 
 ## Exercises
+
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
 
 1. Add an overflow valve to the tank: an event `spill on rising(level - 1.1 m)` that sets the level back to `1.1 m`. When can it happen?
 2. Give the tank a leak that starts at 150 s: a discrete `leaking: Boolean = false`, an event `at t0 + 150 s` that sets it, and a flow that drains twice as fast while it is set. Compute when the level next reaches `low`, and test it.

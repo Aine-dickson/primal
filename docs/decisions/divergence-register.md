@@ -76,6 +76,12 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-054 | Round geometry: `circle`, `ellipse` and `arc` representations with radii in model units, carried in frames as exact elliptical arcs | Accepted |
 | D-055 | Contained objects and fixed collections in v0: object types in a model, `parts`, member expressions and aggregates, container flows over members, `for` in views; elaborated to a flat model before checking | Accepted |
 | D-056 | After a transition, a crossing guard near zero takes the sign it is heading to as its reference (RC-7.2a) | Accepted |
+| D-058 | Relations: relation types with endpoints in collections, relation sets with a capacity, `connect` and `disconnect`, endpoints read and compared, relations ended with their endpoints | Accepted |
+| D-057 | Collections whose membership changes: a declared capacity (`Drop[max 50]`), `create` and `destroy` in handlers, events per member, `set b.x` from the container; elaborated to members with a liveness binding | Accepted |
+| D-059 | Members as payloads (`on request(b in balls)`), several payloads per event, drags and clicks on members; requests refused with a reason | Accepted |
+| D-060 | Clicks on an empty point of a view: `on click as q request E(q)` in the view, the point as payload | Accepted |
+| D-062 | Drags on members of a group: the gesture's value is the pointer in the group's frame | Accepted |
+| D-061 | Author styles: `color:` from a named palette each medium maps to its theme; `line:` solid, dashed or dotted | Accepted |
 
 ---
 
@@ -1043,3 +1049,124 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Consequences:** RC-7.2a; `Engine::retake_refs` and `Engine::just_ahead` in `prismal-runtime`; `prismal-present/tests/objects.rs` (a ball on a raised floor settles).
 - **History:**
   - 2026-09-30 raised by the collections work and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-057: Collections whose membership changes, bounded by a declared capacity
+
+- **Status:** Accepted
+- **Original position:** MK-8.1 and MK-8.2 allow collections of dynamic membership, changed only by `create` and `destroy` at event instants; MK-7.7 gives a created element an identity from its creating operation and a per-run counter, never reused within a run; MK-8.3 orders members by identity (declared, then created); MK-16.5 makes two destroys of one object no conflict. D-055 implemented fixed membership only, by elaboration, and left dynamic membership to "option 2 or a bounded form of it".
+- **Raised by:** the language completeness step (PROJECT-STATE next steps, item 5), the next step after D-055.
+- **Builds on:** MK-7.7, MK-7.10, MK-8.1 to MK-8.4, MK-15, MK-16, D-015, D-027, D-036, D-050, D-055.
+- **Question:** How are members made and removed during a run, and how does the prototype execute it without changing the solver, the checker's rules, the frame format or the renderers?
+- **Options considered:**
+  1. **Objects held natively by the runtime** (D-055 option 2): state vectors that grow and shrink, expressions evaluated against member indices. Unbounded, but it changes the compiled model, the solver's state layout, dense output, snapshots and every consumer of frames at once.
+  2. **A bounded collection, reusing places.** The author declares the most members alive at once; a destroyed member's place is taken by the next one made. Long runs never fill up, but a place then holds several members in turn: identities are no longer declaration paths, iteration order is no longer creation order (MK-8.3), and a representation or a trace would jump from one member to the next.
+  3. **A bounded collection, one place per member made.** The author declares the most members a run makes (`drops: Drop[max 50]`); the `k`-th member made is `drops[k]` for the whole run and its place is never reused. Elaboration expands the collection to that many members, each with a liveness binding; everything else follows D-055.
+- **Accepted position:** option 3, under the owner's standing delegation of 2026-09-30. Option 1 remains the route for unbounded populations when content needs them; option 3's syntax and semantics carry over to it unchanged, since the capacity then becomes a limit of the runtime rather than of the language.
+  - **Declaration:** `drops: Drop[max 50]` starts empty; `still: Stone[2, max 4] { ... }` starts with two members. The overrides apply to every member, with `index` its number; inputs are connected for every member.
+  - **Operations** (MK section 16), in handlers and Zeno settle clauses: `create drops { pos = p, vel = v }` makes the next member, its stored bindings starting at the overrides, read in the handler's scope on the state before the transition (payloads included); bindings not given keep their declared starting values. `destroy b` ends a member: `b` a loop variable, a contained member or `drops[k]`. Several creates of one collection in one handler make consecutive members.
+  - **Events per member:** `for d in drops { event land on falling(d.pos.y) { destroy d } }` in a model repeats the event for each member, named `land[k]`; its trigger, condition and handler read the member as `d`. A container's handler may write a member's binding: `set b.vel.x = -b.vel.x` (MK-7.10).
+  - **A member not alive** (not made yet, or destroyed) has no flows, events, equations or constraints in effect; aggregates leave it out (`count(drops)` counts the members alive; `min` and `max` have no value over none, so they are written with `otherwise`); its representations are not drawn and a trace of it starts when it is made. Reading one by number (`drops[3].pos`) gives its starting values before it is made and its last values after it is destroyed.
+  - **Capacity:** making more members than declared stops the run at a `stop` constraint `drops.capacity` (MK-12), with the instant.
+  - **Identity** (MK-7.7): the `k`-th member made in a run has the identity `declaration@drops[k]` and the name `drops[k].x`; it is deterministic, replayed identically (D-015) and never reused. Iteration order is creation order (MK-8.3).
+  - **Conflicts:** two destroys of one member in one transition are not a conflict (MK-16.5); a set on a member destroyed in the same transition is. Creates of one collection from two events handled in the same transition conflict on the count of members made, and the transition is rejected (MK-16.6); in one handler they do not.
+- **Reason:** the populations first slices need (particles emitted by a source, drops from a tap, bodies that merge or leave a region, spawned objects in a lab) have a bound an author can state; with it, every existing rule, the solver, snapshots and frames apply unchanged, identities stay declaration paths, and the program reads as the model it describes. Places are not reused so that a member's identity, its trace and its representation belong to one member for the whole run.
+- **Consequences:** MK-7.7a, MK-8.2a, MK-15.1b, MK-16.1a (elaborations); 04-ir `capacity` on parts, the operations `create`, `destroy` and `if`, `member` on targets, `each` on events, the `extreme` expression, `when` on representations; `prismal_ir::elaborate` (liveness bindings `part.alive@path`, the count `part.created`, the capacity constraint); the kernel's conditional operations and destroys; the runtime's transition performs conditional operations read on the state before it; representations with `when`; `Interactive::request` for requests with payloads from a session; working syntax; formatter; guide chapter 9 (a fountain). Found and fixed: a type error in a `create` override was reported once for each member it could make; the kernel now reports identical diagnostics once; aggregates over 30 or more members overflowed the stack of debug builds, being folded into a chain as deep as the collection, and are now folded as a balanced tree. Not included: relations (`connect`, `disconnect`), creation and destruction as interventions from outside (MK-17.2; a lab requests an event instead, D-027), `on start` of a member made later (it applies at the run's start only), unbounded populations (option 1).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-058: Relations, with endpoints chosen during the run
+
+- **Status:** Accepted
+- **Original position:** MK-8.5 declares a relation type by its endpoint roles (each typed by an object type), whether it is directed, and its bindings; MK-8.6 holds relation instances in a relation set changed only by `connect` and `disconnect`, and destroying an object disconnects its relations in the same transition; MK-8.7 separates a relation from any line drawn. D-057 left relations out.
+- **Raised by:** the language completeness step (PROJECT-STATE next steps, item 5), after D-057.
+- **Builds on:** MK-7.7, MK-7.10, MK-8.5 to MK-8.7, MK-16, D-038, D-055, D-057.
+- **Question:** How are relations declared, made, read and ended, and how does elaboration represent an endpoint that is chosen during the run?
+- **Options considered:**
+  1. **Endpoints typed by object type only** (MK-8.5 as written), resolved to any object of that type anywhere in the model. The member at an endpoint could then be in any collection, and a flat model would need every object of the type as a candidate.
+  2. **Endpoints in named collections of the containing model**, each held as the member's number in its collection; reading `s.a.pos` picks the binding of that member among the collection's members. Relation sets are collections (D-057): a capacity, liveness, identities never reused.
+  3. **Relations elaborated away into pairs fixed when the program is read.** Cheap, but `connect` during a run would be impossible.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30.
+  - **Declaration:** `relation Spring(a in balls, b in balls) { param ...  derived ... }` in a model; each endpoint is a member of a part of the model (a collection or one object). The body is that of an object type; `a` and `a.pos` read the member at the endpoint.
+  - **Relation sets** are parts: `springs: Spring[1, max 4] { a = balls[1]; b = balls[2] }`; starting relations name their endpoints in the overrides, with `index`.
+  - **Operations:** `connect springs(x, y) { k = e }` makes the next relation, endpoints in the order of the roles, with starting values (parameters included); `disconnect s` ends one. Destroying a member disconnects, in the same transition, every relation of the container with that member at an endpoint (MK-8.6).
+  - **Expressions:** `s.a` is a member (not a value); `s.a.pos` a binding of it; `s.a == o` and `s.a != s.b` compare members, true only for the same member of the same collection. Aggregates, `for` in views and events per relation (`for s in springs { event snap on ... { disconnect s } }`) work as for collections.
+  - **Relations are directed:** the roles are named, and an undirected relation is written by testing both roles. Several relations between the same members are allowed.
+  - **Values not alive:** a derived binding of a member or relation that is not alive is not evaluated and has no value (a value that is not a number); the guards of its events are not evaluated either. This also applies to collections (D-057).
+- **Reason:** named collections make an endpoint a number, which a run can store, compare and change, and let every existing rule, the solver and the frames apply unchanged; relation sets reuse D-057's capacities and identities, so a spring's name, its drawing and its values belong to one spring for the whole run.
+- **Consequences:** MK-8.5a, MK-8.6a, MK-16.1b (elaborations); PK-6.3c extended to relations; 04-ir `ends` of an object type, the `end` and `pick` expressions, the `connect`, `disconnect` and `make` operations, `when` on bindings; `prismal_ir::elaborate` (endpoint bindings `Rel.a@rs[k]`, picks, conditional disconnection); the kernel's `pick`, derived bindings evaluated only while alive, and the rule that an event whose handler destroys the member its condition requires alive does not retrigger itself (D-038); working syntax (`relation` is a contextual word); formatter; guide chapter 9 (a spring between two balls, a thread that snaps). Found and fixed: `create` could not give a new member's parameter a starting value (MK-E08, handlers do not set parameters), now the `make` operation of elaboration; the guard of an event of a member not alive was evaluated and failed on its missing values; a mistake in a member expression was also reported as a missing component. Not included: undirected relations as a declared property, relations whose endpoints are relations, relations between members of different containers, creation and destruction by intervention (MK-17.2).
+- **History:**
+  - 2026-09-30 proposed and accepted under the owner's standing delegation of 2026-09-30.
+
+## D-059: Members as payloads, drags and clicks on members
+
+- **Status:** Accepted
+- **Original position:** D-050 gave an event at most one payload, a value of a declared type. D-057 and D-058 let a handler act on a member known when the program is read (`destroy balls[2]`), on the member of an event repeated per member, or on the member at a relation's endpoint, but a request could not say which member it is about: a lab with a population could not let the learner remove, kick or drag one ball of many. Drags targeted bindings of the model only (PK-10.5), and a representation could not be clicked. A request whose enabling condition was false did not occur and was not reported.
+- **Raised by:** the language completeness step (PROJECT-STATE next steps, item 5), planned with the owner on 2026-09-30 after D-058.
+- **Builds on:** MK-7.10, MK-8.2a, MK-15.1a, MK-15.5, MK-17.2, RC-11.6b, PK-10.2a, PK-10.5, PK-11.2, D-023, D-026, D-027, D-043, D-050, D-055, D-057, D-058.
+- **Question:** How does a request, a drag or a click name the member it concerns, and how does elaboration carry a member chosen during the run into handlers and proposals?
+- **Options considered:**
+  1. **Creation and destruction as direct host interventions** (MK-17.2): hosts create and destroy members themselves. It bypasses the author, who decides what learners may make (D-023), and it does not help a kick or a drag.
+  2. **Members as payloads.** `on request(b in balls)` declares a payload that is a member of a collection; the occurrence carries the member's number, and in the handler `b` is a member chosen during the run, handled by D-058's machinery (picks, conditional operations per member). Drags and clicks on a representation repeated per member supply that member.
+  3. **Events per member requested by name** (`remove[2]`). Works with D-057's events per member, but hosts and timelines would name generated events, and one event could not take a member and a value together.
+- **Accepted position:** option 2, under the owner's standing delegation of 2026-09-30, with the syntax recommended to the owner (payloads `(b in balls)` like relation endpoints; `on click request E(b)` beside `on drag`).
+  - **A. Members as payloads.** `event remove on request(b in balls) { destroy b }`; `event kick on request(b in balls, j: Momentum) { set b.vel = b.vel + j / b.m }`. The payload is the member's number in its collection, so replay is deterministic. The handler and condition read the member as `b`; `set b.x` on the chosen member becomes one conditional operation per member, and the same holds through a relation's endpoint (`set s.a.vel`). The event is implicitly enabled only when the member exists and is alive. Several named payloads per event are carried as one tuple and supplied as a list: timelines `request kick(balls[2], j)`, `emit kick(b, j)`; a follower `on E(c in balls)` receives members of the same collection. Hosts name members in the protocol's request payload, `"balls[2]"` (HI-4.3b).
+  - **Requests refused with a reason:** a request whose event is not enabled is rejected, stating whether the member is not alive, has no member of that number, or the condition does not hold (RC-11.6b). Before, it was dropped silently.
+  - **B. Drags on members.** A representation repeated per member may be dragged: `for b in balls { marker(b.pos) as ball on drag as p { propose b.pos = p } }` proposes a value for that member's binding, which must be `intervenable` in the object type (D-023). A drag on a member that stops being alive is refused; a drag proposing an endpoint's binding (`propose s.a.pos`) is refused with the advice to drag the member.
+  - **C. Clicks on members.** `for b in balls { marker(b.pos) as ball on click request remove(b) }`: a representation may request an event when clicked, with its member as payload. Clicks only request events, never set values. The engine's targeting tells a click from a drag by movement under the drag tolerance; frames carry the event a click requests; clickable representations take keyboard focus, and Enter or space activates them (D-026).
+  - **Later, not in this decision:** clicks on an empty point of a view (a position as payload).
+- **Reason:** the payload is a number a run can log, replay and compare, and everything else (conditions, handlers, relations, conflicts, identities) is D-057 and D-058 unchanged; the author keeps control of what a learner may do, since only declared events and intervenable bindings are reachable. Option 1 was set aside because requests already let a host create members (`on request(p: Point) { create ... }`) while the author decides what can be made; the missing piece was naming a member, which option 2 provides.
+- **Consequences:** MK-15.1c; RC-11.6b amended; PK-10.5a, PK-10.5b, PK-10.2a and PK-11.2b extended; HI-4.3 (`click`), HI-4.3b (the protocol's `request`), HI-4.5 (clicks told from drags); 04-ir payload fields `of`, `members`, `items`, a proposal's `member`, a representation's `click`; `prismal_ir::elaborate` (loop variables that are members chosen during the run, conditional targets, endpoints of a chosen relation, payloads supplied as member numbers, proposals resolved to the member drawn); the checker checks a tuple against an expected tuple type item by item; the runtime rejects requests its event does not enable, with the reason; the parser reads targets through endpoints (`set s.b.vel.x`) and `propose b.pos = p`; `click` is a contextual word; formatter; frames carry `click`, and the text alternative ends `activate: E`; the host's targeting, gestures and focus order; the web player's pointer cursor and keyboard activation; host event logs print members by name (`remove(balls[2]) at 1 s`); guide chapter 9, Labs with members (an orbits lab); tests `member_payloads.rs`, `member_input.rs`, the protocol's `requests_name_members`, the raw input test `clicks_and_drags_on_members`, and `web/check-input.mjs` in a browser. A mistake in a representation repeated per member is reported once for each member, as mistakes in object types are.
+- **History:**
+  - 2026-09-30 planned with the owner (PROJECT-STATE next steps, item 5).
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30; step A implemented.
+  - 2026-10-01 steps B (drags on members), C (clicks) and D (guide chapter 9, Labs with members) implemented.
+
+## D-060: Clicks on an empty point of a view
+
+- **Status:** Accepted
+- **Original position:** D-059 let a representation request an event when clicked, and left clicks on an empty point of a view for later. A lab could not let the learner place something where they click (a planet, a charge, a point of a polygon); it needed a button and a fixed place, or a drag of something already there.
+- **Raised by:** D-059 ("Later, not in this decision"); PROJECT-STATE next steps, item 3.
+- **Builds on:** PK-5.6, PK-10.2a, PK-10.5, PK-10.5b, HI-4.3, HI-4.5, D-009, D-011, D-026, D-027, D-047, D-050, D-059.
+- **Question:** How does a click on a point where nothing is drawn request an event, and what does it carry?
+- **Options considered:**
+  1. **A click written in the view**: `view sky: spatial(...) { on click as q request place(q) ... }`. The point is a gesture value, read as a drag's is (PK-10.5), so the payload is an expression of it. Representations keep their clicks; the view's applies only where no representation takes the press.
+  2. **An invisible representation covering the view** (`area(on click ...)`): no new place for interactions, but a representation with no drawing and no extent is a special case in framing, hit testing, text alternatives and focus.
+  3. **Clicks delivered to the model as an input** (`input click: Point`): the model would depend on a presentation gesture, which D-009 and D-011 rule out.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. `on click as q request E(q)` in a spatial or plot view (at most one per view; none in a panel, SX-E06). The payload has the event's declared type (PK-E02); the event is declared `on request` (PK-E03). A press on an empty point that is released within the pointer's reach clicks; with `pan` permitted, a press that moves pans. The host's `click_at` names a view and a point in view coordinates, for hosts that target input themselves. Frames carry the event a view's click requests; the web player shows a crosshair over an empty point.
+- **Reason:** the point is data the author turns into a payload with the language's own expressions, and nothing reaches the model but a request the author declared, validated, logged and undone like any other (D-027, D-059). Option 2 was set aside because it adds a representation that draws nothing; option 3 because the model would depend on the presentation.
+- **Consequences:** PK-10.5c; HI-4.3 (`click_at`), HI-4.5 (presses on an empty point); 04-ir: a view's `click`; working syntax; the parser reads `on click as q request E(q)` in a view's block, the formatter prints it first; elaboration carries the payload; `Projector` checks view clicks; `Interactive::click_at`; the host's gestures (`Point`, and a pan that may still click); the web player's crosshair; guide chapter 9 (`place` in the orbits lab); tests `view_clicks.rs`, the raw input test `clicks_on_an_empty_point`, and `web/check-input.mjs` in a browser. Keyboard users reach the same event through a control or button (D-026): a point is not chosen with keys in v0.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-061: Author styles of representations
+
+- **Status:** Accepted
+- **Original position:** PK-2.4 and PK-5.5 name colors as presentation configuration, but no syntax or frame field existed: every kind was drawn with the renderer's own colors (arrows taking turns through four). The guide's circumference lesson (session of 2026-09-30) had to draw a laid edge as a polyline to share the arc's color, and an author could not tell two segments apart except by name.
+- **Raised by:** the circumference lesson (PROJECT-STATE session log, 2026-09-30, D-054); the language completeness step.
+- **Builds on:** PK-2.4, PK-5.5, PK-6.2, PK-11.4, PK-12.1, PK-12.2, D-026, D-046.
+- **Question:** How does an author choose how a representation looks, while frames stay free of any one medium?
+- **Options considered:**
+  1. **Named colors and line styles as set properties**: `color: blue`, `line: dashed`. Frames carry the names; each medium maps them to values for its theme (light, dark, print, video).
+  2. **Color values** (`color: "#2458c6"`): exact, but a value chosen for a light page is wrong on a dark one, and frames would carry a medium's values.
+  3. **Style sheets or classes** (`class: highlight` with a separate style block): flexible, but a second language inside the presentation, not needed by any content yet.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. Ten colors (`red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `gray`, `ink`) and three lines (`solid`, `dashed`, `dotted`). Markers take a color; stroked kinds take both; other kinds and groups take neither (PK-E05). Styles are decoration: not in text alternatives, never the only encoding (PK-11.4). Styles bound to model values (color scales) are later work.
+- **Reason:** names keep the frame description medium-independent (PK-12.1a) and let every renderer keep contrast in its own theme; a small fixed palette is what educational diagrams use, and the names read as intent. Option 2 was set aside for dark themes and medium independence, option 3 as more than content needs.
+- **Consequences:** PK-6.6a; HI-5.2; 04-ir (`word` arguments `color`, `line`); working syntax; lowering of style words; `compile_rep` checks and strips style properties before each kind's checks; `RepFrame` gains `color` and `line`; `prismal-svg` themes gain a palette (`Theme::color`, `COLORS`); the web player's style sheet gains `--color-*` for light and dark and draws `--c` and dash styles as `prismal-svg` does; guide chapter 7, Color and line (the wheel's spoke and valve), reference; tests `prismal-svg/tests/styles.rs`.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-062: Drags on members of a group
+
+- **Status:** Accepted
+- **Original position:** D-043 placed a group's members by a shared transform; a member that declared an inverse was refused (PK-E06, "not implemented by the prototype"), so a hand of a dial, a handle on a rotating body or a knob in a turned panel could not be dragged.
+- **Raised by:** PROJECT-STATE next steps, item 3 (input follow-ups).
+- **Builds on:** PK-5.6, PK-6.3b, PK-10.2a, PK-10.5, PK-11.2, D-023, D-043, D-047.
+- **Question:** In which frame does a dragged member of a group read the pointer?
+- **Options considered:**
+  1. **The group's frame.** The member is written in the group's frame (`marker(origin + (r, 0 m))`), so the proposal reads the pointer there too: `propose r = p.x` is the distance along the hand whatever the group's placement, turn and scale. The runtime inverts the transform at the instant shown.
+  2. **The view's space.** The gesture value is the same as outside a group; the author undoes the placement and turn in the proposal by hand, repeating the group's expressions.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. Nested groups compose; the transform is evaluated on the committed state at the instant shown, so a drag that moves the group does not move the frame under the pointer while it is in progress. Hit testing, the focus order and keyboard steps include members of groups.
+- **Reason:** a member's geometry and its inverse are then written in one frame, which is the point of a group; option 2 would make every inverse in a group restate the group's transform, and break when the group changes.
+- **Consequences:** PK-6.3b amended; `Tf::of_groups`, `Tf::unapply`, `ViewCtx::pointer_in`; `Interactive` finds representations inside groups with their enclosing groups (drags, keys); the host's `hit` and `focus_order` recurse into groups; guide chapter 7 (a dial in a turned group); tests `prismal-present/tests/group_drags.rs`, the raw input test `drags_on_members_of_groups`, and `web/check-input.mjs` in a browser.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

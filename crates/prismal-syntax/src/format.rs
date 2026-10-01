@@ -145,6 +145,41 @@ impl<'a> Printer<'a> {
     }
 
     /// The name of a part, of the model or of one of its object types.
+    /// The name of the payload item `k` of the event whose payload `e` reads (D-059).
+    fn payload_item(&self, e: &Expr, k: usize) -> Option<String> {
+        let Expr::Payload { payload } = e else { return None };
+        let p = self.model.events.iter().find(|x| &x.id == payload)?.payload.as_ref()?;
+        p.items.get(k).map(|i| i.name.clone())
+    }
+
+    /// The payload a request or `emit` supplies: several as an argument list (D-059).
+    fn payload_args(&self, p: &Expr) -> String {
+        match p {
+            Expr::Tuple { tuple } if tuple.len() > 1 => tuple.iter().map(|x| self.expr(x)).collect::<Vec<_>>().join(", "),
+            _ => self.expr(p),
+        }
+    }
+
+    /// Payload arguments that read the gesture value by name (D-060).
+    fn payload_args_p(&self, p: &Expr, names: &[String]) -> String {
+        match p {
+            Expr::Tuple { tuple } if tuple.len() > 1 => tuple.iter().map(|x| self.expr_p(x, names)).collect::<Vec<_>>().join(", "),
+            _ => self.expr_p(p, names),
+        }
+    }
+
+    /// A payload declaration: `p: T`, or a member `b in balls` (D-050, D-059).
+    fn payload_decl(&self, p: &prismal_ir::Payload) -> String {
+        p.declared()
+            .iter()
+            .map(|x| match &x.of {
+                Some(of) => format!("{} in {}", x.name, self.part_name(of)),
+                None => format!("{}: {}", x.name, self.ty(&x.ty)),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     fn part_name(&self, id: &str) -> String {
         std::iter::once(self.root)
             .chain(&self.root.objects)
@@ -161,7 +196,12 @@ impl<'a> Printer<'a> {
         let body = p.model();
         let mut lines: Vec<String> = body.lines().map(|l| if l.is_empty() { String::new() } else { format!("{INDENT}{l}") }).collect();
         if let Some(i) = lines.iter().position(|l| l.trim_start().starts_with("model ")) {
-            lines[i] = format!("{INDENT}object {} {{", o.name);
+            lines[i] = if o.ends.is_empty() {
+                format!("{INDENT}object {} {{", o.name)
+            } else {
+                let ends: Vec<String> = o.ends.iter().map(|e| format!("{} in {}", e.name, self.part_name(&e.over))).collect();
+                format!("{INDENT}relation {}({}) {{", o.name, ends.join(", "))
+            };
         }
         lines.join("\n")
     }
@@ -172,7 +212,12 @@ impl<'a> Printer<'a> {
         for p in ps {
             notes(&mut s, &INDENT.repeat(2), &p.notes);
             let ty = self.root.object(&p.object).map(|o| o.name.clone()).unwrap_or_else(|| p.object.rsplit('.').next().unwrap_or(&p.object).to_string());
-            let count = p.count.map(|n| format!("[{n}]")).unwrap_or_default();
+            let count = match (p.count, p.capacity) {
+                (Some(n), Some(c)) => format!("[{n}, max {c}]"),
+                (None, Some(c)) => format!("[max {c}]"),
+                (Some(n), None) => format!("[{n}]"),
+                (None, None) => String::new(),
+            };
             let ovs: Vec<String> = p.overrides.iter().map(|o| format!("{} = {}", self.field_name(&o.binding), self.expr(&o.value))).collect();
             let head = format!("{INDENT}{INDENT}{}: {ty}{count}", p.name);
             match ovs.len() {
@@ -201,8 +246,20 @@ impl<'a> Printer<'a> {
             Expr::Var { var } => var.clone(),
             Expr::Part { part } => self.part_name(part),
             Expr::Item { item, index } => format!("{}[{}]", self.part_name(item), self.expr_p(index, params)),
+            Expr::End { end, of } => {
+                let name = self.end_name(end);
+                match of {
+                    Some(o) => format!("{}.{name}", self.member(o, params)),
+                    None => name,
+                }
+            }
             other => self.expr_p(other, params),
         }
+    }
+
+    /// The name of an endpoint of a relation type (D-058).
+    fn end_name(&self, id: &str) -> String {
+        self.root.objects.iter().flat_map(|o| &o.ends).find(|e| e.id == id).map(|e| e.name.clone()).unwrap_or_else(|| id.rsplit('.').next().unwrap_or(id).to_string())
     }
 
     fn binding_name(&self, id: &str) -> String {
@@ -369,6 +426,8 @@ impl<'a> Printer<'a> {
             Expr::Apply { apply, args } => format!("{}({})", w(apply, P_ATOM), args.iter().map(p).collect::<Vec<_>>().join(", ")),
             Expr::If { r#if, then, r#else } => format!("if {} then {} else {}", p(r#if), p(then), p(r#else)),
             Expr::Tuple { tuple } => format!("({})", tuple.iter().map(p).collect::<Vec<_>>().join(", ")),
+            // One of several payloads is read by its name (D-059).
+            Expr::Comp { comp, axis } if matches!(&**comp, Expr::Payload { .. }) && self.payload_item(comp, *axis).is_some() => self.payload_item(comp, *axis).unwrap(),
             Expr::Comp { comp, axis } => {
                 let name = self.axes.get(*axis).cloned().unwrap_or_else(|| axis.to_string());
                 format!("{}.{name}", w(comp, P_ATOM))
@@ -381,7 +440,9 @@ impl<'a> Printer<'a> {
                 format!("match {} {{ {} }}", p(r#match), arms.iter().map(|a| format!("{} => {}", a.case, p(&a.value))).collect::<Vec<_>>().join(", "))
             }
             Expr::Field { field, of } => format!("{}.{}", self.member(of, params), self.field_name(field)),
-            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } => self.member(e, params),
+            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } => self.member(e, params),
+            // Made by elaboration only (D-058).
+            Expr::Pick { pick, from } => format!("pick({}, {})", p(pick), from.iter().map(|x| p(x)).collect::<Vec<_>>().join(", ")),
             Expr::Aggregate { aggregate, var, over, body, filter } => {
                 let coll = self.part_name(over);
                 let filter = filter.as_ref().map(|f| format!(" if {}", p(f))).unwrap_or_default();
@@ -390,6 +451,11 @@ impl<'a> Printer<'a> {
                     None => format!("{}({var} for {var} in {coll}{filter})", aggregate.name()),
                     Some(b) => format!("{}({} for {var} in {coll}{filter})", aggregate.name(), p(b)),
                 }
+            }
+            // Made by elaboration only (D-057).
+            Expr::Extreme { extreme, terms } => {
+                let name = if *extreme == prismal_ir::Func::Min { "min" } else { "max" };
+                format!("{name}({})", terms.iter().map(|g| p(&g.value)).collect::<Vec<_>>().join(", "))
             }
         }
     }
@@ -492,7 +558,27 @@ impl<'a> Printer<'a> {
             }
             sections.push(s);
         }
-        let events: Vec<String> = m.events.iter().filter(|e| e.process.is_none()).map(|e| self.event(e, 1)).collect();
+        // Consecutive events of one loop print as one `for` block (D-057).
+        let top: Vec<&Event> = m.events.iter().filter(|e| e.process.is_none()).collect();
+        let mut events: Vec<String> = vec![];
+        let mut i = 0;
+        while i < top.len() {
+            match &top[i].each {
+                Some(each) => {
+                    let mut s = format!("{INDENT}for {} in {} {{\n", each.var, self.part_name(&each.over));
+                    while i < top.len() && top[i].each.as_ref() == Some(each) {
+                        let _ = writeln!(s, "{}", self.event(top[i], 2));
+                        i += 1;
+                    }
+                    let _ = write!(s, "{INDENT}}}");
+                    events.push(s);
+                }
+                None => {
+                    events.push(self.event(top[i], 1));
+                    i += 1;
+                }
+            }
+        }
         if !events.is_empty() {
             sections.push(events.join("\n"));
         }
@@ -601,7 +687,10 @@ impl<'a> Printer<'a> {
     }
 
     fn target(&self, t: &Target) -> String {
-        let n = self.binding_name(&t.binding);
+        let n = match &t.member {
+            Some(m) => format!("{}.{}", self.member(m, &[]), self.field_name(&t.binding)),
+            None => self.binding_name(&t.binding),
+        };
         match t.component {
             Some(i) => format!("{n}.{}", self.axes.get(i).cloned().unwrap_or_else(|| i.to_string())),
             None => n,
@@ -613,9 +702,30 @@ impl<'a> Printer<'a> {
             Op::Set { target, value } => format!("set {} = {}", self.target(target), self.expr(value)),
             Op::Contribute { target, value } => format!("contribute {} += {}", self.target(target), self.expr(value)),
             Op::Emit { event, payload } => match payload {
-                Some(p) => format!("emit {}({})", self.event_name(event), self.expr(p)),
+                Some(p) => format!("emit {}({})", self.event_name(event), self.payload_args(p)),
                 None => format!("emit {}", self.event_name(event)),
             },
+            Op::Create { part, overrides } => {
+                let ovs: Vec<String> = overrides.iter().map(|o| format!("{} = {}", self.field_name(&o.binding), self.expr(&o.value))).collect();
+                match ovs.len() {
+                    0 => format!("create {}", self.part_name(part)),
+                    _ => format!("create {} {{ {} }}", self.part_name(part), ovs.join("; ")),
+                }
+            }
+            Op::Destroy { member } => format!("destroy {}", self.member(member, &[])),
+            Op::Connect { part, ends, overrides } => {
+                let ends: Vec<String> = ends.iter().map(|e| self.member(e, &[])).collect();
+                let ovs: Vec<String> = overrides.iter().map(|o| format!("{} = {}", self.field_name(&o.binding), self.expr(&o.value))).collect();
+                match ovs.len() {
+                    0 => format!("connect {}({})", self.part_name(part), ends.join(", ")),
+                    _ => format!("connect {}({}) {{ {} }}", self.part_name(part), ends.join(", "), ovs.join("; ")),
+                }
+            }
+            Op::Disconnect { relation } => format!("disconnect {}", self.member(relation, &[])),
+            // Made by elaboration only (D-057).
+            Op::Make { alive, values } => format!("make {alive} {{ {} }}", values.iter().map(|v| format!("{} = {}", v.binding, self.expr(&v.value))).collect::<Vec<_>>().join("; ")),
+            // Made by elaboration only; printed for reading, not for parsing (D-057).
+            Op::If { r#if, then } => format!("if {} {{ {} }}", self.expr(r#if), then.iter().map(|o| self.op(o)).collect::<Vec<_>>().join("; ")),
         }
     }
 
@@ -661,7 +771,7 @@ impl<'a> Printer<'a> {
         notes(&mut s, &ind, &e.notes);
         let _ = write!(s, "{ind}event {} on {}", e.name, self.trigger(&e.trigger));
         if let Some(p) = &e.payload {
-            let _ = write!(s, "({}: {})", p.name, self.ty(&p.ty));
+            let _ = write!(s, "({})", self.payload_decl(p));
         }
         if let Some(c) = &e.enable {
             let _ = write!(s, " if {}", self.expr(c));
@@ -727,12 +837,22 @@ impl<'a> Printer<'a> {
         if let Some(n) = &r.name {
             let _ = write!(s, " as {n}");
         }
+        // `on click request E(v)` beside a drag (D-059).
+        let click = r.click.as_ref().map(|c| match &c.payload {
+            Some(p) => format!("on click request {}({})", self.event_name(&c.event), self.payload_args(p)),
+            None => format!("on click request {}", self.event_name(&c.event)),
+        });
+        if let (Some(c), None) = (&click, &r.inverse) {
+            let _ = write!(s, " {{ {c} }}");
+        }
         if let Some(inv) = &r.inverse {
             let part = inv.part.as_ref().map(|p| format!(" {p}")).unwrap_or_default();
             let bind = if inv.part.as_deref() == Some("head") { "h" } else { "p" };
             let props: Vec<String> =
-                inv.proposals.iter().map(|pr| format!("propose {} = {}", self.binding_name(&pr.target), self.expr_p(&pr.value, &[bind.to_string()]))).collect();
-            if props.len() == 1 {
+                inv.proposals.iter().map(|pr| format!("propose {} = {}", self.target(&Target { binding: pr.target.clone(), component: None, member: pr.member.clone() }), self.expr_p(&pr.value, &[bind.to_string()]))).collect();
+            if let Some(c) = &click {
+                let _ = write!(s, " {{ on {}{part} as {bind} {{ {} }}; {c} }}", inv.gesture, props.join("; "));
+            } else if props.len() == 1 {
                 let _ = write!(s, " {{ on {}{part} as {bind} {{ {} }} }}", inv.gesture, props[0]);
             } else {
                 let ind = INDENT.repeat(depth + 1);
@@ -792,7 +912,18 @@ impl<'a> Printer<'a> {
                 ),
                 ViewKind::Panel => format!("panel {}", v.name),
             };
-            sections.push(format!("{INDENT}{head} {}", self.reps_block(&v.representations, 1)));
+            let mut block = self.reps_block(&v.representations, 1);
+            // `on click as p request E(p)` first in the view's block (D-060).
+            if let Some(c) = &v.click {
+                let req = match &c.payload {
+                    Some(x) => format!("{}({})", self.event_name(&c.event), self.payload_args_p(x, &["p".to_string()])),
+                    None => self.event_name(&c.event),
+                };
+                block = format!("{{
+{INDENT}{INDENT}on click as p request {req}
+{}", &block[2..]);
+            }
+            sections.push(format!("{INDENT}{head} {block}"));
         }
         for perm in &p.permissions {
             sections.push(format!("{INDENT}permit {} {{ {} }}", perm.role, perm.allows.join("; ")));
@@ -991,7 +1122,7 @@ impl<'a> Printer<'a> {
             Action::Branch => "branch".into(),
             Action::Intervene { ops } => format!("intervene {}", block(ops.iter().map(|o| self.op(o)).collect())),
             Action::Request { event, payload } => match payload {
-                Some(p) => format!("request {}({})", self.event_name(event), self.expr(p)),
+                Some(p) => format!("request {}({})", self.event_name(event), self.payload_args(p)),
                 None => format!("request {}", self.event_name(event)),
             },
             Action::Wait { duration } => format!("wait {}", self.expr(duration)),

@@ -102,7 +102,9 @@ pub fn observe(cm: &CModel, run: &Run, obs: &Observation, interventions: &[Sched
                 Schedule::At { time } => {
                     let t = number(cm, time)?;
                     if t > run.end_time() {
-                        return Err(format!("instant {t} s is after the end of the run"));
+                        // RC-12.4: a model without flows or timed events has one instant.
+                        let why = if run.model.is_static { " (a static model, with no flows and no events but requests, has a single instant, RC-12.4)" } else { "" };
+                        return Err(format!("instant {t} s is after the end of the run{why}"));
                     }
                     Data::Value(eval(&run.state_at(t), t)?)
                 }

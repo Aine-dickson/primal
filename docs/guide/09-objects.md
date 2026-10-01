@@ -209,11 +209,364 @@ run conserved of Stars with Sky {
 
 The tolerance is a relative `2e-12`: the sums are computed in floating point, and the bodies' speeds grow to kilometres per second.
 
+## Members that come and go
+
+The collections so far keep their members for the whole run. A fountain does not: it throws a drop every half second, and each drop is gone when it falls back. A collection whose membership changes declares the most members it makes in one run, with `max` (D-057):
+
+```text
+space Plane = euclidean(2)
+
+model Fountain in Plane {
+  object Drop {
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow {
+      der(pos) = vel
+      der(vel) = (0 m/s^2, -9.81 m/s^2)
+    }
+  }
+  param { speed: Velocity = 5 m/s }
+  parts { drops: Drop[max 40] }
+  event spray on every 0.5 s {
+    create drops { vel = (1 m/s, speed) }
+  }
+  for d in drops {
+    event land on falling(d.pos.y) { destroy d }
+  }
+  derived {
+    flying:  Real   = count(drops)
+    highest: Length = max(d.pos.y for d in drops) otherwise 0 m
+  }
+}
+```
+
+- `drops: Drop[max 40]` starts empty and makes at most 40 drops in a run. `Drop[3, max 40]` would start with three.
+- `create drops { vel = (1 m/s, speed) }` in a handler makes the next drop, with a starting value for its velocity; its position starts where `Drop` says, at the origin. The values are read when the event happens, so they may use the model's state or the event's payload.
+- `for d in drops { event land ... }` gives every drop its own `land` event, which reads the drop as `d`. When a drop falls back through zero height, `destroy d` removes it.
+- A drop that is not made yet, or already destroyed, does nothing: it does not move, its events do not happen, and aggregates leave it out. `count(drops)` is the number of drops in the air.
+- `max` over no drop has no value (at the start, before the first spray, and between drops if the fountain stops), so `highest` says what to use then with `otherwise`.
+
+| Form | Does |
+|---|---|
+| `c: T[max m]`, `c: T[n, max m]` | a collection that starts with none or `n` members and makes at most `m` in a run |
+| `create c { x = e ... }` | makes the next member, with starting values; several `create` in one handler make several members |
+| `destroy b` | removes the member `b`: a loop variable, a contained member, or `c[k]` |
+| `for b in c { event ... }` | an event of the model for each member |
+| `set b.x = e` | in such an event, writes the member's binding (a model may write its members' state) |
+
+The `k`-th drop made is `drops[k]` for the whole run: `drops[1]` is the first drop, which lands after `2 × 5 / 9.81 = 1.0194 s`. Its number is never given to another drop, so its name, its marker and its trace belong to one drop. Read by number, a drop holds its starting values before it is made and its last values after it is destroyed.
+
+```text
+presentation Spray for Fountain {
+  view scene: spatial(Plane, scale: 1 m -> 50 px, y: up) {
+    axes
+    for d in drops { marker(d.pos) as drop }
+  }
+  panel numbers {
+    label(flying)
+    label(highest)
+  }
+  observe {
+    n     = flying live
+    top   = highest live
+    first = drops[1].pos.y live
+  }
+}
+```
+
+A marker is drawn for each drop in the air, and only while it is there. At 1.2 s the first drop has landed; the second, thrown at 0.5 s, is at `5 × 0.7 - 4.905 × 0.7² = 1.09655 m`, and the third, thrown at 1 s, is lower:
+
+```cases
+run early of Fountain with Spray {
+  until t0 + 1.2 s
+  expect {
+    n     == 2 within 1e-12
+    top   == 1.09655 m within 1e-9 m
+    first == 0 m within 1e-9 m
+  }
+}
+```
+
+The capacity is part of the model: it says how long the fountain can run. 40 drops, one every half second, last until 19.5 s; a run past 20 s stops there with the diagnostic that `drops.capacity` is exceeded. Choose a capacity that covers the longest run the presentation shows.
+
+## Relations between members
+
+A spring joins two balls; a thread ties one bead to another. The spring is not a ball, and it is not a line drawn between them: it is a **relation**, with its own values (a stiffness, a rest length) and two **endpoints**, each a member of a collection (MK-8.5, D-058).
+
+```text
+space Plane = euclidean(2)
+
+model Pair in Plane {
+  object Ball {
+    param { m: Mass = 1 kg }
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow { der(pos) = vel }
+  }
+  relation Spring(a in balls, b in balls) {
+    param {
+      k:    Quantity<M/T^2> = 2 N/m
+      rest: Length          = 1 m
+    }
+    derived {
+      stretch: Length        = |b.pos - a.pos| - rest
+      pull:    Vector<Force> = k * stretch * (b.pos - a.pos) / |b.pos - a.pos|
+    }
+  }
+  parts {
+    balls: Ball[2, max 3] { pos = origin + ((2 * index - 3) * 1 m, 0 m) }
+    springs: Spring[1, max 4] {
+      a = balls[1]
+      b = balls[2]
+    }
+  }
+  flow {
+    for o in balls {
+      der(o.vel) = (sum(s.pull for s in springs if s.a == o) - sum(s.pull for s in springs if s.b == o)) / o.m
+    }
+  }
+  event cut on request { disconnect springs[1] }
+  event join on request { connect springs(balls[1], balls[2]) { k = 4 N/m } }
+  derived {
+    links: Real   = count(springs)
+    gap:   Length = balls[2].pos.x - balls[1].pos.x
+  }
+}
+```
+
+- `relation Spring(a in balls, b in balls) { ... }` declares a relation type: its endpoints `a` and `b` are members of `balls`, and its body has the bindings of each spring. Inside it, `a.pos` is the position of the ball at `a`.
+- `springs: Spring[1, max 4]` holds the springs, like a collection: one at the start, at most four made in a run. The overrides of the starting spring name its endpoints, `a = balls[1]`.
+- The balls move by the springs' pulls. A ball cannot see the springs; the model writes each ball's acceleration as a sum over the springs that end at it: `s.a == o` holds when the spring's endpoint `a` is the ball `o`. A spring pulls its `a` end towards `b`, and its `b` end the other way.
+- `connect springs(balls[1], balls[2]) { k = 4 N/m }` makes a spring between two members, with a starting value; `disconnect springs[1]` removes one. Destroying a ball disconnects every spring that ends at it.
+
+| Form | Does |
+|---|---|
+| `relation R(a in c, b in d) { ... }` | a relation type; its endpoints are members of `c` and `d` |
+| `rs: R[n, max m] { a = c[1] ... }` | a set of relations, like a collection; starting relations name their endpoints |
+| `s.a`, `s.a.pos` | the member at an endpoint, and one of its bindings |
+| `s.a == o` | whether the endpoint is the member `o` |
+| `connect rs(x, y) { k = e }` | makes a relation between the members `x` and `y` |
+| `disconnect s` | removes a relation |
+
+The endpoints of a relation are chosen while the model runs, so `s.a.pos` is the position of whichever ball the spring holds at that moment.
+
+```text
+presentation Springs for Pair {
+  view scene: spatial(Plane, scale: 1 m -> 50 px, y: up) {
+    for o in balls { marker(o.pos) as ball }
+    for s in springs { segment(s.a.pos, s.b.pos) as spring }
+  }
+  observe {
+    gap   = gap live
+    links = links live
+  }
+}
+```
+
+The balls start 2 m apart on a spring of rest length 1 m. Each ball has mass `m`, so the gap `d` obeys `d'' = -2 k (d - 1 m) / m`: it oscillates as `1 m + cos(ω t) × 1 m` with `ω = sqrt(2 k / m) = 2 rad/s`, and after 1 s it is `1 + cos 2 = 0.583853 m`.
+
+```cases
+run oscillates of Pair with Springs {
+  until t0 + 1 s
+  expect {
+    gap   == 0.583853 m within 1e-6 m
+    links == 1 within 1e-12
+  }
+}
+```
+
+An event can be repeated for each relation, like an event for each member. A thread snaps when stretched by 1 m:
+
+```text
+space Plane = euclidean(2)
+
+model Threads in Plane {
+  object Bead {
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow { der(pos) = vel }
+  }
+  relation Thread(a in beads, b in beads) {
+    derived { stretch: Length = |b.pos - a.pos| - 1 m }
+  }
+  parts {
+    beads: Bead[2, max 2] {
+      pos = origin + ((index - 1.5) * 1 m, 0 m)
+      vel = ((2 * index - 3) * 1 m/s, 0 m/s)
+    }
+    threads: Thread[1, max 1] {
+      a = beads[1]
+      b = beads[2]
+    }
+  }
+  for s in threads {
+    event snap on rising(s.stretch - 1 m) { disconnect s }
+  }
+  derived { held: Real = count(threads) }
+}
+```
+
+```text
+presentation Watch for Threads {
+  observe {
+    early = held at t0 + 0.4 s
+    late  = held at t0 + 0.6 s
+  }
+}
+```
+
+The beads start 1 m apart and separate at 2 m/s, so the thread is stretched by 1 m after 0.5 s:
+
+```cases
+run snaps of Threads with Watch {
+  until t0 + 1 s
+  expect {
+    early == 1 within 1e-12
+    late  == 0 within 1e-12
+  }
+}
+```
+
+A relation that is not made yet, or already disconnected, has no values: `springs[3].stretch` before a third spring is connected is not a number. The count, sums and representations leave it out, as they leave out members that are not alive.
+
+## Labs with members
+
+A lab with many objects lets the learner act on one of them: drag this planet, remove that one. The learner's action has to say **which** member it is about. An event can receive a member as its payload (D-059):
+
+```text
+space Plane = euclidean(2)
+
+model Orbits in Plane {
+  object Planet {
+    state {
+      pos: Point            = origin + (1 m, 0 m) intervenable
+      vel: Vector<Velocity> = (0 m/s, 1 m/s)
+    }
+    flow { der(pos) = vel }
+  }
+  param { mu: Quantity<L^3/T^2> = 1 m^3/s^2 }
+  parts {
+    planets: Planet[2, max 6] {
+      pos = origin + (index * 1 m, 0 m)
+      vel = (0 m/s, sqrt(mu / (index * 1 m)))
+    }
+  }
+  flow {
+    for p in planets {
+      der(p.vel) = -mu * (p.pos - origin) / |p.pos - origin|^3
+    }
+  }
+  event remove on request(p in planets) { destroy p }
+  event add on request {
+    create planets {
+      pos = origin + (0 m, -2 m)
+      vel = (sqrt(mu / (2 m)), 0 m/s)
+    }
+  }
+  event place on request(q: Point) if |q - origin| > 0.5 m {
+    create planets {
+      pos = q
+      vel = sqrt(mu / |q - origin|^3) * (-(q - origin).y, (q - origin).x)
+    }
+  }
+  derived { n: Real = count(planets) }
+}
+```
+
+- The planets circle a sun at the origin; `mu` is the sun's gravitational parameter. Each starts on a circular orbit: at distance `r`, the speed `sqrt(mu / r)`.
+- `on request(p in planets)` declares a payload that is a member of `planets`. Whoever requests `remove` says which planet; the handler reads it as `p`, like a loop variable: `destroy p`, `p.pos`, `set p.vel = ...`.
+- The event happens only for a planet that is alive. A request for a planet already removed, or not made yet, is refused with the reason (`planets[2]` is not alive).
+- `add` takes no payload: it makes the next planet, on a circular orbit of radius 2 m.
+- `place` takes a point and makes a planet there, on a circular orbit through it: the velocity is the direction from the sun turned a quarter turn, `(-(q - origin).y, (q - origin).x)`, at the circular speed. Its condition keeps new planets away from the sun.
+- `pos` is `intervenable`, so the learner may move a planet (D-023).
+
+An event may take a member and a value together: `event kick on request(p in planets, j: Vector<Momentum>) { set p.vel = p.vel + j / 1 kg }` is requested as `kick(planets[1], (0 kg*m/s, 1 kg*m/s))`. `emit E(p)` passes a member on to the events that follow `E`, which receive it as `on E(q in planets)`.
+
+In a lab, the learner acts on the planet under the pointer:
+
+```text
+presentation Sky for Orbits {
+  view sky: spatial(Plane, scale: 1 m -> 80 px, y: up) {
+    on click as q request place(q)
+    marker(origin) as sun
+    for p in planets { trace(p.pos every 0.05 s) }
+    for p in planets {
+      marker(p.pos) as planet {
+        on drag as q { propose p.pos = q }
+        on click request remove(p)
+      }
+    }
+  }
+  panel controls { button(add, label: "Add a planet") }
+}
+```
+
+- `on drag as q { propose p.pos = q }` in a representation repeated per member moves that member: dragging `planet[2]` proposes a new position for `planets[2]`. The binding must be intervenable in the object type.
+- `on click request remove(p)` requests `remove` with the planet clicked. A click is a press and release that does not move; moving further makes it a drag. A click only requests an event: what happens is written in the model.
+- With the keyboard, Tab gives focus to each planet in turn; arrow keys move it and Enter or space activates its click. The text alternative says so: `planet[2] ..., activate: remove`.
+- `on click as q request place(q)`, written in the view itself, acts on a click where no representation takes it: an empty point of the sky. `q` is the point clicked, in the view's space, and the view requests `place` with it (D-060). A click on a planet removes the planet; a click beside it places a new one. When the presentation also permits `pan`, a press that moves pans the view and a press that does not move clicks.
+- The button adds a planet. A host that has no pointer requests the same events with the member named: `remove` with payload `"planets[2]"`.
+
+| Form | Does |
+|---|---|
+| `on request(b in c)` | an event requested for one member of `c`, read as `b` in its condition and handler |
+| `on request(b in c, x: T)` | several payloads: a member and a value |
+| `request E(c[k])`, `request E(c[k], v)` | a timeline's request for a member |
+| `emit E(b)` | passes a member to the events that follow `E` |
+| `on drag as q { propose b.x = q }` | in `for b in c { ... }`: dragging moves that member |
+| `on click request E(b)` | in `for b in c { ... }`: clicking requests `E` for that member |
+| `on click as q request E(q)` | in a view: clicking an empty point requests `E` with the point |
+
+A lesson requests for members as a learner would. The case checks the effect of each request:
+
+```text
+presentation Tour for Orbits {
+  view sky: spatial(Plane, scale: 1 m -> 80 px, y: up) {
+    marker(origin) as sun
+    for p in planets { marker(p.pos) as planet }
+  }
+  observe {
+    before = n at t0 + 0.5 s
+    after  = n at t0 + 1.5 s
+    later  = n at t0 + 2.5 s
+    x1     = planets[1].pos.x at t0 + 2.5 s
+    x3     = planets[3].pos.x at t0 + 2.5 s
+  }
+  timeline {
+    scene sky {
+      beat watch { run rate 1; wait 1 s }
+      beat fewer { request remove(planets[2]); wait 1 s }
+      beat more  { request add; wait 1 s }
+    }
+  }
+}
+```
+
+Planet 1 goes round once in `2π` s, so at 2.5 s it is at `cos 2.5 = -0.801144 m`. Planet 2 is removed at 1 s. The planet added at 2 s is `planets[3]`, since a number is never given twice; on its orbit of radius 2 m it turns at `sqrt(mu / r^3) = 0.353553` rad/s, so after 0.5 s its x is `2 sin(0.176777) = 0.351715 m`.
+
+```cases
+run tour of Orbits with Tour {
+  expect {
+    before == 2 within 1e-12
+    after  == 1 within 1e-12
+    later  == 2 within 1e-12
+    x1     == -0.801144 m within 1e-5 m
+    x3     == 0.351715 m within 1e-5 m
+  }
+}
+```
+
 ## Names in results
 
 Each member's bindings and events have names built from the member: `row[2].pos`, `moon.bounce`. They appear in diagnostics, event logs and text alternatives. A mistake in the object type is reported once for each member, and located at the line in the object type.
 
-Collections in v0 have a fixed number of members. Creating and destroying objects while a run goes on, and relations between objects, come later.
+A relation's bindings are named like a member's: `springs[2].stretch`.
 
 ## Mistakes
 
@@ -258,11 +611,73 @@ model M in Plane {
 
 `Ball` has no `g` to give a value to: an override names a binding of the object.
 
+```error
+// error: MK-E26
+space Plane = euclidean(2)
+model M in Plane {
+  object Ball {
+    state { pos: Point = origin }
+  }
+  parts { row: Ball[3] }
+  event more on every 1 s { create row }
+}
+```
+
+`row` has a fixed membership. To make members during a run, declare how many it can make: `row: Ball[3, max 10]`.
+
+```error
+// error: SX-E08
+space Plane = euclidean(2)
+model M in Plane {
+  param { speed: Velocity = 1 m/s }
+  event halt on every 1 s { destroy speed }
+}
+```
+
+`destroy` removes a member of a collection; `speed` is a binding.
+
+```error
+// error: MK-E26
+space Plane = euclidean(2)
+model M in Plane {
+  object Ball {
+    state { pos: Point = origin }
+  }
+  relation Link(a in balls, b in balls) {}
+  parts {
+    balls: Ball[2]
+    links: Link[max 3]
+  }
+  event tie on every 1 s { create links }
+}
+```
+
+`links` holds relations: they are made with `connect links(balls[1], balls[2])`, which names the endpoints.
+
+```error
+// error: MK-E26
+space Plane = euclidean(2)
+model M in Plane {
+  object Ball {
+    state { pos: Point = origin }
+  }
+  parts { balls: Ball[3, max 3] }
+  event remove on request(b in balls) { destroy b }
+  event clear on every 1 s { emit remove(2) }
+}
+```
+
+The payload of `remove` is a member: give one, `emit remove(balls[2])`, not its number.
+
 ## Exercises
+
+Solutions to the exercises not solved here are in [chapter 11](11-solutions.md).
 
 1. Add a fourth ball to `row`. Which expectations change?
 2. Give each ball in `row` a different radius with an override (`r = index * 0.05 m`), and show the radius as a `circle(b.pos, b.r)` in the view.
 3. Chain three masses with springs: each mass is pulled towards its neighbours. Write the force on member `b` as a sum over the others with a filter that keeps only neighbours. (Hint: give each member its number as a parameter, `n = index`, and compare numbers.)
+4. Make the fountain throw two drops at each spray, one to each side (`vel = (1 m/s, speed)` and `vel = (-1 m/s, speed)`). How many drops are in the air at 1.2 s?
+5. Give `Orbits` an event `kick` that takes a planet and an impulse (`on request(p in planets, j: Vector<Momentum>)`). A representation has one click, so draw at each planet a second marker, a little above it, whose click requests `kick` for that planet with a fixed impulse.
 
 <details>
 <summary>A solution to exercise 2</summary>

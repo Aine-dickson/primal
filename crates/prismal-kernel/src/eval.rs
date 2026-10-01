@@ -185,6 +185,11 @@ pub enum CExpr {
     Match(Box<CExpr>, Vec<CExpr>),
     /// The payload of the occurrence of event `i` being handled (D-050).
     Payload(usize),
+    /// The smallest or largest value among the terms whose condition holds; no value when
+    /// none holds (D-057).
+    Extreme(Func, Vec<(CExpr, CExpr)>),
+    /// The item whose number, from 1, the first expression gives; only it is evaluated (D-058).
+    Pick(Box<CExpr>, Vec<CExpr>),
 }
 
 /// The environment of an evaluation.
@@ -322,6 +327,27 @@ impl CExpr {
                 Ok(v) => Ok(v),
                 Err(_) => d.eval(c),
             },
+            CExpr::Pick(k, items) => {
+                let k = k.eval(c)?.num();
+                match items.get((k as usize).wrapping_sub(1)) {
+                    Some(x) if k.fract() == 0.0 => x.eval(c),
+                    _ => Err(Status::invalid(format!("no member number {k}"))),
+                }
+            }
+            CExpr::Extreme(f, terms) => {
+                let mut best: Option<f64> = None;
+                for (w, v) in terms {
+                    if w.eval(c)?.boolean() {
+                        let x = v.eval(c)?.num();
+                        best = Some(match (best, f) {
+                            (None, _) => x,
+                            (Some(b), F::Min) => b.min(x),
+                            (Some(b), _) => b.max(x),
+                        });
+                    }
+                }
+                best.map(Num).ok_or_else(|| Status::invalid(format!("`{}` over no member has no value", if *f == F::Min { "min" } else { "max" })))
+            }
             CExpr::Payload(i) => c.payloads.get(*i).cloned().flatten().ok_or_else(|| Status::invalid("no payload for this occurrence".to_string())),
             CExpr::Match(e, arms) => match e.eval(c)? {
                 Case(i) => arms.get(i as usize).ok_or_else(|| Status::invalid(format!("no arm for case {i}")))?.eval(c),

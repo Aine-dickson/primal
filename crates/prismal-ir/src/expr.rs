@@ -214,11 +214,38 @@ pub enum Expr {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filter: Option<Box<Expr>>,
     },
+    /// The smallest (`min`) or largest (`max`) of the values whose condition holds, and no
+    /// value when none holds: `min` and `max` over a collection whose membership changes,
+    /// each term guarded by its member being alive. Made by elaboration only (D-057).
+    Extreme {
+        extreme: Func,
+        terms: Vec<Guarded>,
+    },
+    /// The member at an endpoint of a relation instance: `s.a` (`of` the relation), or `a`
+    /// inside the relation type (`of` absent) (D-058).
+    End {
+        end: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        of: Option<Box<Expr>>,
+    },
+    /// The `pick`-th of `from`, counted from 1, evaluating only that one: a binding of the
+    /// member at an endpoint, chosen during the run. Made by elaboration only (D-058).
+    Pick {
+        pick: Box<Expr>,
+        from: Vec<Expr>,
+    },
     /// The member a loop or an aggregate is at: `b` in `for b in row`. After `Aggregate`,
     /// which also has a `var` field: untagged forms are read in declaration order.
     Var {
         var: String,
     },
+}
+
+/// A term of an `extreme`: its value counts while `when` holds (D-057).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Guarded {
+    pub when: Expr,
+    pub value: Expr,
 }
 
 /// One arm of a `match`: the value when the scrutinee is `case`.
@@ -278,6 +305,15 @@ impl Expr {
                 body.iter().for_each(|b| b.walk(f));
                 filter.iter().for_each(|c| c.walk(f));
             }
+            Expr::End { of, .. } => of.iter().for_each(|o| o.walk(f)),
+            Expr::Pick { pick, from } => {
+                pick.walk(f);
+                from.iter().for_each(|x| x.walk(f));
+            }
+            Expr::Extreme { terms, .. } => terms.iter().for_each(|g| {
+                g.when.walk(f);
+                g.value.walk(f);
+            }),
             _ => {}
         }
     }

@@ -14,6 +14,17 @@
   --bad: #b3261e;
   --ok: #1f7a4d;
   --hl: #e0a800;
+  /* The author's named colors (D-061), as in prismal-svg's themes. */
+  --color-red: #c62828;
+  --color-orange: #d9730d;
+  --color-yellow: #b58900;
+  --color-green: #2e7d32;
+  --color-teal: #00897b;
+  --color-blue: #2458c6;
+  --color-purple: #7a3fb0;
+  --color-pink: #c2185b;
+  --color-gray: #6b7080;
+  --color-ink: #1d1f24;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -34,6 +45,16 @@
     --bad: #ff8a80;
     --ok: #6fd3a0;
     --hl: #ffd24d;
+    --color-red: #ff8a80;
+    --color-orange: #ffb070;
+    --color-yellow: #ffd54f;
+    --color-green: #81c784;
+    --color-teal: #4dd0c4;
+    --color-blue: #7ea6ff;
+    --color-purple: #c9a2ff;
+    --color-pink: #f48fb1;
+    --color-gray: #a0a5b0;
+    --color-ink: #e7e8eb;
   }
 }
 
@@ -153,6 +174,7 @@ svg .tick { fill: var(--muted); font-family: var(--sans); }
 svg .gridline { stroke: var(--faint); }
 svg .frame { fill: none; stroke: var(--line); }
 svg .rep.draggable { cursor: grab; }
+svg .rep.clickable { cursor: pointer; }
 svg .graph { fill: none; stroke: var(--accent); }
 svg .curve { fill: none; stroke: var(--accent); }
 svg .trace { fill: none; stroke: var(--muted); stroke-dasharray: 3 3; }
@@ -167,6 +189,11 @@ svg .shape { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: v
 svg .handle { fill: var(--surface); stroke: var(--accent); }
 svg .ring { fill: none; stroke: var(--hl); }
 svg g.highlighted { filter: drop-shadow(0 0 3px var(--hl)); }
+/* The author's color (D-061): `--c` is set on the representation. */
+svg .styled .marker { fill: var(--c); }
+svg .styled line, svg .styled .segment, svg .styled .graph, svg .styled .trace, svg .styled .curve { stroke: var(--c); }
+svg .arrow.styled line { stroke: var(--c); } svg .arrow.styled polygon { fill: var(--c); }
+svg .styled .shape { fill: color-mix(in srgb, var(--c) 12%, transparent); stroke: var(--c); }
 svg .invalid line, svg .invalid .marker, svg .invalid .handle { stroke: var(--bad); stroke-dasharray: 4 3; }
 svg .invalid .marker { fill: none; }
 svg .rep-label { fill: var(--muted); font-family: var(--sans); }

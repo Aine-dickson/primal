@@ -153,7 +153,7 @@ pub fn boxes(e: &Expr, cm: &CModel, params: &[String]) -> MathBox {
             Builtin::Index => ident("i"),
         },
         // Elaboration replaces members and aggregates before anything is typeset (D-055).
-        Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } => MathBox::Text { text: "…".into() },
+        Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } | Expr::Extreme { .. } | Expr::End { .. } | Expr::Pick { .. } => MathBox::Text { text: "…".into() },
         Expr::Const { .. } => ident("π"),
         Expr::Origin { .. } => upright("O"),
         Expr::Der { der } => MathBox::Frac {

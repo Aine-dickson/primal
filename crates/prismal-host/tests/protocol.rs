@@ -216,6 +216,82 @@ presentation Lab for Cart {
     assert_eq!(r["ok"], false, "{r}");
     let obs = ok(&mut e, json!({ "protocol": 1, "op": "observations", "instance": lab }));
     assert!(obs["log"].to_string().contains("pushed at 1 s"), "{obs}");
+    // A request with its payload, in coherent SI units (HI-4.3b).
+    let r = ok(&mut e, json!({ "protocol": 1, "op": "request", "instance": lab, "event": "kick", "payload": 2.0 }));
+    assert_eq!(r["ok"], true, "{r}");
+    let r = ok(&mut e, json!({ "protocol": 1, "op": "request", "instance": lab, "event": "kick" }));
+    assert_eq!(r["ok"], false, "a request of `kick` supplies its payload: {r}");
+    let obs = ok(&mut e, json!({ "protocol": 1, "op": "observations", "instance": lab }));
+    assert!(obs["log"].to_string().contains("kick(2 kg m/s) at 2 s"), "{obs}");
+}
+
+/// A request names a member by its collection and number (D-059).
+#[test]
+fn requests_name_members() {
+    const TABLE: &str = "space Plane = euclidean(2)
+model Table in Plane {
+  object Ball {
+    state { pos: Point = origin; vel: Vector<Velocity> = 0 }
+    flow { der(pos) = vel }
+  }
+  parts { balls: Ball[3, max 3] { pos = origin + (index * 1 m, 0 m) } }
+  event remove on request(b in balls) { destroy b }
+  event kick on request(b in balls, j: Vector<Momentum>) { set b.vel = b.vel + j / 1 kg }
+  derived { n: Real = count(balls) }
+}
+presentation Lab for Table {
+  view scene: spatial(Plane, scale: 1 m -> 50 px, y: up) { for b in balls { marker(b.pos) as ball } }
+  panel status { label(n) }
+  observe { log = event_log over [t0, t0 + 4 s] }
+}
+";
+    let mut e = Engine::new();
+    let d = load(&mut e, TABLE);
+    let lab = ok(&mut e, json!({ "protocol": 1, "op": "open", "document": d, "presentation": "Lab" }))["instance"].as_str().unwrap().to_string();
+    let req = |e: &mut Engine, event: &str, payload: Json| ok(e, json!({ "protocol": 1, "op": "request", "instance": lab, "event": event, "payload": payload }));
+    assert_eq!(req(&mut e, "remove", json!("balls[2]"))["ok"], true);
+    let r = req(&mut e, "remove", json!("balls[2]"));
+    assert_eq!(r["ok"], false);
+    assert!(r["message"].as_str().unwrap().contains("`balls[2]` is not alive"), "{r}");
+    let r = req(&mut e, "remove", json!("rocks[1]"));
+    assert_eq!(r["why"], "refused", "{r}");
+    assert_eq!(req(&mut e, "kick", json!(["balls[3]", [0.0, 2.0]]))["ok"], true);
+    let obs = ok(&mut e, json!({ "protocol": 1, "op": "observations", "instance": lab })).to_string();
+    assert!(obs.contains("remove(balls[2]) at 0 s"), "{obs}");
+    assert!(obs.contains("kick(balls[3], (0 kg m/s, 2 kg m/s)) at 0 s"), "{obs}");
+    let f = ok(&mut e, json!({ "protocol": 1, "op": "frame", "instance": lab })).to_string();
+    assert!(f.contains("n = 2"), "{f}");
+}
+
+/// A request carries a point as its coordinates in metres, and an enumeration's case by name.
+#[test]
+fn requests_with_points_and_cases() {
+    const LAMP: &str = "space Plane = euclidean(2)
+model Lamp in Plane {
+  enum Color { red, green, blue }
+  discrete { c: Color = red; spot: Point = origin }
+  state { x: Length = 0 m }
+  flow { der(x) = 1 m/s }
+  event paint on request(k: Color) { set c = k }
+  event move on request(q: Point) { set spot = q }
+  derived { g: Real = match c { red => 1, green => 2, blue => 3 }; ax: Length = spot.x }
+}
+presentation Lab for Lamp {
+  panel status { label(g); label(ax) }
+}
+";
+    let mut e = Engine::new();
+    let d = load(&mut e, LAMP);
+    let lab = ok(&mut e, json!({ "protocol": 1, "op": "open", "document": d, "presentation": "Lab" }))["instance"].as_str().unwrap().to_string();
+    let req = |e: &mut Engine, event: &str, payload: Json| ok(e, json!({ "protocol": 1, "op": "request", "instance": lab, "event": event, "payload": payload }));
+    assert_eq!(req(&mut e, "paint", json!("blue"))["ok"], true);
+    let r = req(&mut e, "paint", json!("pink"));
+    assert_eq!(r["ok"], false);
+    assert!(r["message"].as_str().unwrap().contains("\"red\", \"green\", \"blue\""), "{r}");
+    assert_eq!(req(&mut e, "move", json!([3.0, 4.0]))["ok"], true);
+    let f = ok(&mut e, json!({ "protocol": 1, "op": "frame", "instance": lab })).to_string();
+    assert!(f.contains("g = 3"), "{f}");
+    assert!(f.contains("ax = 3 m"), "{f}");
 }
 
 #[test]

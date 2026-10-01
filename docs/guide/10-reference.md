@@ -35,13 +35,13 @@ Each block keyword also has a one-line form: `param g: Acceleration = 9.81 m/s^2
 
 **Modifiers:** `symbol "θ"` (display symbol), `unit deg` (display unit of an angle), `intervenable` (state the learner may change), `private`.
 
-**Triggers:** `rising(g)`, `falling(g)`, `crossing(g)` (zero crossings of `g`), `at τ`, `every Δ [from τ0]`, `start`, `request`, `E` (after event `E` occurs or is emitted), `input(i)`. `request(p: T)` and `E(p: T)` receive a payload named `p` (chapter 5).
+**Triggers:** `rising(g)`, `falling(g)`, `crossing(g)` (zero crossings of `g`), `at τ`, `every Δ [from τ0]`, `start`, `request`, `E` (after event `E` occurs or is emitted), `input(i)`. `request(p: T)` and `E(p: T)` receive a payload named `p` (chapter 5); `request(b in c)` receives a member of the collection `c`, and `request(b in c, p: T)` several payloads (chapter 9).
 
 **Inputs:** `input { x: T [= default] }`, values from the environment; a case supplies them with `input { x = v; x = v at τ }` (chapter 5).
 
 **Members** (chapter 9): `a.x`, `c[k].x`; `sum`, `min`, `max`, `any`, `all` of `(e for b in c [if cond])`; `count(c)`, `count(b for b in c if cond)`. In views, `for b in c { reps }` draws one representation per member, named `name[k]`.
 
-**Operations:** `set x = e`, `emit E`, `emit E(v)` (with a payload), `contribute x += e` (contributions to discrete state are not implemented by the prototype, MK-E11).
+**Operations:** `set x = e`, `set b.x = e` (a member's binding), `emit E`, `emit E(v)` (with a payload), `emit E(b, v)` (several), `contribute x += e` (contributions to discrete state are not implemented by the prototype, MK-E11).
 
 ## Types and values
 
@@ -74,11 +74,11 @@ Operators: `+ - * / ^`, `== != < <= > >=`, `and or not`. Units: `m cm mm km s ms
 | `observe { n = e schedule }` | observations | 1, 6 |
 | `timeline { scene s { beat b { actions } } }` | a lesson | 8 |
 
-**Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `circle(P, r)`, `ellipse(P, a, b, rotate: θ)`, `arc(P, r, from: θ1, to: θ2)`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)`, `group(at: P, rotate: θ, scale: k) { members }` (chapter 7). `as name` names one; `{ on drag [head] as p { propose x = e } }` declares its inverse.
+**Representations:** `marker`, `arrow`, `segment`, `polyline`, `polygon`, `circle(P, r)`, `ellipse(P, a, b, rotate: θ)`, `arc(P, r, from: θ1, to: θ2)`, `trace(P every Δ)`, `function_graph`, `series_plot(e every Δ)`, `axes`, `grid`, `label`, `formula`, `equation(name)`, `table(e every Δ)`, `slider`, `number_input`, `toggle`, `button(E)`, `group(at: P, rotate: θ, scale: k) { members }` (chapter 7). `color: red|orange|yellow|green|teal|blue|purple|pink|gray|ink` and `line: solid|dashed|dotted` style drawn kinds (chapter 7); `as name` names one; `{ on drag [head] as p { propose x = e } }` declares its inverse, and `{ on click request E(v) }` the event a click requests; in `for b in c { ... }`, `propose b.x = e` and `request E(b)` act on that member (chapter 9). A view's `on click as q request E(q)` requests `E` with an empty point clicked (chapter 9).
 
 **Observation schedules:** `live`, `every Δ`, `at τ`, `on E [microstep n]`, `over [a, b]`. **Sources:** any expression, `event_log [of E] [where zeno_applied]`, `diagnostics [of element]`, `intervention_log`.
 
-**Timeline actions:** `narrate "..." [for d]`, `run rate r [until E]`, `hold`, `seek τ`, `reset`, `branch`, `highlight name`, `hide name [for d]`, `reveal fade|draw [for d] [in view] { reps }`, `camera view [to P] [zoom z] [for d]`, `in view { reps }`, `show rep`, `intervene { set p = e }`, `request E`, `wait d`, `sequence { ... }`, `explore [limit L] [keep p, ...] { controls } [fallback { actions }]` (chapter 8).
+**Timeline actions:** `narrate "..." [for d]`, `run rate r [until E]`, `hold`, `seek τ`, `reset`, `branch`, `highlight name`, `hide name [for d]`, `reveal fade|draw [for d] [in view] { reps }`, `camera view [to P] [zoom z] [for d]`, `in view { reps }`, `show rep`, `intervene { set p = e }`, `request E`, `request E(v)`, `request E(c[k], v)`, `wait d`, `sequence { ... }`, `explore [limit L] [keep p, ...] { controls } [fallback { actions }]` (chapter 8).
 
 ## Runs
 
@@ -114,10 +114,13 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `crossing` | an event when a value crosses zero either way | 5 |
 | `derived` | values computed from others, always current | 1 |
 | `discrete` | state changed only by events | 5 |
-| `drag` | the gesture of an inverse: `on drag as p` | 7 |
+| `click` | the gesture that requests an event: `on click request E(b)`; in a view, `on click as q request E(q)` | 9 |
+| `drag` | the gesture of an inverse: `on drag as p`; of a member, `propose b.pos = p` | 7, 9 |
 | `else`, `if`, `then` | conditional values; `if` also filters an aggregate and enables an event | 1, 5, 9 |
 | `emit` | an operation that makes another event happen | 5 |
 | `enum`, `match` | enumerations and a choice by case | 5 |
+| `connect`, `disconnect` | operations that make a relation between members and remove one | 9 |
+| `create`, `destroy` | operations that make a member of a collection and remove one | 9 |
 | `equation` | a named relation, shown and optionally checked | 6 |
 | `event` | something that happens at an instant, with operations | 5 |
 | `every` | an event every Δ; a sampled source (`pos every 0.1 s`); an observation schedule | 4, 5, 6 |
@@ -127,16 +130,18 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `falling`, `rising` | an event when a value crosses zero downwards or upwards | 5 |
 | `flow` | how continuous state changes: `der(x) = e` | 4 |
 | `fn` | a declared function | 2 |
-| `for` | a loop over a collection's members, in flows, aggregates and views; also `narrate ... for d`, `presentation P for M` | 7, 8, 9 |
+| `for` | a loop over a collection's members, in flows, events, aggregates and views; also `narrate ... for d`, `presentation P for M` | 7, 8, 9 |
 | `from` | the start of `every Δ from τ0` | 5 |
 | `hide`, `reveal`, `highlight` | timeline actions on representations | 8 |
 | `hold`, `run`, `rate`, `until`, `seek`, `reset`, `wait` | timeline control of the simulation: pause, play at a rate until an event, jump, restart, wait | 8 |
-| `in` | the space of a model (`model M in Plane`), a range (`x in [a, b]`), a view (`in scene { ... }`), a collection (`for b in row`) | 1, 3, 8, 9 |
+| `in` | the space of a model (`model M in Plane`), a range (`x in [a, b]`), a view (`in scene { ... }`), a collection (`for b in row`), a member payload (`request(b in row)`) | 1, 3, 8, 9 |
 | `index` | the number of a member in a collection's overrides | 9 |
+| `intervene` | a timeline action that changes a parameter at the instant shown: `intervene { set p = e }` | 8 |
 | `input` | values supplied from outside, with an optional default; an object's connections | 5, 9 |
 | `intervenable` | state the learner may change | 3 |
 | `learner` | a run's scripted learner inputs | 8 |
 | `live`, `over`, `microstep` | observation schedules: current value, over an interval, at a microstep | 6 |
+| `max` | the capacity of a collection whose members come and go (`Drop[max 40]`); also the aggregate `max(...)` | 9 |
 | `model` | what exists and how it behaves | 1 |
 | `narrate`, `scene`, `sequence`, `timeline` | a lesson's narration, scenes, ordered actions and timeline | 8 |
 | `object`, `parts` | an object type, and the objects and collections a model holds | 9 |
@@ -152,6 +157,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `private` | a binding hidden from outside | 2 |
 | `process` | a named group of flows and events | 4 |
 | `propose` | the binding change an inverse proposes | 7 |
+| `relation` | a relation type, whose endpoints are members of collections | 9 |
 | `request` | an event requested from outside (a button, a lesson) | 5 |
 | `run` | a test case; in timelines, `run rate r` | 1, 8 |
 | `set` | an operation that replaces a value | 5 |
@@ -165,7 +171,6 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `zeno`, `settle` | what happens when an event repeats without end | 5 |
 | `zoom` | the zoom of a `camera` action | 8 |
 | `contribute` | an operation adding to discrete state; not implemented (MK-E11) | reserved for later |
-| `create`, `destroy`, `connect`, `disconnect` | structural operations on collections and relations | reserved for later |
 | `enter` | reserved | reserved for later |
 | `animate`, `bind`, `release` | timeline actions, parsed and reported as not yet implemented | reserved for later |
 
@@ -173,7 +178,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 
 **Reserved** (never names): `space model presentation run object const param input state discrete derived fn flow process event equation constraint on if then else and or not otherwise in where true false zeno stop settle set contribute create destroy connect disconnect emit enter checked within policy reject report intervenable private symbol unit rising falling crossing at every from start request enum match`.
 
-**Contextual** (keywords only where expected, names elsewhere): `for view panel observe live over microstep show as drag propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight animate camera bind release config expect exactly rel of with learner continue`.
+**Contextual** (keywords only where expected, names elsewhere): `for view panel observe live over microstep show as drag click propose permit timeline scene beat sequence rate until hold seek reset branch intervene wait explore limit keep fallback narrate highlight hide reveal zoom animate camera bind release config expect exactly rel of with learner continue`.
 
 ## Diagnostics
 

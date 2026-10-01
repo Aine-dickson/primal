@@ -103,7 +103,7 @@ fn drag_an_arrow_head() {
 
     let down = h.pointer("down", "scene", x + 3.0, y - 2.0, json!({}));
     assert_eq!((down["handled"].clone(), down["action"].clone(), down["ok"].clone()), (json!(true), json!("drag"), json!(true)));
-    assert_eq!(down["target"], json!({ "rep": "VectorPlot.view.scene.arrow.1", "part": "head" }));
+    assert_eq!(down["target"], json!({ "rep": "VectorPlot.view.scene.arrow.1", "part": "head", "drag": true, "click": false }));
     // One metre to the right is 40 view pixels.
     let moved = h.pointer("move", "scene", x + 40.0, y, json!({}));
     assert_eq!(moved["ok"], true);
@@ -264,4 +264,196 @@ fn zoom_and_pan_in_a_lesson() {
     let step = h.key("ArrowRight", json!({ "time": inside }));
     assert_eq!((step["action"].clone(), step["ok"].clone()), (json!("step"), json!(true)), "{step}");
     assert_eq!(step["lesson"]["inputs"].as_array().unwrap().len(), 1);
+}
+
+/// The guide's orbits lab (D-059): a press and release on a planet clicks it, which requests
+/// `remove` for that planet; moving past the tolerance drags it instead; Enter on a focused
+/// planet clicks it; the button adds one.
+#[test]
+fn clicks_and_drags_on_members() {
+    let (mut h, _) = Host::open("g9-orbits", "Sky");
+    let size = [640.0, 480.0];
+    let at = |h: &mut Host, name: &str| {
+        let f = h.frame(0.0);
+        let p = pt(&rep(&f, name)["at"]);
+        px(&f["views"][0], p, size)
+    };
+    let drawn = |h: &mut Host, name: &str| {
+        let f = h.frame(0.0);
+        f["views"].as_array().unwrap().iter().flat_map(|v| v["reps"].as_array().unwrap().iter()).any(|r| r["id"].as_str().unwrap().ends_with(name))
+    };
+    let dims = json!({ "width": size[0], "height": size[1] });
+    let f = h.frame(0.0);
+    assert_eq!(rep(&f, "planet[2]")["drag"], "body");
+    assert_eq!(rep(&f, "planet[2]")["click"], "remove");
+    assert!(rep(&f, "planet[2]")["text"].as_str().unwrap().ends_with(", activate: remove"));
+
+    // Hovering tells the host a planet can be dragged and clicked.
+    let [x, y] = at(&mut h, "planet[2]");
+    let hover = h.pointer("move", "sky", x, y, dims.clone());
+    assert_eq!((hover["hover"]["drag"].clone(), hover["hover"]["click"].clone()), (json!(true), json!(true)));
+
+    // A press and a release 2 px away: a click.
+    assert_eq!(h.pointer("down", "sky", x, y, dims.clone())["action"], "drag");
+    assert_eq!(h.pointer("move", "sky", x + 2.0, y, dims.clone())["ok"], true);
+    let up = h.pointer("up", "sky", x + 2.0, y, dims.clone());
+    assert_eq!((up["action"].clone(), up["ok"].clone()), (json!("click"), json!(true)), "{up}");
+    assert!(!drawn(&mut h, "planet[2]"), "planet 2 removed");
+    assert_eq!(h.op(json!({ "op": "undo" }))["interventions"], 0, "the click was one request");
+    assert!(drawn(&mut h, "planet[2]"));
+
+    // A press moved 30 px: a drag of planet 2, which stays. The framing may grow after it,
+    // so the move is checked in view coordinates: 30 px at the scale the view was drawn.
+    let f = h.frame(0.0);
+    let b: Vec<f64> = f["views"][0]["box"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    let scale = (size[0] / b[2]).min(size[1] / b[3]);
+    let before = pt(&rep(&f, "planet[2]")["at"]);
+    let [x, y] = at(&mut h, "planet[2]");
+    h.pointer("down", "sky", x, y, dims.clone());
+    assert_eq!(h.pointer("move", "sky", x + 30.0, y, dims.clone())["ok"], true);
+    let up = h.pointer("up", "sky", x + 30.0, y, dims.clone());
+    assert_eq!((up["action"].clone(), up["committed"].clone()), (json!("drag"), json!(true)), "{up}");
+    assert!(drawn(&mut h, "planet[2]"));
+    let after = pt(&rep(&h.frame(0.0), "planet[2]")["at"]);
+    assert!((after[0] - before[0] - 30.0 / scale).abs() < 1e-6, "moved by the drag: {before:?} to {after:?}");
+
+    // The dragged planet took focus; Shift+Tab goes back to planet 1, and Enter clicks it.
+    assert!(h.frame(0.0)["focus"].as_str().unwrap().ends_with("planet[2]"));
+    let t = h.key("Tab", json!({ "shift": true }));
+    assert!(t["focus"].as_str().unwrap().ends_with("planet[1]"), "{t}");
+    let k = h.key("Enter", json!({}));
+    assert_eq!((k["action"].clone(), k["ok"].clone()), (json!("click"), json!(true)), "{k}");
+    assert!(!drawn(&mut h, "planet[1]"));
+
+    // The button adds a planet: `planets[3]`.
+    let mut focus = h.key("Tab", json!({}));
+    while !focus["focus"].as_str().unwrap_or("").contains("button") {
+        focus = h.key("Tab", json!({}));
+        assert_eq!(focus["handled"], true, "a button in the focus order");
+    }
+    assert_eq!(h.key("Enter", json!({}))["action"], "press");
+    assert!(drawn(&mut h, "planet[3]"));
+
+    // The protocol names members directly.
+    let r = h.op(json!({ "op": "click", "rep": "planet[3]" }));
+    assert_eq!(r["ok"], true, "{r}");
+    let r = h.op(json!({ "op": "request", "event": "remove", "payload": "planets[3]" }));
+    assert_eq!(r["ok"], false, "already removed: {r}");
+    assert!(r["message"].as_str().unwrap().contains("`planets[3]` is not alive"), "{r}");
+}
+
+/// The guide's orbits lab (D-060): a press and release on an empty point of the sky places a
+/// planet there; a press that moves does not; the protocol's `click_at` does the same in view
+/// coordinates, and a point too near the sun is refused by the event's condition.
+#[test]
+fn clicks_on_an_empty_point() {
+    let (mut h, _) = Host::open("g9-orbits", "Sky");
+    let size = [640.0, 480.0];
+    let dims = json!({ "width": size[0], "height": size[1] });
+    let f = h.frame(0.0);
+    assert_eq!(f["views"][0]["click"], "place");
+    let count = |h: &mut Host| {
+        let f = h.frame(0.0);
+        f["views"][0]["reps"].as_array().unwrap().iter().filter(|r| r["id"].as_str().unwrap().contains("planet[")).count()
+    };
+    assert_eq!(count(&mut h), 2);
+
+    // 2 m below the sun is (0, 160) in view coordinates: nothing is drawn there.
+    let [x, y] = px(&f["views"][0], [0.0, 160.0], size);
+    let down = h.pointer("down", "sky", x, y, dims.clone());
+    assert_eq!((down["action"].clone(), down["target"].clone()), (json!("click"), Json::Null), "{down}");
+    let up = h.pointer("up", "sky", x + 1.0, y, dims.clone());
+    assert_eq!((up["action"].clone(), up["ok"].clone()), (json!("click"), json!(true)), "{up}");
+    assert_eq!(count(&mut h), 3);
+    let at = pt(&rep(&h.frame(0.0), "planet[3]")["at"]);
+    assert!(at[0].abs() < 1e-6 && (at[1] - 160.0).abs() < 1e-6, "placed where clicked: {at:?}");
+
+    // A press that moves past the tolerance is not a click.
+    let f = h.frame(0.0);
+    let [x, y] = px(&f["views"][0], [-160.0, 0.0], size);
+    h.pointer("down", "sky", x, y, dims.clone());
+    assert_eq!(h.pointer("move", "sky", x + 30.0, y, dims.clone())["action"], "cancel");
+    assert_eq!(h.pointer("up", "sky", x + 30.0, y, dims.clone())["handled"], false);
+    assert_eq!(count(&mut h), 3);
+
+    // The protocol's `click_at`, in view coordinates; the sun's surroundings are refused.
+    let r = h.op(json!({ "op": "click_at", "view": "sky", "x": -160.0, "y": 0.0 }));
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(count(&mut h), 4);
+    let r = h.op(json!({ "op": "click_at", "view": "sky", "x": 10.0, "y": 0.0 }));
+    assert_eq!(r["ok"], false, "{r}");
+    assert_eq!(count(&mut h), 4);
+}
+
+/// The guide's dial (D-062): a member of a turned group is found by the pointer and by Tab,
+/// and dragging it up the screen lengthens the hand.
+#[test]
+fn drags_on_members_of_groups() {
+    let (mut h, _) = Host::open("g7-dial", "Knob");
+    let size = [640.0, 480.0];
+    let dims = json!({ "width": size[0], "height": size[1] });
+    let length = |h: &mut Host| -> f64 {
+        let f = h.frame(0.0);
+        f["views"][0]["reps"][0]["members"][1]["at"][1].as_f64().unwrap()
+    };
+    let f = h.frame(0.0);
+    let tip = &f["views"][0]["reps"][0]["members"][1];
+    assert_eq!(tip["drag"], "body", "{tip}");
+    let at = pt(&tip["at"]);
+    let [x, y] = px(&f["views"][0], at, size);
+    let hover = h.pointer("move", "scene", x, y, dims.clone());
+    assert!(hover["hover"]["rep"].as_str().unwrap().ends_with("tip"), "{hover}");
+    let before = length(&mut h);
+    assert_eq!(h.pointer("down", "scene", x, y, dims.clone())["action"], "drag");
+    h.pointer("move", "scene", x, y - 25.0, dims.clone());
+    let up = h.pointer("up", "scene", x, y - 25.0, dims.clone());
+    assert_eq!(up["committed"], true, "{up}");
+    assert!(length(&mut h) < before, "the tip moved up the screen: {before} to {}", length(&mut h));
+    // The dragged member took focus; Tab leaves it (it is the only one) and comes back.
+    assert!(h.frame(0.0)["focus"].as_str().unwrap().ends_with("tip"));
+    assert_eq!(h.key("Tab", json!({}))["handled"], false);
+    let t = h.key("Tab", json!({}));
+    assert!(t["focus"].as_str().unwrap().ends_with("tip"), "{t}");
+    let k = h.key("ArrowUp", json!({}));
+    assert_eq!(k["handled"], true, "{k}");
+}
+
+/// Two touches pinch a view that permits zoom (HI-4.5): spreading them apart zooms in, the
+/// view point under their first midpoint stays under the midpoint, lifting one ends the
+/// pinch, and cancel returns to the framing before it.
+#[test]
+fn pinch_zoom_with_two_touches() {
+    let (mut h, _) = Host::open("rp08", "ProjectileLesson");
+    let box_at = |h: &mut Host| -> Vec<f64> { h.frame(1.0)["views"][0]["box"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect() };
+    let own = box_at(&mut h);
+    let size = h.frame(1.0)["views"][0]["size"].clone();
+    let (w, hh) = (size[0].as_f64().unwrap(), size[1].as_f64().unwrap());
+    let (cx, cy) = (w / 2.0, hh / 2.0);
+    let touch = |id: u64| json!({ "time": 1.0, "pointer": "touch", "id": id });
+    assert_eq!(h.pointer("down", "scene", cx - 20.0, cy, touch(1))["action"], "pan");
+    assert_eq!(h.pointer("down", "scene", cx + 20.0, cy, touch(2))["action"], "pinch");
+    // Twice as far apart: half the box, about the same centre.
+    h.pointer("move", "scene", cx - 40.0, cy, touch(1));
+    let z = h.pointer("move", "scene", cx + 40.0, cy, touch(2));
+    assert_eq!(z["action"], "pinch", "{z}");
+    let zoomed = box_at(&mut h);
+    assert!((zoomed[2] - own[2] / 2.0).abs() < 1e-9 * own[2], "{zoomed:?} from {own:?}");
+    let centre = |b: &[f64]| [b[0] + b[2] / 2.0, b[1] + b[3] / 2.0];
+    assert!((centre(&zoomed)[0] - centre(&own)[0]).abs() < 1e-6 && (centre(&zoomed)[1] - centre(&own)[1]).abs() < 1e-6, "{zoomed:?}");
+    // Both touches moving together move the view with them.
+    h.pointer("move", "scene", cx - 30.0, cy, touch(1));
+    h.pointer("move", "scene", cx + 50.0, cy, touch(2));
+    let moved = box_at(&mut h);
+    assert!(moved[0] < zoomed[0], "the content follows the touches to the right: {moved:?}");
+    assert_eq!(h.pointer("up", "scene", cx + 50.0, cy, touch(2))["action"], "pinch");
+    assert_eq!(box_at(&mut h), moved, "the view stays where it was pinched to");
+    // A pinch cancelled returns to where it began.
+    h.pointer("down", "scene", cx - 20.0, cy, touch(3));
+    h.pointer("down", "scene", cx + 20.0, cy, touch(4));
+    h.pointer("move", "scene", cx + 60.0, cy, touch(4));
+    assert_eq!(h.pointer("cancel", "scene", cx, cy, touch(4))["action"], "cancel");
+    assert_eq!(box_at(&mut h), moved);
+    // A mouse never pinches.
+    h.pointer("down", "scene", cx, cy, json!({ "time": 1.0 }));
+    assert_eq!(h.pointer("down", "scene", cx + 10.0, cy, json!({ "time": 1.0 }))["handled"], false);
 }

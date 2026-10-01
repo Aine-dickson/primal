@@ -142,6 +142,7 @@ fn match_body(mt: &mut Matcher, nm: &Model, pm: &Model) {
     mt.pair(&nm.functions, &pm.functions, |f| f.name.clone(), |f| &f.id);
     mt.pair(&nm.parts, &pm.parts, |p| p.name.clone(), |p| &p.id);
     mt.pair(&nm.objects, &pm.objects, |o| o.name.clone(), |o| &o.id);
+    mt.pair(&nm.ends, &pm.ends, |e| e.name.clone(), |e| &e.id);
     for no in &nm.objects {
         if let Some(po) = pm.objects.iter().find(|p| p.name == no.name) {
             match_body(mt, no, po);

@@ -1,7 +1,8 @@
 // Drives the web player in a headless browser through the DevTools protocol with real mouse,
 // wheel and key events, which the player forwards to the engine as raw input (D-047,
 // HI-4.5): hover, drags in a spatial view and in a plot, focus after a drag, a keyboard step,
-// wheel zoom, pan and reset.
+// clicks on members of a collection and their keyboard activation (D-059), wheel zoom, pan
+// and reset.
 //
 // Needs Node 22 or later, the player built (`./web/build.sh`) and Microsoft Edge or Chrome
 // (path in the BROWSER environment variable, or the default Edge path on Windows).
@@ -104,6 +105,50 @@ await sleep(200);
 const handle = await title('QuadraticPlot.view.plot.handle');
 check('a drag in a plot moves the handle up', !/y = 1$/.test(handle), handle);
 
+// The guide's orbits lab (D-059): a click on a planet removes it; Enter on a focused planet
+// clicks it.
+await open('g9-orbits/Sky');
+const planet = (k) => `Sky.view.sky.planet[${k}]`;
+const shown = (k) => ev(`!!document.querySelector('[data-rep="${planet(k)}"]')`);
+check('planets are drawn', (await shown(1)) && (await shown(2)));
+const [cx, cy] = await center(`[data-rep="${planet(2)}"] circle.marker`);
+await mouse('mouseMoved', cx, cy, { buttons: 0 });
+check('hover over a planet shows a grab cursor', (await ev(`document.querySelector('#views svg').style.cursor`)) === 'grab');
+await mouse('mousePressed', cx, cy);
+await mouse('mouseReleased', cx + 1, cy);
+await sleep(200);
+check('a click on planet 2 removes it', !(await shown(2)) && (await shown(1)));
+check('the text alternative says what activating does', (await title(planet(1))).endsWith('activate: remove'), await title(planet(1)));
+await ev(`document.querySelector('[tabindex][data-rep="${planet(1)}"]').focus()`);
+await key('Enter', 13);
+await sleep(200);
+check('Enter on a focused planet removes it', !(await shown(1)));
+// D-060: an empty point of the sky shows a crosshair, and a click there places a planet.
+await mouse('mouseMoved', cx, cy, { buttons: 0 });
+check('hover over an empty point shows a crosshair', (await ev(`document.querySelector('#views svg').style.cursor`)) === 'crosshair');
+await mouse('mousePressed', cx, cy);
+await mouse('mouseReleased', cx, cy);
+await sleep(200);
+check('a click on an empty point places planet 3', await shown(3));
+
+// D-061: the author's color reaches the browser, from the theme's palette.
+await open('g7-wheel/WheelView');
+const valveFill = await ev(`getComputedStyle(document.querySelector('[data-rep$="valve"] circle.marker')).fill`);
+check('the valve is drawn in the red of the theme', ['rgb(198, 40, 40)', 'rgb(255, 138, 128)'].includes(valveFill), valveFill);
+
+// D-062: a member of a turned group is dragged in the group's frame.
+await open('g7-dial/Knob');
+const tipSel = '[data-rep$="tip"] circle.marker';
+check('the dial tip can be grabbed', !!(await ev(`document.querySelector('${tipSel}')`)));
+const tipBefore = await title('Knob.view.scene.dial.tip');
+const [tx, ty] = await center(tipSel);
+await mouse('mousePressed', tx, ty);
+await mouse('mouseMoved', tx, ty - 20);
+await mouse('mouseReleased', tx, ty - 20);
+await sleep(200);
+const tipAfter = await title('Knob.view.scene.dial.tip');
+check('dragging the tip up lengthens the hand', tipAfter !== tipBefore, `${tipBefore} to ${tipAfter}`);
+
 // RP-08 permits zoom and pan.
 await open('rp08/ProjectileLesson@1');
 const vb = () => ev(`document.querySelector('#views svg').getAttribute('viewBox')`);
@@ -122,6 +167,15 @@ check('a press and move on empty space pans', +panned.split(' ')[0] < +zoomed.sp
 await ev(`[...document.querySelectorAll('figcaption button')].find((b) => b.textContent === 'Reset view').click()`);
 await sleep(200);
 check('Reset view returns to the framing', (await vb()) === before);
+// Two touches spreading apart pinch the view in (HI-4.5).
+const pts = (d) => [{ x: sx - d, y: sy, id: 1 }, { x: sx + d, y: sy, id: 2 }];
+await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(20) });
+await cdp('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(40) });
+await cdp('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(60) });
+await cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+await sleep(200);
+const pinched = await vb();
+check('two touches spreading apart zoom in', +pinched.split(' ')[2] < +before.split(' ')[2] * 0.6, `${before} to ${pinched}`);
 
 ws.close();
 edge.kill();
