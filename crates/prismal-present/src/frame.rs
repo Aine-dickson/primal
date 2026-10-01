@@ -331,6 +331,22 @@ impl ViewCtx {
         }
     }
 
+    /// The coordinates of a position as text shows them. In a spatial view a coordinate that
+    /// lies within a millionth of a pixel of 0 is rounding left by the solver (a ball resting
+    /// on the ground at `y = -3.7e-10 m`) and is shown as 0; the view's scale decides, so a
+    /// model of atoms drawn at a fitting scale keeps its small lengths. In a plot view the same
+    /// holds for a billionth of the axis span. Elsewhere `components`.
+    pub fn shown(&self, c: &[f64]) -> Vec<f64> {
+        match self {
+            ViewCtx::Spatial { px_per_m, .. } => c.iter().map(|&x| if (x * px_per_m).abs() < 1e-6 { 0.0 } else { x }).collect(),
+            ViewCtx::Plot { x, y, .. } => {
+                let spans = [(x.1 - x.0).abs(), (y.1 - y.0).abs()];
+                c.iter().enumerate().map(|(i, &v)| if i < 2 && v.abs() < 1e-9 * spans[i] { 0.0 } else { v }).collect()
+            }
+            ViewCtx::Panel => crate::text::components(c),
+        }
+    }
+
     /// A pointer position in view coordinates as a point in the frame of a group (D-043):
     /// the value of a drag on a member of the group.
     pub fn pointer_in(&self, p: [f64; 2], tf: &Tf) -> Expr {
@@ -900,7 +916,8 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             Ok(v) => {
                 let c = coords(&v);
                 let unit = if matches!(ctx, ViewCtx::Spatial { .. }) { " m" } else { "" };
-                (Shape::Point { at: ctx.to_view(&c) }, format!("{label} at x = {}{unit}, y = {}{unit}", fmt_num(c[0]), fmt_num(c[1])))
+                let s = ctx.shown(&c);
+                (Shape::Point { at: ctx.to_view(&c) }, format!("{label} at x = {}{unit}, y = {}{unit}", fmt_num(s[0]), fmt_num(s[1])))
             }
             Err(s) => status(s),
         },
@@ -1059,7 +1076,8 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
                     let closed = r.rep.kind != "arc";
                     let shape = Shape::Ellipse { center: cv, radii: [u[0].hypot(u[1]), v[0].hypot(v[1])], rotation, start: sense * t1, sweep: sense * (t2 - t1), closed };
                     let name = r.rep.name.as_deref().map(|n| format!(" {n}")).unwrap_or_default();
-                    let at = format!("x = {} m, y = {} m", fmt_num(c[0]), fmt_num(c[1]));
+                    let s = ctx.shown(&c);
+                    let at = format!("x = {} m, y = {} m", fmt_num(s[0]), fmt_num(s[1]));
                     let deg = |x: f64| fmt_num(x.to_degrees());
                     let text = match r.rep.kind.as_str() {
                         "circle" => format!("circle{name} around {at}, radius {} m", fmt_num(a)),
@@ -1274,4 +1292,21 @@ pub fn rep_view(p: &prismal_ir::present::Presentation, id: &str) -> Option<Optio
         return Some(Some(v.id.clone()));
     }
     p.timeline.iter().flat_map(|t| t.scenes.iter().flat_map(|s| &s.beats)).find_map(|b| in_actions(&b.actions, id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rounding_near_zero_is_shown_as_zero() {
+        let ground = ViewCtx::Spatial { space: "S".into(), px_per_m: 50.0, y_up: true };
+        assert_eq!(ground.shown(&[0.0, -3.74851e-10]), vec![0.0, 0.0]);
+        assert_eq!(ground.shown(&[2.0, 0.5]), vec![2.0, 0.5]);
+        // Atoms drawn at 1e11 px/m keep a length of 1e-10 m.
+        let atoms = ViewCtx::Spatial { space: "S".into(), px_per_m: 1e11, y_up: true };
+        assert_eq!(atoms.shown(&[1e-10, 0.0]), vec![1e-10, 0.0]);
+        let plot = ViewCtx::Plot { x: (0.0, 10.0), y: (-1.0, 1.0), dims: (Dim::default(), Dim::default()) };
+        assert_eq!(plot.shown(&[1e-12, 0.25]), vec![0.0, 0.25]);
+    }
 }
