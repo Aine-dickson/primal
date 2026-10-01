@@ -193,6 +193,41 @@ A second request for the same pair, in either order, is refused. See [chapter 9]
 
 ## Show things
 
+### Give the page and its views titles
+
+Use **title** in the presentation, and **title(...)** inside a view or panel.
+
+```prismal
+// presentation
+title "Dropping a ball"
+// presentation / view or panel
+title("The fall")
+```
+
+See [chapter 7](07-presentations.md), Text and titles.
+
+### Write a sentence that shows a value
+
+Use **text** with the value in braces.
+
+```prismal
+// presentation / panel (or view)
+text("The ball is {pos.y} above the ground.")
+text("start", at: origin + (0 m, h))        // placed at a point of a spatial view
+```
+
+### Show something only when a condition holds
+
+Add **when:** to the representation: text, marker, arrow, slider, anything.
+
+```prismal
+// presentation / panel
+text("Falling...", when: airborne)
+text("Landed.", when: not airborne)
+```
+
+See [chapter 7](07-presentations.md), Text and titles.
+
 ### Plot a formula and change it live
 
 Combine a **derived function**, a **plot view** and **function_graph**, plus sliders for its parameters.

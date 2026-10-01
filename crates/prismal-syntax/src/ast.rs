@@ -390,6 +390,8 @@ pub enum PresItem {
     Timeline(Vec<SceneDecl>),
     /// `layout row(scene, column(energy, controls))` (PK-7.4a, D-063).
     Layout(LayoutNode),
+    /// `title "..."` (D-076).
+    Title(String),
 }
 
 /// A view, or views in a row or a column; the name of a row or column is its keyword.

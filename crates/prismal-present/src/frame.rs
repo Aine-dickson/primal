@@ -230,6 +230,10 @@ pub enum Shape {
     Table { columns: Vec<String>, rows: Vec<Vec<String>> },
     /// A group's members, already placed by its transform (D-043).
     Group { members: Vec<RepFrame> },
+    /// An author's text placed at a point of a spatial or plot view (D-076).
+    Note { at: [f64; 2], value: String },
+    /// A title: the caption of the view or panel it is in (D-076).
+    Title { value: String },
 }
 
 impl Shape {
@@ -445,6 +449,10 @@ pub enum CKind {
     /// A scalar against elapsed time, sampled every `every` seconds (PK-6.3).
     Series { value: CExpr, every: f64, label: String },
     Label { value: CExpr, ty: Type, label: String },
+    /// An author's text: the pieces between values, the values with their types and, for a
+    /// binding, its index (shown in its display unit), and where it is placed (D-076).
+    Text { pieces: Vec<String>, values: Vec<(CExpr, Type, Option<usize>)>, at: Option<CExpr> },
+    Title { value: String },
     Formula { lhs: String, rhs: Expr, params: Vec<String>, refs: Vec<(Id, usize)>, live: bool },
     Control { control: String, binding: Id, idx: usize, min: Option<f64>, max: Option<f64>, step: Option<f64> },
     Poly { points: Vec<CExpr>, closed: bool },
@@ -685,6 +693,39 @@ pub fn compile_rep(cm: &CModel, ctx: &ViewCtx, full: &Rep) -> Result<CRep, Vec<P
             let (c, t) = ce(e, None)?;
             CKind::Label { value: c, ty: t, label: label(e) }
         }
+        // `text("bounced {n} times", at: P)` (D-076): the template's `{}` are its values.
+        "text" => {
+            let Some(Arg::Text { text }) = rep.sources.first() else { return Err(needs("a text in quotes: `text(\"Drag the ball\")`")) };
+            let pieces = split_template(text);
+            let mut values = vec![];
+            for a in &rep.sources[1..] {
+                let Arg::Expr { expr } = a else { return Err(needs("values in braces")) };
+                let (c, t) = ce(expr, None)?;
+                let idx = match expr {
+                    Expr::Ref { r#ref } => cm.index.get(r#ref).copied(),
+                    _ => None,
+                };
+                values.push((c, t, idx));
+            }
+            if pieces.len() != values.len() + 1 {
+                return Err(needs("as many values as `{}` in its text"));
+            }
+            let at = match (prop_expr(rep, "at"), ctx) {
+                (None, _) => None,
+                (Some(e), ViewCtx::Spatial { space, .. }) => Some(ce(e, Some(&Type::Point { space: space.clone() }))?.0),
+                (Some(e), ViewCtx::Plot { dims, .. }) => {
+                    let q = |d: &Dim| Type::Quantity { dim: *d };
+                    Some(ce(e, Some(&Type::Tuple { items: vec![q(&dims.0), q(&dims.1)] }))?.0)
+                }
+                (Some(_), ViewCtx::Panel) => return Err(d("PK-E05", "a text in a panel has no place to be put `at` (D-076)".into())),
+            };
+            CKind::Text { pieces, values, at }
+        }
+        // `title("The flight")`: the caption of its view or panel (D-076).
+        "title" => match rep.sources.first() {
+            Some(Arg::Text { text }) => CKind::Title { value: text.clone() },
+            _ => return Err(needs("a title in quotes")),
+        },
         "formula" => {
             let live = matches!(prop_expr(rep, "live"), Some(Expr::Bool { bool: true }));
             let (lhs, rhs, params) = match (rep.sources.first(), rep.sources.get(1)) {
@@ -1054,6 +1095,26 @@ fn project_in(cm: &CModel, ctx: &ViewCtx, r: &CRep, run: &Run, vals: &[Value], t
             };
             (Shape::Polyline { points: pts }, text)
         }
+        CKind::Text { pieces, values, at } => {
+            let mut s = pieces[0].clone();
+            for (k, (c, ty, idx)) in values.iter().enumerate() {
+                match eval(c) {
+                    Ok(v) => s.push_str(&match idx {
+                        Some(i) => fmt_binding(cm, *i, &v),
+                        None => fmt_value(&v, ty),
+                    }),
+                    // A value that is not available shows as `?`, as a label shows its status.
+                    Err(_) => s.push('?'),
+                }
+                s.push_str(&pieces[k + 1]);
+            }
+            match at.as_ref().map(eval) {
+                None => (Shape::Text { value: s.clone() }, s),
+                Some(Ok(p)) => (Shape::Note { at: ctx.to_view(&coords(&p)), value: s.clone() }, s),
+                Some(Err(st)) => status(st),
+            }
+        }
+        CKind::Title { value } => (Shape::Title { value: value.clone() }, value.clone()),
         CKind::Label { value, ty, label } => match eval(value) {
             Ok(v) => {
                 let s = fmt_value(&v, ty);
@@ -1382,3 +1443,25 @@ mod tests {
         assert_eq!(plot.shown(&[1e-12, 0.25]), vec![0.0, 0.25]);
     }
 }
+
+/// The pieces of a `text` template between its `{}` (literal braces written doubled), D-076.
+pub fn split_template(t: &str) -> Vec<String> {
+    let (mut pieces, mut cur) = (vec![], String::new());
+    let mut chars = t.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (c, chars.peek()) {
+            ('{', Some('{')) | ('}', Some('}')) => {
+                chars.next();
+                cur.push(c);
+            }
+            ('{', Some('}')) => {
+                chars.next();
+                pieces.push(std::mem::take(&mut cur));
+            }
+            _ => cur.push(c),
+        }
+    }
+    pieces.push(cur);
+    pieces
+}
+

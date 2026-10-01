@@ -116,6 +116,10 @@ pub fn render(layout: &Json, frame: &Json, opts: &Options) -> String {
         }
         blocks.push(text_block(&h, 12.0, false, th.muted));
     }
+    // The presentation's title (D-076).
+    if let Some(t) = layout["title"].as_str() {
+        blocks.push(text_block(t, 18.0, false, th.ink));
+    }
     let lesson = layout["mode"] == "lesson";
     // In a lesson, controls act only in explore beats (PK-9.8, D-025).
     let explore = !lesson || arr(&layout["lesson"]["explore"]).iter().any(|x| f(&frame["time"]) >= f(&x["start"]) && f(&frame["time"]) < f(&x["end"]));
@@ -303,13 +307,20 @@ impl Map {
     }
 }
 
-const DRAWN: [&str; 7] = ["point", "arrow", "segment", "polyline", "polygon", "ellipse", "group"];
+const DRAWN: [&str; 8] = ["point", "arrow", "segment", "polyline", "polygon", "ellipse", "group", "note"];
 
 fn view_block(vl: &Json, vf: &Json, clip: usize, opts: &Options) -> Block {
     let th = &opts.theme;
     let kind = s(&vl["kind"]);
     let reps = arr(&vf["reps"]);
-    let mut parts: Vec<Block> = vec![text_block(&format!("{} ({})", s(&vl["name"]), kind), 12.0, false, th.muted)];
+    // The author's `title(...)`, or the view's name and kind (D-076). Reusing the frame
+    // representation preserves its identity and text alternative in the SVG.
+    let caption = match (vl["title"].as_str(), reps.iter().find(|r| r["shape"] == "title")) {
+        (Some(_), Some(r)) => item(r, false, opts),
+        (Some(t), None) => text_block(t, 13.0, false, th.ink),
+        (None, _) => text_block(&format!("{} ({})", s(&vl["name"]), kind), 12.0, false, th.muted),
+    };
+    let mut parts: Vec<Block> = vec![caption];
     let mut panel: Vec<Block> = vec![];
     if kind == "spatial" || kind == "plot" {
         // The engine gives the box of view coordinates the view shows (its framing, the
@@ -362,7 +373,7 @@ fn view_block(vl: &Json, vf: &Json, clip: usize, opts: &Options) -> Block {
                 // Draggable representations are drawn last and outside the plot's clip.
                 let target = if r["drag"].is_string() { &mut top } else { &mut drawn };
                 draw_rep(target, &map, r, u, ci, th);
-            } else if shape != "axes" && shape != "grid" {
+            } else if shape != "axes" && shape != "grid" && shape != "title" {
                 panel.push(item(r, false, opts));
             }
         }
@@ -380,7 +391,7 @@ fn view_block(vl: &Json, vf: &Json, clip: usize, opts: &Options) -> Block {
         let _ = write!(body, "<g>{top}</g></svg>");
         parts.push(Block { w: dw, h: dh, body });
     } else {
-        for r in reps {
+        for r in reps.iter().filter(|r| r["shape"] != "title") {
             panel.push(item(r, false, opts));
         }
     }
@@ -605,6 +616,11 @@ fn draw_rep(out: &mut String, map: &Map, r: &Json, u: f64, ci: usize, th: &Theme
             );
             label(out, p[0] + 10.0 * u, p[1] - 10.0 * u, "");
         }
+        // An author's text at a point (D-076).
+        "note" => {
+            let p = map.to(pt(&r["at"]));
+            *out += &text(p[0], p[1], s(&r["value"]), 13.0 * u, false, custom.as_deref().unwrap_or(th.ink), " class=\"note\"");
+        }
         "arrow" => {
             let (a, b) = (map.to(pt(&r["from"])), map.to(pt(&r["to"])));
             let color = if invalid { th.bad } else { custom.as_deref().unwrap_or(th.reps[ci % 4]) };
@@ -750,7 +766,9 @@ fn item(r: &Json, disabled: bool, opts: &Options) -> Block {
         }
         "table" => table_block(r, th),
         "control" => control_block(r, disabled, th),
-        "text" => text_block(s(&r["text"]), 14.0, true, th.ink),
+        "title" => text_block(s(&r["text"]), 13.0, false, th.ink),
+        // A label's value in a fixed-width face; an author's text in the text face (D-076).
+        "text" => text_block(s(&r["text"]), 14.0, r["kind"] != "text", th.ink),
         "status" => text_block(s(&r["text"]), 14.0, false, th.bad),
         _ => text_block(s(&r["text"]), 12.0, false, th.muted),
     };

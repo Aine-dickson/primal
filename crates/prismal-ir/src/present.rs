@@ -26,6 +26,9 @@ pub struct Presentation {
     pub layout: Option<Layout>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+    /// The presentation's title, shown above its views (D-076).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 /// A page layout (PK-7.4a, D-063): views side by side in a row or one below the other in a

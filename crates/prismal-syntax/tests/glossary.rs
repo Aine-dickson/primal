@@ -142,3 +142,29 @@ presentation Shapes for Figure {
     let again = prismal_syntax::compile(&out).unwrap_or_else(|ds| panic!("{:?}\n{out}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
     assert_eq!(prismal_syntax::format::format(&again.doc), out);
 }
+
+/// Titles, text with values and conditions print back as written (D-076).
+#[test]
+fn text_and_titles_print_back() {
+    let src = "space Plane = euclidean(2)
+model Drop in Plane {
+  state { pos: Point = origin }
+  discrete { up: Boolean = true }
+}
+presentation Lab for Drop {
+  title \"Dropping a ball\"
+  view scene: spatial(Plane, scale: 1 m -> 10 px, y: up) {
+    title(\"The fall\")
+    text(\"start\", at: origin + (1 m, 0 m))
+  }
+  panel notes { text(\"Height {pos.y}, {{braces}}.\", when: not up) as h }
+}
+";
+    let compiled = prismal_syntax::compile(src).unwrap_or_else(|ds| panic!("{:?}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
+    let out = prismal_syntax::format::format(&compiled.doc);
+    for want in ["title \"Dropping a ball\"", "title(\"The fall\")", "text(\"start\", at: origin + (1 m, 0 m))", "text(\"Height {pos.y}, {{braces}}.\", when: not up) as h"] {
+        assert!(out.contains(want), "missing `{want}` in:\n{out}");
+    }
+    let again = prismal_syntax::compile(&out).unwrap_or_else(|ds| panic!("{:?}\n{out}", ds.iter().map(|d| &d.message).collect::<Vec<_>>()));
+    assert_eq!(prismal_syntax::format::format(&again.doc), out);
+}
