@@ -344,7 +344,7 @@ impl<'a> Parser<'a> {
         if self.eat_word("for") {
             let var = self.name("a member name")?;
             self.expect_word("in")?;
-            let over = self.name("a collection")?;
+            let over = self.part_path()?;
             let mut events = self.block(|p| {
                 if p.is_word("event") {
                     Self::one(p.event_decl())
@@ -442,9 +442,14 @@ impl<'a> Parser<'a> {
             let notes = self.notes_before(start.line);
             let name = self.name("an object name")?;
             let members = self.block(|p| p.member())?;
-            return Ok(vec![Member::Object(ObjectDecl { name, ends: vec![], members, notes, span: self.since(start) })]);
+            return Ok(vec![Member::Object(ObjectDecl { name, ends: vec![], undirected: false, members, notes, span: self.since(start) })]);
         }
-        // `relation Spring(a in balls, b in balls) { ... }` (D-058); `relation` is a word only here.
+        // `relation Spring(a in balls, b in balls) { ... }` (D-058), `undirected relation ...`
+        // (D-064); `relation` and `undirected` are words only here.
+        let undirected = self.is_word("undirected") && self.is_word_at(1, "relation");
+        if undirected {
+            self.bump();
+        }
         if self.is_word("relation") && matches!(self.peek_at(1), Tok::Ident(_)) && self.is_punct_at(2, "(") {
             self.bump();
             let notes = self.notes_before(start.line);
@@ -454,14 +459,18 @@ impl<'a> Parser<'a> {
             loop {
                 let n = self.name("an endpoint name")?;
                 self.expect_word("in")?;
-                ends.push((n, self.name("a collection")?));
+                let mut path = vec![self.name("a collection")?];
+                while self.eat_punct(".") {
+                    path.push(self.name("a collection")?);
+                }
+                ends.push((n, path));
                 if !self.eat_punct(",") {
                     break;
                 }
             }
             self.expect_punct(")")?;
             let members = if self.is_punct("{") { self.block(|p| p.member())? } else { vec![] };
-            return Ok(vec![Member::Object(ObjectDecl { name, ends, members, notes, span: self.since(start) })]);
+            return Ok(vec![Member::Object(ObjectDecl { name, ends, undirected, members, notes, span: self.since(start) })]);
         }
         Err(self.unexpected("a declaration (`param`, `state`, `flow`, `event`, ...)"))
     }
@@ -529,7 +538,7 @@ impl<'a> Parser<'a> {
         if self.eat_word("for") {
             let var = self.name("a member name")?;
             self.expect_word("in")?;
-            let over = self.name("a collection")?;
+            let over = self.part_path()?;
             let mut flows = self.block(|p| Self::one(p.flow_stmt()))?;
             for f in &mut flows {
                 f.each = Some((var.clone(), over.clone()));
@@ -1147,7 +1156,7 @@ impl<'a> Parser<'a> {
                     self.bump();
                     let var = self.name("a member name")?;
                     self.expect_word("in")?;
-                    let over = self.name("a collection")?;
+                    let over = self.part_path()?;
                     let filter = if self.eat_word("if") { Some(Box::new(self.expr()?)) } else { None };
                     let agg = Name { text: String::new(), span: s };
                     value = Expr { kind: ExprKind::Aggregate { agg, body: Box::new(value), var, over, filter }, span: self.since(s) };
@@ -1310,6 +1319,18 @@ impl<'a> Parser<'a> {
         Ok(Bound::Value(Box::new(self.expr()?)))
     }
 
+    /// A collection, `balls`, or a path through contained objects, `left.atoms` (D-065), as
+    /// one name with dots.
+    fn part_path(&mut self) -> P<Name> {
+        let mut n = self.name("a collection")?;
+        while self.eat_punct(".") {
+            let next = self.name("a collection")?;
+            n.text = format!("{}.{}", n.text, next.text);
+            n.span = Span { end: next.span.end, ..n.span };
+        }
+        Ok(n)
+    }
+
     // ------------------------------------------------------------ presentations
 
     fn pres_item(&mut self) -> P<Vec<PresItem>> {
@@ -1423,7 +1444,7 @@ impl<'a> Parser<'a> {
         if self.eat_word("for") {
             let var = self.name("a member name")?;
             self.expect_word("in")?;
-            let over = self.name("a collection")?;
+            let over = self.part_path()?;
             let mut reps = self.block(|p| p.rep_item())?;
             for r in &mut reps {
                 if r.each.is_some() {

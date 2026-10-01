@@ -435,6 +435,159 @@ run snaps of Threads with Watch {
 
 A relation that is not made yet, or already disconnected, has no values: `springs[3].stretch` before a third spring is connected is not a number. The count, sums and representations leave it out, as they leave out members that are not alive.
 
+### Relations without a direction
+
+The spring above has a direction: its pull is towards `b` at its `a` end and the other way at its `b` end, so the model sums the pulls at each end separately. A spring has no real direction, though, and nothing should change if its endpoints are swapped. An **undirected** relation says so (D-064):
+
+```text
+space Plane = euclidean(2)
+
+model Chain in Plane {
+  object Ball {
+    param { m: Mass = 1 kg }
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow { der(pos) = vel }
+  }
+  undirected relation Link(a in balls, b in balls) {
+    param {
+      k:    Quantity<M/T^2> = 2 N/m
+      rest: Length          = 1 m
+    }
+    derived { stretch: Length = |b.pos - a.pos| - rest }
+  }
+  parts {
+    balls: Ball[3] { pos = origin + ((index - 1) * 2 m, 0 m) }
+    links: Link[2, max 2] {
+      a = balls[index + 1]
+      b = balls[index]
+    }
+  }
+  flow {
+    for o in balls {
+      der(o.vel) = sum(s.k * s.stretch * (s.other(o).pos - o.pos) / |s.other(o).pos - o.pos| for s in links if s.has(o)) / o.m
+    }
+  }
+  derived {
+    span:   Length = balls[3].pos.x - balls[1].pos.x
+    middle: Real   = count(s for s in links if s.has(balls[2]))
+  }
+}
+```
+
+- `s.has(o)` holds when `o` is either endpoint of `s`; `s.other(o)` is the endpoint that is not `o`. Each ball is pulled towards the other end of every link it is on, in one sum.
+- The links are written with their endpoints in either order (`a = balls[index + 1]`): an undirected relation's result does not depend on it.
+- An undirected relation has its two endpoints in one collection. Outside its body, the model reads its endpoints only with `has` and `other`: `s.a == o` is refused (MK-E26), since an undirected relation has no first end. A presentation may still draw `segment(s.a.pos, s.b.pos)`.
+- `has` and `other` work on any relation with two endpoints in one collection, directed or not.
+
+```text
+presentation ChainView for Chain {
+  view scene: spatial(Plane, scale: 1 m -> 40 px, y: up) {
+    for o in balls { marker(o.pos) as ball }
+    for s in links { segment(s.a.pos, s.b.pos) as link }
+  }
+  observe {
+    span   = span at t0 + 1 s
+    middle = middle live
+  }
+}
+```
+
+The three balls start 2 m apart on links of rest length 1 m. The pulls on the middle ball cancel, so it stays; each outer ball oscillates on one link from a fixed point with `ω = sqrt(k / m) = sqrt 2 rad/s`, and the span is `2 (1 + cos(sqrt 2 t))` m.
+
+```cases
+run symmetric of Chain with ChainView {
+  until t0 + 1 s
+  expect {
+    span   == 2.311887 m within 1e-6 m
+    middle == 2 within 1e-12
+  }
+}
+```
+
+### Relations across containers
+
+An endpoint's collection may belong to a contained object: a bond between atoms of two different cells is held by the model that contains both cells (D-065). The collection is named by its path, `left.atoms`, and so are its members and loops:
+
+```text
+space Plane = euclidean(2)
+
+model Cells in Plane {
+  object Atom {
+    param { m: Mass = 1 kg }
+    state {
+      pos: Point            = origin
+      vel: Vector<Velocity> = 0
+    }
+    flow { der(pos) = vel }
+  }
+  object Cell {
+    param { x0: Length = 0 m }
+    parts {
+      atoms: Atom[2, max 2] { pos = origin + (x0, (index - 1) * 1 m) }
+    }
+    event release on at t0 + 1.5 s { destroy atoms[1] }
+  }
+  relation Bond(a in left.atoms, b in right.atoms) {
+    param {
+      k:    Quantity<M/T^2> = 2 N/m
+      rest: Length          = 1 m
+    }
+    derived { pull: Vector<Force> = k * (|b.pos - a.pos| - rest) * (b.pos - a.pos) / |b.pos - a.pos| }
+  }
+  parts {
+    left:  Cell { x0 = -1 m }
+    right: Cell { x0 = 1 m }
+    bonds: Bond[1, max 2] {
+      a = left.atoms[1]
+      b = right.atoms[1]
+    }
+  }
+  flow {
+    for o in left.atoms  { der(o.vel) = sum(s.pull for s in bonds if s.a == o) / o.m }
+    for o in right.atoms { der(o.vel) = -sum(s.pull for s in bonds if s.b == o) / o.m }
+  }
+  derived {
+    gap:   Length = right.atoms[1].pos.x - left.atoms[1].pos.x
+    links: Real   = count(bonds)
+  }
+}
+```
+
+- `relation Bond(a in left.atoms, b in right.atoms)`: the endpoints are atoms of the cell `left` and of the cell `right`. A path goes through contained objects, never through a collection: `cells[1].atoms` is not a collection of the model.
+- `left.atoms[1]`, `for o in left.atoms` and `count(left.atoms)` name members and collections of contained objects the same way.
+- Each cell lets go of its first atom at 1.5 s, in an event of the cell. Destroying an atom disconnects the bonds that end at it, wherever they are held.
+
+```text
+presentation Bonds for Cells {
+  view scene: spatial(Plane, scale: 1 m -> 50 px, y: up) {
+    for o in left.atoms { marker(o.pos) as l }
+    for o in right.atoms { marker(o.pos) as r }
+    for s in bonds { segment(s.a.pos, s.b.pos) as bond }
+  }
+  observe {
+    gap    = gap at t0 + 1 s
+    before = links at t0 + 1 s
+    after  = links at t0 + 2 s
+  }
+}
+```
+
+The bonded atoms start 2 m apart on a bond of rest length 1 m, like the spring pair: their gap after 1 s is `1 + cos 2` m.
+
+```cases
+run bonded of Cells with Bonds {
+  until t0 + 2 s
+  expect {
+    gap    == 0.583853 m within 1e-6 m
+    before == 1 within 1e-12
+    after  == 0 within 1e-12
+  }
+}
+```
+
 ## Labs with members
 
 A lab with many objects lets the learner act on one of them: drag this planet, remove that one. The learner's action has to say **which** member it is about. An event can receive a member as its payload (D-059):

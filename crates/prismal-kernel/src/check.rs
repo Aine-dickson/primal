@@ -208,7 +208,7 @@ impl<'a, 'b> Tc<'a, 'b> {
                 }
             }
             // Members and aggregates are replaced by elaboration before checking (D-055).
-            Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } | Expr::End { .. } => {
+            Expr::Field { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::Aggregate { .. } | Expr::End { .. } | Expr::Other { .. } | Expr::Has { .. } => {
                 self.err("MK-E00", "a member or an aggregate in a model that was not elaborated (D-055)".into())
             }
             Expr::Payload { payload } => match &self.payload {
@@ -1006,7 +1006,7 @@ fn check_ops(tc: &mut Tc, model: &Model, index: &HashMap<Id, usize>, ops: &[Op],
             Op::Set { target, .. } | Op::Contribute { target, .. } if target.member.is_some() => {
                 tc.err("MK-E00", format!("a member's binding `{}` in a model that was not elaborated (D-057)", target.binding));
             }
-            Op::Create { .. } | Op::Connect { .. } | Op::Disconnect { .. } | Op::Destroy { member: Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. } } => {
+            Op::Create { .. } | Op::Connect { .. } | Op::Disconnect { .. } | Op::Destroy { member: Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. } | Expr::Other { .. } } => {
                 tc.err("MK-E00", "`create`, `destroy`, `connect` or `disconnect` in a model that was not elaborated (D-057, D-058)".into());
             }
             // After elaboration a destroy names the member's liveness binding (D-057).

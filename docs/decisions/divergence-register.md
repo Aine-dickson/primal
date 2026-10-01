@@ -83,6 +83,8 @@ The exploration documents are frozen. They are not edited to reflect later decis
 | D-062 | Drags on members of a group: the gesture's value is the pointer in the group's frame | Accepted |
 | D-061 | Author styles: `color:` from a named palette each medium maps to its theme; `line:` solid, dashed or dotted | Accepted |
 | D-063 | Page layout: `layout` places views in nested rows and columns; views left out follow it; media adapt it to their size | Accepted |
+| D-064 | Undirected relations: `undirected relation`, endpoints in one collection read with `s.has(o)` and `s.other(o)` | Accepted |
+| D-065 | Relations across containers: endpoints, members and loops named by part paths through contained objects (`left.atoms`) | Accepted |
 
 ---
 
@@ -1186,5 +1188,39 @@ The exploration documents are frozen. They are not edited to reflect later decis
 - **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. A presentation has at most one `layout` item, a view name, `row(...)` or `column(...)` with at least one item each, nested freely. Every name is a view or panel of the presentation, placed at most once (SX-E03 for an unknown name, SX-E09 for a view placed twice or a second layout; PK-E01 for a layout written in the IR). Views the layout leaves out follow it, one below the other, in declaration order. `layout`, `row` and `column` are contextual keywords (D-040). The IR carries the tree with view identities (`{"row": [{"view": id}, {"column": [...]}]}`), so renames keep it; the host's layout gives it as `page`, with the views left out appended. Without a layout, each medium arranges views as before.
 - **Reason:** the author decides relations (this plot belongs beside this scene; the readout under the controls), which hold on every page; sizes and breakpoints depend on the medium, which knows its page. A tree of rows and columns is the smallest form that says this, and it reads as the page looks.
 - **Consequences:** PK-7.4a; 04-ir section 7.1; working syntax 1.2; IR `present::Layout` and `Presentation::layout`; parser, lowering, formatter; presentation checks; the host's `page`; `prismal-svg` places views in rows (top aligned) and columns, so still images and videos follow the layout; the web player builds rows and columns and turns rows into columns below 700 px; guide chapter 7, Laying out views; `prismal-svg/tests/layout.rs`. Not yet: weights or sizes per view, alignment choices, and layouts that change during a lesson.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-064: Undirected relations
+
+- **Status:** Accepted
+- **Original position:** MK-8.5 declares "whether it is directed" as part of a relation type. D-058 made every relation directed, with named roles, and left undirected relations to be "written by testing both roles": guide chapter 9's springs sum the pulls at the `a` ends and subtract those at the `b` ends, so a spring declared with its endpoints swapped changes the model's text but must not change its motion.
+- **Raised by:** PROJECT-STATE, "Not implemented" (undirected relations as a declared property); the owner's list of 2026-10-01.
+- **Builds on:** MK-8.5, MK-8.5a, MK-8.6a, D-055, D-058, D-059.
+- **Question:** What does declaring a relation undirected change, and how does a model read an undirected relation's endpoints?
+- **Options considered:**
+  1. **A declared property with order-free readings.** `undirected relation Link(a in balls, b in balls)`: its two endpoints are in one collection; two expressions read any relation's endpoints without an order, `s.has(o)` (is `o` an endpoint) and `s.other(o)` (the endpoint that is not `o`); outside the relation's body, the model reads an undirected relation's endpoints only through them. Its body still names `a` and `b` to define its values.
+  2. **Only the two expressions**, with no declared property. Convenient, but the model can still read `s.a` and make its motion depend on an order the relation does not have; nothing records the author's intent.
+  3. **Unordered pairs throughout**, with a relation set holding at most one relation per pair and `connect` of a joined pair refused. A stronger statement (a simple graph), which some content wants (bonds) and some does not (two springs in parallel); it can be added later as its own property.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. `undirected` is a word only before `relation`. `has` and `other` apply to any relation with two endpoints in one collection; `s.other(o)` is a member (its bindings are read, `s.other(o).pos`, and it compares with `==`); when both endpoints are `o`, it is `o`; a member of another collection is never an endpoint (`has` is false, `other` is an error). An undirected relation over two collections, or reading `s.a` of one in the model outside its body, is MK-E26. Presentations may read `s.a` and `s.b` to draw it. Several relations between the same members stay allowed. The IR marks the relation type `"undirected": true` and has the expressions `{"other": member, "rel": relation}` and `{"has": member, "rel": relation}`, elaborated to comparisons and picks of endpoint numbers.
+- **Reason:** the property records what the author means and lets the language hold the model to it: forces summed over `s.has(o)` with `s.other(o)` are the same whichever end was written first. The body keeps role names because a relation's values are often written from one end to the other (`b.pos - a.pos`); what must not depend on the order is how the model uses them.
+- **Consequences:** MK-8.5b; 04-ir; working syntax; the parser, lowering, formatter and elaboration; guide chapter 9, Relations without a direction; `prismal-present/tests/undirected.rs`. Not yet: relation sets with at most one relation per pair (option 3), and enforcing order independence inside the body.
+- **History:**
+  - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.
+
+## D-065: Relations across containers
+
+- **Status:** Accepted
+- **Original position:** MK-8.6 has relation instances held "in a relation set owned by an object", with endpoints typed by object types anywhere. D-058 restricted endpoints to collections of the model that declares the relation and left out "relations between members of different containers": a bond between atoms of two cells, each cell holding its atoms, could not be written. Nor could the model name `left.atoms` at all: member expressions and loops took collections of the scope only.
+- **Raised by:** PROJECT-STATE, "Not implemented"; the owner's list of 2026-10-01.
+- **Builds on:** MK-7.10, MK-8.5a, MK-8.6, MK-8.6a, D-055, D-057, D-058.
+- **Question:** How does a relation reach members held by contained objects, and how are such collections named elsewhere?
+- **Options considered:**
+  1. **Part paths through contained objects.** A collection is named by a path, `left.atoms`, through parts that are one object each; the same path names its members (`left.atoms[1]`), loops (`for o in left.atoms`) and aggregates (`count(left.atoms)`). In the IR, a part reference may be a path of part identities joined by `/`. The relation set lives in the container that contains both cells.
+  2. **Relations declared inside an object type with endpoints in its container's collections.** Turns scope inside out (an object reaching outward), against MK-7.10's rule that a container reads its parts and not the reverse.
+  3. **Endpoints in any collection of a type anywhere.** D-058 option 1: every collection of the type becomes a candidate for every endpoint, which elaboration cannot bound and readers cannot follow.
+- **Accepted position:** option 1, under the owner's standing delegation of 2026-09-30. A path goes through contained objects only; a collection inside it (`cells[1].atoms`) is SX-E08 (MK-E26 in the IR). Destroying a member disconnects every relation with that member at an endpoint, in any relation set of the model, not only in its own container (MK-8.6 as written; MK-8.6a narrowed it to the container while endpoints could only be there). Creating members of a collection inside a contained object from outside it is not included: a cell makes its own atoms.
+- **Reason:** paths are how the language already reads a contained object's bindings (`ball.pos`); extending them to collections keeps one way of naming things, and part identities joined by `/` keep identities stable under renames (D-036) without a new IR form for every place a collection is named.
+- **Consequences:** MK-8.5c, MK-8.6a amended; 04-ir (part paths, `PART_PATH`); working syntax; parser (`part_path`), lowering (`part_ref`), formatter, elaboration (`members` and `coll_of` walk paths; `relation_sets` finds relation sets anywhere); guide chapter 9, Relations across containers; `prismal-present/tests/across.rs`. Not yet: `create` and `connect` written outside the container of the collection they change, paths through collections chosen by number.
 - **History:**
   - 2026-10-01 accepted under the owner's standing delegation of 2026-09-30 and implemented.

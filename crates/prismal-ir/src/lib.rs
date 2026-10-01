@@ -497,6 +497,10 @@ pub struct Model {
     /// type. A part whose type has ends is a relation set.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ends: Vec<End>,
+    /// An undirected relation type (MK-8.5b, D-064): its two endpoints, in one collection,
+    /// have no order outside its body.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub undirected: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
@@ -507,8 +511,14 @@ pub struct Model {
 pub struct End {
     pub id: Id,
     pub name: String,
+    /// The collection: a part of the containing model, or a part path through contained
+    /// objects, `a in left.atoms` (D-065).
     pub over: Id,
 }
+
+/// The separator of a part path: the identities of contained objects, then of a part of the
+/// last of them (`Cells.part.left/Cells.Cell.part.atoms`, D-065).
+pub const PART_PATH: char = '/';
 
 /// A declared enumeration (MK-2.2, D-049): a nominal type whose values are its cases. Its
 /// identity is `Model.enum.Name`; types that use it carry that identity and the cases.

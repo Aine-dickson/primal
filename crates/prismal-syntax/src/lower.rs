@@ -205,7 +205,9 @@ impl<'a> ModelCx<'a> {
         // A relation type's endpoints, with the object types of their collections (D-058).
         for o in &m.objects {
             for e in &o.ends {
-                let ty = m.parts.iter().find(|p| p.id == e.over).map(|p| p.object.rsplit('.').next().unwrap_or(&p.object).to_string()).unwrap_or_default();
+                // The last part of a part path (D-065) is declared in the model or an object type.
+                let last = e.over.rsplit(prismal_ir::PART_PATH).next().unwrap_or(&e.over);
+                let ty = std::iter::once(m).chain(&m.objects).flat_map(|x| &x.parts).find(|p| p.id == last).map(|p| p.object.rsplit('.').next().unwrap_or(&p.object).to_string()).unwrap_or_default();
                 objects.get_mut(&o.name).unwrap().ends.insert(e.name.clone(), (e.id.clone(), ty));
             }
         }
@@ -313,12 +315,62 @@ impl<'a> ModelCx<'a> {
         sub.ends = info.ends.clone();
         let mut ty = sub.lower(&decl);
         ty.name = o.name.text.clone();
+        ty.undirected = o.undirected;
         // A relation type's endpoints are members of the model's collections (D-058).
-        for (n, over) in &o.ends {
-            let over_id = self.parts.get(&over.text).map(|p| p.id.clone()).unwrap_or_default();
-            ty.ends.push(prismal_ir::End { id: format!("{}.{}", info.id, n.text), name: n.text.clone(), over: over_id });
+        for (n, path) in &o.ends {
+            let over = self.end_path(path, false).map(|(id, _)| id).unwrap_or_default();
+            ty.ends.push(prismal_ir::End { id: format!("{}.{}", info.id, n.text), name: n.text.clone(), over });
         }
         self.model.objects.push(ty);
+    }
+
+    /// The collection of an endpoint, `balls` or `left.atoms` (D-058, D-065): its part path
+    /// and object type.
+    fn end_path(&mut self, path: &[ast::Name], report: bool) -> Option<(Id, String)> {
+        let text = path.iter().map(|n| n.text.as_str()).collect::<Vec<_>>().join(".");
+        let span = Span { end: path[path.len() - 1].span.end, ..path[0].span };
+        match self.part_ref(&text) {
+            Ok(p) => Some((p.id, p.object)),
+            Err(m) => {
+                if report {
+                    self.err(if m.starts_with("unknown") { "SX-E03" } else { "SX-E08" }, m, span);
+                }
+                None
+            }
+        }
+    }
+
+    /// A part named by a path through contained objects, `left.atoms` (D-065), or by its
+    /// name: its part path (identities joined by `/`), object type and whether it is a
+    /// collection.
+    pub(crate) fn part_ref(&self, text: &str) -> Result<PartInfo, String> {
+        let names: Vec<&str> = text.split('.').collect();
+        let mut parts = &self.parts;
+        let mut ids = vec![];
+        for (k, n) in names.iter().enumerate() {
+            let Some(p) = parts.get(*n) else { return Err(format!("unknown collection `{n}`")) };
+            ids.push(p.id.clone());
+            if k + 1 == names.len() {
+                return Ok(PartInfo { id: ids.join(&prismal_ir::PART_PATH.to_string()), object: p.object.clone(), many: p.many });
+            }
+            if p.many {
+                return Err(format!("`{n}` is a collection: a path goes through contained objects only (`{n}[1]` is one member)"));
+            }
+            parts = match self.objects.get(&p.object) {
+                Some(o) => &o.parts,
+                None => return Err(format!("unknown collection `{text}`")),
+            };
+        }
+        Err(format!("unknown collection `{text}`"))
+    }
+
+    /// The dotted text of a path of names, `left.atoms`, or `None`.
+    fn dotted(e: &ast::Expr) -> Option<String> {
+        match &e.kind {
+            ExprKind::Name(n) => Some(n.clone()),
+            ExprKind::Field(x, n) => Some(format!("{}.{}", Self::dotted(x)?, n.text)),
+            _ => None,
+        }
     }
 
     /// Lowers the parts of the scope (D-055).
@@ -383,25 +435,59 @@ impl<'a> ModelCx<'a> {
                 }
                 self.parts.get(n).filter(|p| !p.many).map(|p| p.object.clone())
             }
-            ExprKind::Index(x, _) => match &x.kind {
-                ExprKind::Name(n) => self.parts.get(n).filter(|p| p.many).map(|p| p.object.clone()),
+            ExprKind::Index(x, _) => match Self::dotted(x) {
+                Some(n) if !locals.contains(&n) => self.part_ref(&n).ok().filter(|p| p.many).map(|p| p.object),
                 _ => None,
             },
             ExprKind::Field(x, n) => {
                 let t = self.quiet_type(x, locals)?;
                 self.objects.get(&t)?.ends.get(&n.text).map(|(_, t)| t.clone())
             }
+            ExprKind::Call(f, args) if args.len() == 1 => match &f.kind {
+                ExprKind::Field(x, n) if n.text == "other" => {
+                    let t = self.quiet_type(x, locals)?;
+                    self.objects.get(&t)?.ends.values().next().map(|(_, t)| t.clone())
+                }
+                _ => None,
+            },
             _ => None,
         }
     }
 
+    /// `s.other(o)` and `s.has(o)` on a relation `s` (D-064): the method, the relation and
+    /// the member, without reporting anything.
+    fn rel_method<'e>(&self, e: &'e ast::Expr, locals: &[String]) -> Option<(&'e str, &'e ast::Expr, &'e ast::Expr)> {
+        let ExprKind::Call(f, args) = &e.kind else { return None };
+        let ExprKind::Field(x, n) = &f.kind else { return None };
+        let [arg] = args.as_slice() else { return None };
+        if !matches!(n.text.as_str(), "other" | "has") || arg.name.is_some() {
+            return None;
+        }
+        let t = self.quiet_type(x, locals)?;
+        let o = self.objects.get(&t)?;
+        if o.ends.is_empty() || o.bindings.contains_key(&n.text) {
+            return None;
+        }
+        Some((n.text.as_str(), x, &arg.value))
+    }
+
     /// The member an expression selects (`b`, `ball`, `row[2]`) and its object type (D-055).
     fn member_expr(&mut self, e: &ast::Expr, locals: &[String]) -> Option<(Expr, String)> {
+        if let Some(("other", rel, of)) = self.rel_method(e, locals) {
+            let (rel, rty) = self.member_expr(rel, locals)?;
+            let (of, _) = self.member_expr(of, locals)?;
+            let ety = self.objects.get(&rty)?.ends.values().next()?.1.clone();
+            return Some((Expr::Other { other: Box::new(of), rel: Box::new(rel) }, ety));
+        }
         match &e.kind {
             // An endpoint inside its relation type, and of a relation: `a`, `s.a` (D-058).
             ExprKind::Name(n) if !locals.contains(n) && !self.bindings.contains_key(n) && self.ends.contains_key(n) => {
                 let (end, ty) = self.ends[n].clone();
                 Some((Expr::End { end, of: None }, ty))
+            }
+            ExprKind::Field(..) if Self::dotted(e).is_some_and(|d| d.contains('.') && self.part_ref(&d).is_ok_and(|p| !p.many) && !locals.iter().any(|l| d.starts_with(&format!("{l}.")))) => {
+                let p = self.part_ref(&Self::dotted(e).unwrap()).ok()?;
+                Some((Expr::Part { part: p.id }, p.object))
             }
             ExprKind::Field(x, n) if self.quiet_type(x, locals).is_some_and(|t| self.objects.get(&t).is_some_and(|o| o.ends.contains_key(&n.text))) => {
                 let (of, ty) = self.member_expr(x, locals)?;
@@ -419,8 +505,8 @@ impl<'a> ModelCx<'a> {
                 Some((Expr::Part { part: p.id }, p.object))
             }
             ExprKind::Index(x, i) => {
-                let ExprKind::Name(n) = &x.kind else { return None };
-                let p = self.parts.get(n)?.clone();
+                let n = Self::dotted(x)?;
+                let p = self.part_ref(&n).ok()?;
                 if !p.many {
                     self.err("SX-E08", format!("`{n}` is one object, not a collection"), e.span);
                 }
@@ -445,7 +531,7 @@ impl<'a> ModelCx<'a> {
         let [arg] = args else { return None };
         match &arg.value.kind {
             ExprKind::Aggregate { body, var, over, filter, .. } => {
-                let Some(p) = self.parts.get(&over.text).cloned() else {
+                let Some(p) = self.part_ref(&over.text).ok() else {
                     self.err("SX-E03", format!("unknown collection `{}`", over.text), over.span);
                     return Some(Self::placeholder());
                 };
@@ -458,8 +544,9 @@ impl<'a> ModelCx<'a> {
                 self.vars.pop();
                 Some(Expr::Aggregate { aggregate: agg, var: var.text.clone(), over: p.id, body, filter })
             }
-            ExprKind::Name(n) if agg == Agg::Count && self.parts.get(n).is_some_and(|p| p.many) => {
-                let p = self.parts[n].clone();
+            // `count(drops)`, `count(left.atoms)` (D-065).
+            _ if agg == Agg::Count && Self::dotted(&args[0].value).is_some_and(|n| self.part_ref(&n).is_ok_and(|p| p.many)) => {
+                let p = self.part_ref(&Self::dotted(&args[0].value).unwrap()).ok()?;
                 Some(Expr::Aggregate { aggregate: agg, var: "_".into(), over: p.id, body: None, filter: None })
             }
             _ if agg == Agg::Count => {
@@ -484,22 +571,24 @@ impl<'a> ModelCx<'a> {
         for mem in &m.members {
             if let Member::Object(o) = mem {
                 let id = format!("{}.{}", self.name, o.name.text);
-                let mut info = self.declare_names(&id, &o.members);
-                for (n, over) in &o.ends {
+                let info = self.declare_names(&id, &o.members);
+                if self.objects.insert(o.name.text.clone(), info).is_some() {
+                    self.err("SX-E09", format!("object type `{}` declared twice", o.name.text), o.name.span);
+                }
+            }
+        }
+        // Endpoints once every object type is known: a collection may be a part of a
+        // contained object, `a in left.atoms` (D-065).
+        for mem in &m.members {
+            if let Member::Object(o) = mem {
+                let id = format!("{}.{}", self.name, o.name.text);
+                for (n, path) in &o.ends {
                     // An unknown collection is reported here; its endpoint is still known.
-                    let object = match self.parts.get(&over.text) {
-                        Some(p) => p.object.clone(),
-                        None => {
-                            self.err("SX-E03", format!("unknown collection `{}`", over.text), over.span);
-                            String::new()
-                        }
-                    };
+                    let object = self.end_path(path, true).map(|(_, t)| t).unwrap_or_default();
+                    let info = self.objects.get_mut(&o.name.text).expect("declared");
                     if info.bindings.contains_key(&n.text) || info.ends.insert(n.text.clone(), (format!("{id}.{}", n.text), object)).is_some() {
                         self.err("SX-E09", format!("`{}` is declared twice in `{}`", n.text, o.name.text), n.span);
                     }
-                }
-                if self.objects.insert(o.name.text.clone(), info).is_some() {
-                    self.err("SX-E09", format!("object type `{}` declared twice", o.name.text), o.name.span);
                 }
             }
         }
@@ -722,7 +811,7 @@ impl<'a> ModelCx<'a> {
     fn flow(&mut self, f: &ast::FlowStmt, process: Option<&Id>) {
         // `for b in row { der(b.vel) += e }`: the loop variable is in scope (D-055).
         let each = match &f.each {
-            Some((var, over)) => match self.parts.get(&over.text).cloned() {
+            Some((var, over)) => match self.part_ref(&over.text).ok() {
                 Some(p) => {
                     self.vars.push((var.text.clone(), p.object.clone()));
                     Some(Each { var: var.text.clone(), over: p.id })
@@ -768,7 +857,7 @@ impl<'a> ModelCx<'a> {
     fn event(&mut self, e: &ast::EventDecl, process: Option<&Id>) {
         // `for b in drops { event ... }`: the loop variable is in scope (D-057).
         let each = match &e.each {
-            Some((var, over)) => match self.parts.get(&over.text).cloned() {
+            Some((var, over)) => match self.part_ref(&over.text).ok() {
                 Some(p) => {
                     if !p.many {
                         self.err("SX-E08", format!("`{}` is one object; `for` goes over a collection", over.text), over.span);
@@ -1217,6 +1306,17 @@ impl<'a> ModelCx<'a> {
             }
             ExprKind::If(c, a, b) => build::ite(self.expr(c, locals), self.expr(a, locals), self.expr(b, locals)),
             ExprKind::Otherwise(a, b) => Expr::Otherwise { otherwise: Box::new(self.expr(a, locals)), default: Box::new(self.expr(b, locals)) },
+            ExprKind::Call(..) if self.rel_method(e, locals).is_some() => {
+                let (method, rel, of) = self.rel_method(e, locals).unwrap();
+                match method {
+                    "has" => match (self.member_expr(rel, locals), self.member_expr(of, locals)) {
+                        (Some((rel, _)), Some((of, _))) => Expr::Has { has: Box::new(of), rel: Box::new(rel) },
+                        _ => Self::placeholder(),
+                    },
+                    // A member, compared with `==` or read by a binding (D-064).
+                    _ => self.member_expr(e, locals).map(|(m, _)| m).unwrap_or_else(Self::placeholder),
+                }
+            }
             ExprKind::Call(f, args) => self.call(f, args, e.span, locals),
             ExprKind::Field(x, n) if matches!(&x.kind, ExprKind::Name(e) if self.enums.contains_key(e) && !self.bindings.contains_key(e) && !locals.contains(e)) => {
                 let ExprKind::Name(e) = &x.kind else { unreachable!() };

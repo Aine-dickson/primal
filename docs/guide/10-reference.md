@@ -160,6 +160,7 @@ Every word of the language, what it does, and the chapter that teaches it.
 | `process` | a named group of flows and events | 4 |
 | `propose` | the binding change an inverse proposes | 7 |
 | `relation` | a relation type, whose endpoints are members of collections | 9 |
+| `undirected` | before `relation`: a relation whose two endpoints have no order, read with `s.has(o)` and `s.other(o)` | 9 |
 | `request` | an event requested from outside (a button, a lesson) | 5 |
 | `run` | a test case; in timelines, `run rate r` | 1, 8 |
 | `set` | an operation that replaces a value | 5 |

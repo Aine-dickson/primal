@@ -228,6 +228,18 @@ pub enum Expr {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         of: Option<Box<Expr>>,
     },
+    /// The endpoint of the relation instance `rel` that is not the member `other`: `s.other(o)`
+    /// (D-064). When both endpoints are `other`, it is `other`.
+    Other {
+        other: Box<Expr>,
+        rel: Box<Expr>,
+    },
+    /// Whether the member `has` is an endpoint of the relation instance `rel`: `s.has(o)`
+    /// (D-064).
+    Has {
+        has: Box<Expr>,
+        rel: Box<Expr>,
+    },
     /// The `pick`-th of `from`, counted from 1, evaluating only that one: a binding of the
     /// member at an endpoint, chosen during the run. Made by elaboration only (D-058).
     Pick {
@@ -306,6 +318,10 @@ impl Expr {
                 filter.iter().for_each(|c| c.walk(f));
             }
             Expr::End { of, .. } => of.iter().for_each(|o| o.walk(f)),
+            Expr::Other { other: m, rel } | Expr::Has { has: m, rel } => {
+                m.walk(f);
+                rel.walk(f);
+            }
             Expr::Pick { pick, from } => {
                 pick.walk(f);
                 from.iter().for_each(|x| x.walk(f));

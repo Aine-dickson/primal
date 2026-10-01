@@ -100,7 +100,7 @@ impl PresCx<'_, '_> {
         self.cx.map.insert(id.clone(), r.span);
         // `for b in row { ... }`: the member is in scope in the representation (D-055).
         let each = match &r.each {
-            Some((var, over)) => match self.cx.parts.get(&over.text).cloned() {
+            Some((var, over)) => match self.cx.part_ref(&over.text).ok() {
                 Some(p) => {
                     self.cx.vars.push((var.text.clone(), p.object.clone()));
                     Some(prismal_ir::Each { var: var.text.clone(), over: p.id })

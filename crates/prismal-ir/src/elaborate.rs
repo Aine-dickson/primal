@@ -125,6 +125,10 @@ impl<'a> Scope<'a> {
     fn outer(inst: &Inst<'a>) -> Scope<'a> {
         Scope { ty: inst.outer_ty, path: inst.outer_path.clone(), vars: vec![], index: None, live: None, payload: None, me: None }
     }
+    /// The scope inside a member: its type and path.
+    fn inside(inst: Inst<'a>) -> Scope<'a> {
+        Scope { ty: inst.ty, path: inst.path, vars: vec![], index: None, live: None, payload: None, me: None }
+    }
     fn with_var(&self, var: &str, inst: Inst<'a>) -> Scope<'a> {
         let mut s = self.clone();
         s.vars.push((var.to_string(), Sel::One(inst)));
@@ -139,6 +143,9 @@ struct Cx<'a> {
     root: &'a Model,
     diags: Vec<Diag>,
     element: Id,
+    /// Elaborating a presentation, which may read the endpoints of an undirected relation by
+    /// role to draw it (D-064).
+    drawing: bool,
 }
 
 impl<'a> Cx<'a> {
@@ -160,6 +167,15 @@ impl<'a> Cx<'a> {
     /// The members of the part `id` of the object type in `s`: one for a contained object,
     /// `count` for a collection, `capacity` for a collection whose membership changes.
     fn members(&mut self, s: &Scope<'a>, id: &str) -> Option<(Vec<Inst<'a>>, bool)> {
+        // A part path: the contained object, then the rest of the path inside it (D-065).
+        if let Some((first, rest)) = id.split_once(crate::PART_PATH) {
+            let (ms, many) = self.members(s, first)?;
+            if many {
+                self.err("MK-E26", format!("`{}` is a collection: a path goes through contained objects only", part_name(s.ty, first)));
+                return None;
+            }
+            return self.members(&Scope::inside(ms.into_iter().next()?), rest);
+        }
         let Some(p) = s.ty.part(id) else {
             self.err("MK-E26", format!("unknown part `{id}`"));
             return None;
@@ -194,7 +210,38 @@ impl<'a> Cx<'a> {
         if !many {
             return members.into_iter().next().map(Sel::One);
         }
-        Some(Sel::Chosen { members, index: Expr::Ref { r#ref: flat(end, &rel.path) }, coll: coll_key(&outer.path, &e.over) })
+        let coll = members[0].coll.clone();
+        Some(Sel::Chosen { members, index: Expr::Ref { r#ref: flat(end, &rel.path) }, coll })
+    }
+
+    /// The key of the collection a part (or part path, D-065) names in scope `s`.
+    fn coll_of(&mut self, s: &Scope<'a>, id: &str) -> Option<String> {
+        match id.split_once(crate::PART_PATH) {
+            Some((first, rest)) => {
+                let (ms, _) = self.members(s, first)?;
+                self.coll_of(&Scope::inside(ms.into_iter().next()?), rest)
+            }
+            None => Some(coll_key(&s.path, id)),
+        }
+    }
+
+    /// Every relation set of the model, in the scope that holds it: the parts of the root
+    /// and of every member of its parts, nested (D-065).
+    fn relation_sets(&mut self, s: &Scope<'a>) -> Vec<(Scope<'a>, &'a crate::Part)> {
+        let mut out = vec![];
+        for p in &s.ty.parts {
+            let Some(ty) = self.root.objects.iter().find(|o| o.id == p.object) else { continue };
+            if !ty.ends.is_empty() {
+                out.push((s.clone(), p));
+                continue;
+            }
+            if let Some((ms, _)) = self.members(s, &p.id) {
+                for m in ms {
+                    out.extend(self.relation_sets(&Scope::inside(m)));
+                }
+            }
+        }
+        out
     }
 
     /// The member an expression selects, known now or chosen during the run.
@@ -202,20 +249,16 @@ impl<'a> Cx<'a> {
         match e {
             Expr::End { end, of } => {
                 let rel = match of {
-                    // The endpoint of a relation chosen during the run: its number is picked
-                    // among the relations' endpoint bindings (D-059).
-                    Some(x) => match self.select(s, x)? {
-                        Sel::One(r) => r,
-                        Sel::Chosen { members, index, .. } => {
-                            return match self.end(&members[0], end)? {
-                                Sel::Chosen { members: ends, coll, .. } => {
-                                    let from = members.iter().map(|r| Expr::Ref { r#ref: flat(end, &r.path) }).collect();
-                                    Some(Sel::Chosen { members: ends, index: Expr::Pick { pick: Box::new(index), from }, coll })
-                                }
-                                one => Some(one),
-                            };
+                    Some(x) => {
+                        let r = self.select(s, x)?;
+                        // D-064: outside its body, an undirected relation's endpoints have
+                        // no order; a presentation may still draw them by role.
+                        if Self::rel_type(&r).undirected && !self.drawing {
+                            self.err("MK-E26", format!("the endpoints of the undirected relation `{}` have no order: read them with `s.has(o)` and `s.other(o)`", Self::rel_type(&r).name));
+                            return None;
                         }
-                    },
+                        return self.end_of(r, end);
+                    }
                     None => match &s.me {
                         Some(m) => m.clone(),
                         None => {
@@ -226,12 +269,62 @@ impl<'a> Cx<'a> {
                 };
                 self.end(&rel, end)
             }
+            // The endpoint that is not `other` (D-064): picked by comparing numbers.
+            Expr::Other { other, rel } => {
+                let r = self.select(s, rel)?;
+                let (a, b) = self.pair(&r)?;
+                let o = self.select(s, other)?;
+                let ((ko, io), (ka, ia), (_, ib)) = (Self::key(&o), Self::key(&a), Self::key(&b));
+                if ko != ka {
+                    self.err("MK-E26", format!("`other` is given a member of another collection than the endpoints of `{}`", Self::rel_type(&r).name));
+                    return None;
+                }
+                Some(match a {
+                    Sel::One(i) => Sel::One(i),
+                    Sel::Chosen { members, coll, .. } => Sel::Chosen { members, index: build_if(Expr::bin(BinOp::Eq, ia.clone(), io), ib, ia), coll },
+                })
+            }
             Expr::Var { var } => match s.vars.iter().rev().find(|(v, _)| v == var) {
                 Some((_, sel)) => Some(sel.clone()),
                 None => self.member(s, e).map(Sel::One),
             },
             _ => self.member(s, e).map(Sel::One),
         }
+    }
+
+    /// The type of a selected member.
+    fn rel_type(sel: &Sel<'a>) -> &'a Model {
+        match sel {
+            Sel::One(i) => i.ty,
+            Sel::Chosen { members, .. } => members[0].ty,
+        }
+    }
+
+    /// The member at the endpoint `end` of a selected relation; for a relation chosen during
+    /// the run, its number is picked among the relations' endpoint bindings (D-059).
+    fn end_of(&mut self, rel: Sel<'a>, end: &str) -> Option<Sel<'a>> {
+        match rel {
+            Sel::One(r) => self.end(&r, end),
+            Sel::Chosen { members, index, .. } => match self.end(&members[0], end)? {
+                Sel::Chosen { members: ends, coll, .. } => {
+                    let from = members.iter().map(|r| Expr::Ref { r#ref: flat(end, &r.path) }).collect();
+                    Some(Sel::Chosen { members: ends, index: Expr::Pick { pick: Box::new(index), from }, coll })
+                }
+                one => Some(one),
+            },
+        }
+    }
+
+    /// Both endpoints of a selected relation with two endpoints in one collection, for
+    /// `has` and `other` (D-064).
+    fn pair(&mut self, rel: &Sel<'a>) -> Option<(Sel<'a>, Sel<'a>)> {
+        let ty = Self::rel_type(rel);
+        if ty.ends.len() != 2 || ty.ends[0].over != ty.ends[1].over {
+            self.err("MK-E26", format!("`has` and `other` take a relation with two endpoints in one collection; `{}` is not one", ty.name));
+            return None;
+        }
+        let (a, b) = (ty.ends[0].id.clone(), ty.ends[1].id.clone());
+        Some((self.end_of(rel.clone(), &a)?, self.end_of(rel.clone(), &b)?))
     }
 
     /// The collection and the number of a selected member.
@@ -326,7 +419,7 @@ impl<'a> Cx<'a> {
     }
 
     fn is_member(e: &Expr) -> bool {
-        matches!(e, Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. })
+        matches!(e, Expr::Var { .. } | Expr::Part { .. } | Expr::Item { .. } | Expr::End { .. } | Expr::Other { .. })
     }
 
     /// An expression with members and aggregates replaced, and identities declared in the
@@ -349,9 +442,19 @@ impl<'a> Cx<'a> {
                 Some(sel) => self.field_of(&sel, field),
                 None => num(0.0),
             },
-            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } => {
+            Expr::Part { .. } | Expr::Item { .. } | Expr::Var { .. } | Expr::End { .. } | Expr::Other { .. } => {
                 self.err("MK-E26", "a member is not a value: read one of its bindings, `b.pos`".into());
                 num(0.0)
+            }
+            // Whether a member is at either endpoint (D-064).
+            Expr::Has { has, rel } => {
+                let (Some(r), Some(o)) = (self.select(s, rel), self.select(s, has)) else { return Expr::Bool { bool: false } };
+                let Some((a, b)) = self.pair(&r) else { return Expr::Bool { bool: false } };
+                let ((ko, io), (ka, ia), (_, ib)) = (Self::key(&o), Self::key(&a), Self::key(&b));
+                if ko != ka {
+                    return Expr::Bool { bool: false };
+                }
+                Expr::bin(BinOp::Or, Expr::bin(BinOp::Eq, ia, io.clone()), Expr::bin(BinOp::Eq, ib, io))
             }
             Expr::Pick { pick, from } => Expr::Pick { pick: b(self, pick), from: from.iter().map(|x| self.expr(s, x)).collect() },
             // Members compare by identity. Members known now compare to a constant (`o != b`);
@@ -493,7 +596,7 @@ impl<'a> Cx<'a> {
     fn chosen_targets(&mut self, s: &Scope<'a>, t: &Target) -> Option<Vec<(Expr, Target)>> {
         let m = t.member.as_ref()?;
         let chosen = match m {
-            Expr::End { .. } => true,
+            Expr::End { .. } | Expr::Other { .. } => true,
             Expr::Var { var } => matches!(s.vars.iter().rev().find(|(v, _)| v == var), Some((_, Sel::Chosen { .. }))),
             _ => false,
         };
@@ -640,7 +743,7 @@ impl<'a> Cx<'a> {
     fn end_value(&mut self, s: &Scope<'a>, e: &crate::End, x: &Expr) -> Option<Expr> {
         let sel = self.select(s, x)?;
         let (k, idx) = Self::key(&sel);
-        if k != coll_key(&s.path, &e.over) {
+        if Some(k) != self.coll_of(s, &e.over) {
             self.err("MK-E26", format!("the endpoint `{}` is a member of `{}`", e.name, part_name(s.ty, &e.over)));
             return None;
         }
@@ -694,10 +797,13 @@ impl<'a> Cx<'a> {
             }
         }
         let (coll, idx) = Self::key(sel);
-        let outer = Scope::outer(&members[0]);
-        for p in &outer.ty.parts {
+        // Relation sets anywhere in the model may have endpoints in the collection (D-065).
+        for (outer, p) in self.relation_sets(&Scope::root(self.root)) {
             let Some(rty) = self.root.objects.iter().find(|o| o.id == p.object) else { continue };
-            for e in rty.ends.iter().filter(|e| coll_key(&outer.path, &e.over) == coll) {
+            for e in &rty.ends {
+                if self.coll_of(&outer, &e.over) != Some(coll.clone()) {
+                    continue;
+                }
                 let Some((rels, _)) = self.members(&outer, &p.id) else { continue };
                 for r in rels {
                     let Some(live) = r.live.clone() else {
@@ -1031,12 +1137,18 @@ pub fn model(m: &Model) -> Result<Model, Vec<Diag>> {
     if !m.has_parts() && m.objects.is_empty() {
         return Ok(m.clone());
     }
-    let mut cx = Cx { root: m, diags: vec![], element: m.id.clone() };
+    let mut cx = Cx { root: m, diags: vec![], element: m.id.clone(), drawing: false };
     let mut out = Model { bindings: vec![], processes: vec![], flows: vec![], events: vec![], equations: vec![], constraints: vec![], functions: vec![], objects: vec![], parts: vec![], ..m.clone() };
     // Enumerations are types: one declaration serves every member (MK-2.2).
     for o in &m.objects {
         out.enums.extend(o.enums.iter().cloned());
+        // D-064: an undirected relation joins two members of one collection.
+        if o.undirected && (o.ends.len() != 2 || o.ends[0].over != o.ends[1].over) {
+            cx.element = o.id.clone();
+            cx.err("MK-E26", format!("the undirected relation `{}` has two endpoints in one collection", o.name));
+        }
     }
+    cx.element = m.id.clone();
     cx.body(&Scope::root(m), &[], &mut out, 0);
     if cx.diags.is_empty() {
         Ok(out)
@@ -1310,14 +1422,14 @@ pub fn document(d: &Document) -> Result<Document, Vec<Diag>> {
     }
     for (i, p) in d.presentations.iter().enumerate() {
         if let Some(m) = d.model(&p.model).filter(|m| m.has_parts() || !m.objects.is_empty()) {
-            let mut cx = Cx { root: m, diags: vec![], element: p.id.clone() };
+            let mut cx = Cx { root: m, diags: vec![], element: p.id.clone(), drawing: true };
             out.presentations[i] = presentation(&mut cx, m, p);
             diags.extend(cx.diags);
         }
     }
     for (i, r) in d.runs.iter().enumerate() {
         if let Some(m) = d.model(&r.model).filter(|m| m.has_parts() || !m.objects.is_empty()) {
-            let mut cx = Cx { root: m, diags: vec![], element: r.id.clone() };
+            let mut cx = Cx { root: m, diags: vec![], element: r.id.clone(), drawing: false };
             out.runs[i] = run(&mut cx, m, r);
             diags.extend(cx.diags);
         }
@@ -1327,4 +1439,9 @@ pub fn document(d: &Document) -> Result<Document, Vec<Diag>> {
     } else {
         Err(diags)
     }
+}
+
+/// `if c then a else b`.
+fn build_if(c: Expr, a: Expr, b: Expr) -> Expr {
+    Expr::If { r#if: Box::new(c), then: Box::new(a), r#else: Box::new(b) }
 }

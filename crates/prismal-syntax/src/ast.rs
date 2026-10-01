@@ -64,7 +64,11 @@ pub enum Member {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObjectDecl {
     pub name: Name,
-    pub ends: Vec<(Name, Name)>,
+    /// A relation type's endpoints and their collections, a path through contained objects
+    /// (`a in left.atoms`, D-065).
+    pub ends: Vec<(Name, Vec<Name>)>,
+    /// `undirected relation ...` (D-064).
+    pub undirected: bool,
     pub members: Vec<Member>,
     pub notes: Vec<String>,
     pub span: Span,
