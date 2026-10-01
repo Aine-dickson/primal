@@ -85,6 +85,16 @@ pub fn parse(src: &str) -> (ast::File, Vec<Diag>) {
     (file, diags)
 }
 
+/// Parses one expression, as written inside `{...}` in a `text` representation (D-076).
+pub fn parse_expr(src: &str) -> Result<ast::Expr, String> {
+    let (lexed, diags) = lexer::lex(src);
+    if let Some(d) = diags.first() {
+        return Err(d.message.clone());
+    }
+    let mut p = parser::Parser::new(&lexed.tokens, &lexed.comments);
+    p.whole_expr().map_err(|d| d.message)
+}
+
 /// A parsed and lowered source text.
 #[derive(Clone, Debug)]
 pub struct Compiled {

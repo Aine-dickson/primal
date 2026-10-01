@@ -18,7 +18,7 @@ pub const RUN_CONTROLS: &[&str] = &["reset", "undo", "redo"];
 /// Representation kinds of the first slice (PK-6.3).
 const KINDS: &[&str] = &[
     "marker", "arrow", "segment", "polyline", "polygon", "circle", "ellipse", "arc", "trace", "function_graph", "series_plot", "axes", "grid", "label",
-    "equation", "formula", "table", "slider", "number_input", "toggle", "button", "group",
+    "equation", "formula", "table", "slider", "number_input", "toggle", "button", "group", "text", "title",
 ];
 
 struct PresCx<'a, 'b> {
@@ -117,7 +117,20 @@ impl PresCx<'_, '_> {
         };
         let mut sources = vec![];
         let mut props = vec![];
+        // `when: cond`: drawn only while the condition holds (D-076).
+        let mut when = None;
         for a in &r.args {
+            if a.name.as_ref().is_some_and(|n| n.text == "when") {
+                when = Some(self.expr(&a.value));
+                continue;
+            }
+            // `text("... {e} ...")`: the template with `{}` for each value, then the values (D-076).
+            if let (ExprKind::Str(s), None, "text") = (&a.value.kind, &a.name, r.kind.text.as_str()) {
+                let (template, values) = self.interpolate(s, a.value.span);
+                sources.push(Arg::Text { text: template });
+                sources.extend(values.into_iter().map(|expr| Arg::Expr { expr }));
+                continue;
+            }
             let value = match (&a.value.kind, a.name.as_ref().map(|n| n.text.as_str())) {
                 (ExprKind::Str(s), _) => Arg::Text { text: s.clone() },
                 // Style words (D-061): `color: blue`, `line: dashed`.
@@ -194,7 +207,39 @@ impl PresCx<'_, '_> {
         if each.is_some() {
             self.cx.vars.pop();
         }
-        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members, click, when: None }
+        Rep { each, id, name: r.alias.as_ref().map(|a| a.text.clone()), kind, sources, props, inverse, members, click, when }
+    }
+
+    /// A text with values in braces, `"bounced {n} times"`: the template with `{}` where each
+    /// value goes (literal braces doubled), and the values (D-076).
+    fn interpolate(&mut self, s: &str, span: Span) -> (String, Vec<prismal_ir::Expr>) {
+        let (mut template, mut values) = (String::new(), vec![]);
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '{' if chars.peek() == Some(&'{') => {
+                    chars.next();
+                    template.push_str("{{");
+                }
+                '}' if chars.peek() == Some(&'}') => {
+                    chars.next();
+                    template.push_str("}}");
+                }
+                '{' => {
+                    let inner: String = chars.by_ref().take_while(|c| *c != '}').collect();
+                    match crate::parse_expr(&inner) {
+                        Ok(e) => {
+                            values.push(self.expr(&e));
+                            template.push_str("{}");
+                        }
+                        Err(m) => self.err("SX-E02", format!("in `{{{inner}}}`: {m}"), span),
+                    }
+                }
+                '}' => self.err("SX-E02", "a `}` with no `{`; write `}}` for a brace in the text", span),
+                c => template.push(c),
+            }
+        }
+        (template, values)
     }
 
     fn view(&mut self, v: &ast::ViewDecl) -> Option<View> {
@@ -575,8 +620,15 @@ pub(crate) fn presentation(p: &ast::PresentationDecl, models: &[Model], spaces: 
     let mut permissions = vec![];
     let mut timeline = None;
     let mut layout = None;
+    let mut title = None;
     for it in &p.items {
         match it {
+            ast::PresItem::Title(t) => {
+                if title.is_some() {
+                    px.err("SX-E09", "one title per presentation", p.name.span);
+                }
+                title = Some(t.clone());
+            }
             ast::PresItem::Layout(node) => {
                 if layout.is_some() {
                     px.err("SX-E09", "one layout per presentation", p.name.span);
@@ -622,7 +674,7 @@ pub(crate) fn presentation(p: &ast::PresentationDecl, models: &[Model], spaces: 
             ast::PresItem::View(_) => {}
         }
     }
-    Some(Presentation { id: id.clone(), name: id.clone(), model: model.id.clone(), observations, views, permissions, timeline, layout, notes: vec![] })
+    Some(Presentation { id: id.clone(), name: id.clone(), model: model.id.clone(), observations, views, permissions, timeline, layout, notes: vec![], title })
 }
 
 pub(crate) fn run(

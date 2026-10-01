@@ -286,9 +286,12 @@ function lessonNotes() {
 
 function buildViews() {
   const host = $('#views');
+  // The author's title of the presentation (D-076).
+  if (st.layout.title) host.append(el('h2', { class: 'pres-title', text: st.layout.title }));
   for (const v of st.layout.views) {
-    const fig = el('figure', { class: 'view', 'aria-label': `view ${v.name}` });
-    const cap = el('figcaption', {}, el('span', { text: `${v.name} (${v.kind})` }));
+    const fig = el('figure', { class: 'view', 'aria-label': `view ${v.title || v.name}` });
+    // A view's caption: the author's `title(...)`, or its name and kind (D-076).
+    const cap = el('figcaption', {}, el('span', { text: v.title || `${v.name} (${v.kind})` }));
     fig.append(cap);
     const entry = { ...v, fig, panel: el('div', { class: 'view-panel' }) };
     if (v.kind === 'spatial') {
@@ -509,6 +512,13 @@ function drawRep(v, g, r, u, colorIndex) {
       }
       break;
     }
+    case 'note': {
+      // An author's text at a point (D-076).
+      const [X, Y] = m.to(r.at);
+      const t = svg('text', { class: 'note', x: X, y: Y, 'font-size': 13 * u }, grp);
+      t.textContent = r.value;
+      break;
+    }
     case 'segment': {
       const a = m.to(r.from), b = m.to(r.to);
       svg('line', { class: 'segment', x1: a[0], y1: a[1], x2: b[0], y2: b[1], 'stroke-width': 2 * u }, grp);
@@ -667,7 +677,8 @@ function renderItem(host, r) {
       renderControl(it, r);
       break;
     case 'text':
-      it.root.replaceChildren(el('span', { class: 'label-value', text: r.text }));
+      // A label's `name = value`, or an author's text (D-076).
+      it.root.replaceChildren(el('span', { class: r.kind === 'text' ? 'author-text' : 'label-value', text: r.text }));
       break;
     case 'status':
       it.root.replaceChildren(el('span', { class: 'status-value', text: r.text }));
@@ -827,15 +838,16 @@ function renderFrame(frame) {
       const top = svg('g', {}, v.svg);
       let arrows = 0;
       for (const r of vf.reps) {
-        if (['point', 'arrow', 'segment', 'polyline', 'polygon', 'ellipse', 'group'].includes(r.shape)) {
+        if (['point', 'arrow', 'segment', 'polyline', 'polygon', 'ellipse', 'group', 'note'].includes(r.shape)) {
           // Draggable and clickable representations are drawn last and outside the plot's clip.
           drawRep(v, r.drag || r.click ? top : reps, r, u, r.shape === 'arrow' ? arrows++ : 0);
-        } else if (!['axes', 'grid'].includes(r.shape)) {
+        } else if (!['axes', 'grid', 'title'].includes(r.shape)) {
           renderItem(v.panel, r);
         }
       }
     } else {
-      for (const r of vf.reps) renderItem(v.panel, r);
+      // A title is the panel's caption, not an item (D-076).
+      for (const r of vf.reps) if (r.shape !== 'title') renderItem(v.panel, r);
     }
   }
   const overlay = $('#overlay');

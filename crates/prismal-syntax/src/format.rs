@@ -845,6 +845,35 @@ impl<'a> Printer<'a> {
             return format!("for {} in {} {{ {} }}", each.var, self.part_name(&each.over), self.rep(&inner, depth));
         }
         let mut args: Vec<String> = r.sources.iter().map(|a| self.arg(a)).collect();
+        // `text("... {e} ...")`: the values go back into the template (D-076).
+        if r.kind == "text" {
+            if let Some(Arg::Text { text }) = r.sources.first() {
+                let mut values = r.sources[1..].iter().map(|a| self.arg(a));
+                let mut s = String::new();
+                let mut rest = text.as_str();
+                while let Some(i) = rest.find(['{', '}']) {
+                    s.push_str(&rest[..i]);
+                    let pair = &rest[i..(i + 2).min(rest.len())];
+                    if pair == "{{" || pair == "}}" {
+                        s.push_str(pair);
+                        rest = &rest[i + 2..];
+                    } else if pair == "{}" {
+                        s.push('{');
+                        s.push_str(&values.next().unwrap_or_default());
+                        s.push('}');
+                        rest = &rest[i + 2..];
+                    } else {
+                        s.push_str(&rest[i..i + 1]);
+                        rest = &rest[i + 1..];
+                    }
+                }
+                s.push_str(rest);
+                args = vec![format!("\"{s}\"")];
+            }
+        }
+        if let Some(w) = &r.when {
+            args.push(format!("when: {}", self.expr(w)));
+        }
         // `button(add(2 m))`: the payload is written as the event's arguments (D-072).
         let payload = r.props.iter().find(|p| r.kind == "button" && p.name == "payload");
         if let (Some(Prop { value: Arg::Expr { expr }, .. }), Some(first)) = (payload, args.first_mut()) {
@@ -910,6 +939,9 @@ impl<'a> Printer<'a> {
         notes(&mut out, "", &p.notes);
         let _ = writeln!(out, "presentation {} for {} {{", p.name, self.model.name);
         let mut sections = vec![];
+        if let Some(t) = &p.title {
+            sections.push(format!("{INDENT}title \"{t}\""));
+        }
         for v in &p.views {
             let head = match &v.kind {
                 ViewKind::Spatial { space, scale, y_up } => format!(

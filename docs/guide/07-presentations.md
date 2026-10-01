@@ -46,6 +46,8 @@ presentation Name for Model {
 | `series_plot(e every Δ)` | a value against elapsed time | plot with a time `x` axis |
 | `axes`, `grid` | coordinate reference | spatial |
 | `label(e)` | a value as text | any |
+| `text("... {e} ...")` | an author's text, with values in braces (see Text and titles) | any; `at: P` in spatial and plot views |
+| `title("...")` | the caption of its view or panel | any |
 | `formula(f [, live: true])` | the definition of a derived binding or function, typeset | any |
 | `formula("R", expression [, live: true])` | a labeled expression, `R = ...`, typeset | any |
 | `equation(name [, live: true])` | a model equation, typeset, with its symbols' current values | any |
@@ -487,4 +489,56 @@ model Rise {
 ```
 
 In a lab of `Rise` with a slider for `limit`, the run pauses at 2 s with "constraint `below` violated". Raising `limit` to 10 at that instant lets it go on to 10 s.
+
+## Text and titles
+
+**Goal.** Tell the learner what they are looking at: a title for the page, captions for the views, a sentence that reports a value, and a message that appears only when something has happened.
+**How it is built.** `title "..."` names the presentation; `title("...")` inside a view or panel replaces its caption; `text("...")` writes a sentence, with any value of the model in braces; `when:` on any representation shows it only while a condition holds (D-076).
+
+```text
+space Plane = euclidean(2)
+
+model Dropped in Plane {
+  param { h: Length = 10 m in [1 m, 50 m] }
+  state {
+    pos: Point            = origin + (0 m, h)
+    vel: Vector<Velocity> = 0
+  }
+  discrete { airborne: Boolean = true }
+  flow {
+    der(pos) = if airborne then vel else 0
+    der(vel) = if airborne then (0 m/s^2, -9.81 m/s^2) else 0
+  }
+  event landed on falling(pos.y) { set airborne = false; set vel = 0 }
+}
+
+presentation DropLab for Dropped {
+  title "Dropping a ball"
+  view scene: spatial(Plane, scale: 1 m -> 12 px, y: up) {
+    title("The fall")
+    marker(pos) as ball
+    text("start", at: origin + (0.5 m, h))
+  }
+  panel notes {
+    title("What is happening")
+    text("The ball is {pos.y} above the ground, moving at {|vel|}.")
+    text("Falling...", when: airborne)
+    text("Landed. Move the slider to drop it from another height.", when: not airborne)
+    slider(h, range: [1 m, 50 m])
+  }
+  observe { t_land = elapsed on landed }
+}
+```
+
+```cases
+run drop of Dropped with DropLab {
+  until t0 + 2 s
+  expect { t_land[1] == 1.42784312292706 s within 1e-9 s }
+}
+```
+
+- Inside the quotes, `{...}` holds any value of the model: a binding, a component (`{pos.y}`), a calculation (`{|vel|}`). It is shown with its unit, in the binding's display unit when it has one. To write a brace itself, double it: `{{` and `}}`.
+- `at: P` places a text in a spatial view (`P` a point) or a plot (`P` a pair of axis values); without it, the text is a line in the panel or below the view.
+- `when: c` works on every representation, not only text: `marker(pos, when: airborne)` hides the marker once the ball has landed, `slider(h, ..., when: not airborne)` offers the slider only then. The condition is read at the instant shown.
+- There is no text that is chosen by a condition inside one sentence; write one text per case, each with its `when`, as above.
 

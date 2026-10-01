@@ -207,9 +207,13 @@ impl Instance {
         let views: Vec<Json> = projector
             .views
             .iter()
-            .map(|(id, ctx, _)| {
+            .map(|(id, ctx, reps)| {
                 let name = pres.views.iter().find(|v| &v.id == id).map(|v| v.name.clone()).unwrap_or_default();
                 let mut v = json!({ "id": id, "name": name, "kind": ctx.kind() });
+                // `title("...")` in a view or panel is its caption (D-076).
+                if let Some(t) = reps.iter().find_map(|r| if let CKind::Title { value } = &r.kind { Some(value.clone()) } else { None }) {
+                    v["title"] = json!(t);
+                }
                 match ctx {
                     ViewCtx::Spatial { space, px_per_m, y_up } => {
                         let axes = cm.spaces.iter().find(|s| &s.id == space).map(|s| s.axes.clone()).unwrap_or_default();
@@ -237,6 +241,9 @@ impl Instance {
             .collect();
         let permits: Vec<&String> = pres.permissions.iter().flat_map(|p| p.allows.iter()).collect();
         let mut out = json!({ "presentation": pres.name, "views": views, "permits": permits });
+        if let Some(t) = &pres.title {
+            out["title"] = json!(t);
+        }
         // The author's page layout (PK-7.4a, D-063), with the views it leaves out after it.
         if let Some(l) = &pres.layout {
             let placed = l.views();

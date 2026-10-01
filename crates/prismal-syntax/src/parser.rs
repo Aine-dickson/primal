@@ -25,7 +25,7 @@ pub const CONTEXTUAL: &[&str] = &[
     "for", "view", "panel", "observe", "live", "over", "microstep", "show", "as", "drag", "click", "propose", "permit",
     "timeline", "layout", "row", "column", "scene", "beat", "sequence", "rate", "until", "hold", "seek", "reset", "branch", "intervene", "wait",
     "explore", "limit", "keep", "fallback", "narrate", "highlight", "hide", "reveal", "zoom", "animate", "camera", "bind", "release", "config",
-    "expect", "exactly", "rel", "of", "with", "learner", "continue", "press", "undo", "redo", "combine", "ease",
+    "expect", "exactly", "rel", "of", "with", "learner", "continue", "press", "undo", "redo", "combine", "ease", "title",
 ];
 
 pub fn is_reserved(w: &str) -> bool {
@@ -49,6 +49,18 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     pub fn new(toks: &'a [Token], comments: &'a [Comment]) -> Parser<'a> {
         Parser { toks, comments, pos: 0, diags: vec![] }
+    }
+
+    /// One expression and nothing after it.
+    pub fn whole_expr(&mut self) -> P<Expr> {
+        let e = self.expr()?;
+        while matches!(self.peek(), Tok::Newline) {
+            self.bump();
+        }
+        if !matches!(self.peek(), Tok::Eof) {
+            return Err(self.unexpected("the end of the value"));
+        }
+        Ok(e)
     }
 
     // ------------------------------------------------------------ token helpers
@@ -1380,6 +1392,16 @@ impl<'a> Parser<'a> {
         }
         if self.eat_word("layout") {
             return Ok(vec![PresItem::Layout(self.layout_node()?)]);
+        }
+        // `title "Projectile motion"` (D-076).
+        if self.eat_word("title") {
+            return match self.peek().clone() {
+                Tok::Str(s) => {
+                    self.bump();
+                    Ok(vec![PresItem::Title(s)])
+                }
+                _ => Err(self.unexpected("a title in quotes")),
+            };
         }
         Err(self.unexpected("`observe`, `view`, `panel`, `permit`, `timeline` or `layout`"))
     }

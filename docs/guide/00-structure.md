@@ -125,6 +125,8 @@ run two_bounces of Drop with Lab {
 | `view name: spatial(...) { }` | a presentation | representations drawn in the plane | `marker(pos) as ball` |
 | `view name: plot(...) { }` | a presentation | representations drawn against axes | `series_plot(x every 0.02 s)` |
 | `panel name { }` | a presentation | controls and readouts | `slider(k, range: [1 N/m, 20 N/m])` |
+| `title "..."` | a presentation | the page's title | `title "Dropping a ball"` |
+| `title("...")`, `text("...")` | a view or panel | its caption; a sentence with `{values}` | `text("Height: {pos.y}", when: airborne)` |
 | `permit learner { }` | a presentation | what the learner may do | `zoom; pan` |
 | `observe { }` | a presentation | recorded values: `name = expression schedule` | `x5 = x at t0 + 5 s` |
 | `timeline { scene { beat { } } }` | a presentation | a lesson: narration, running, pausing | `narrate "..." for 3 s` |

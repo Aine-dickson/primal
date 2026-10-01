@@ -202,3 +202,9 @@ svg .styled .shape { fill: color-mix(in srgb, var(--c) 12%, transparent); stroke
 svg .invalid line, svg .invalid .marker, svg .invalid .handle { stroke: var(--bad); stroke-dasharray: 4 3; }
 svg .invalid .marker { fill: none; }
 svg .rep-label { fill: var(--muted); font-family: var(--sans); }
+/* An author's text and titles (D-076). */
+.pres-title { margin: 0 0 8px; font-size: 1.25rem; font-weight: 600; grid-column: 1 / -1; }
+.author-text { font-family: var(--sans); }
+svg .note { fill: var(--ink); font-family: var(--sans); }
+svg .styled .note { fill: var(--c); }
+
